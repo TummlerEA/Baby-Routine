@@ -653,3 +653,132 @@ body {
   margin: 0;
   text-align: right;
 }
+
+/* ---------- "next up" prompt shown right after logging ---------- */
+
+.nextup {
+  background: linear-gradient(135deg, #1f2a24, #182028);
+  border: 1px solid #33564a;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nextup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nextup-title {
+  flex: 1;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent-diaper);
+}
+
+.nextup-close {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px -12px -12px 0;
+  cursor: pointer;
+}
+
+.nextup-line {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.nextup-line .nextup-when { color: var(--accent-diaper); }
+
+.nextup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nextup-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 16px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.nextup-chip.selected {
+  background: var(--accent-diaper);
+  border-color: var(--accent-diaper);
+  color: #10231a;
+}
+
+.nextup-chip:active { opacity: 0.8; }
+
+/* ---------- planned interval settings ---------- */
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.settings-intro,
+.settings-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-label {
+  flex: 1;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.settings-select {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+  min-height: 48px;
+  min-width: 110px;
+  color-scheme: dark;
+}
+
+/* ---------- forecast secondary line ---------- */
+
+.forecast-item .f-note {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.forecast-item .f-note .f-custom { color: var(--accent-sleep); }

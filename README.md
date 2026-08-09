@@ -7,7 +7,9 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 ## Features
 
 - Three large one-tap buttons: Feed, Nappy, and Sleep (which toggles to Wake up while your baby is asleep).
-- **Predictions** based on the median of the last 5 intervals. Gaps under 10 minutes are discarded, so an accidental double tap in the dark doesn't throw the forecast off. With no data yet it falls back to newborn defaults (feed ~2.5h, nappy ~2h, sleep ~1.5h), marked as an estimate.
+- **Predictions built from your plan, not from averages.** You set how often you intend each thing to happen (3 hours by default for all three) and the forecast follows that from the very first entry, instead of waiting for a pattern to emerge. A single long overnight stretch no longer drags the daytime predictions hours late.
+- **A one-off gap for any single entry.** Right after logging something, a prompt offers the planned time and a row of alternatives — tap 8h when you put your baby down for the night, and only that one gap changes. Your everyday plan stays put.
+- **Plan versus reality.** Each prediction shows the plan it is based on, and says "actually averaging 4h 30m" when the real routine has drifted meaningfully away from it (median of the last 5 gaps, ignoring anything under 10 minutes so an accidental double tap can't skew it).
 - **Active sleep banner** showing how long your baby has been asleep. Past 12 hours it points out that the wake-up was probably never logged.
 - **History grouped by day**: the last two days are open, older days collapse into headers you can tap open. Each day header shows that day's feed and nappy counts and total sleep.
 - **Sleep durations** are worked out automatically from each "fell asleep → woke up" pair, and sleep crossing midnight is split correctly between the two days. Unpaired entries are flagged.
@@ -34,8 +36,9 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## How data is stored
 
-- `baby-tracker-events` — a JSON array of events: `{ id, type: "feed"|"diaper"|"sleep_start"|"sleep_end", time: ISO-8601 }`.
+- `baby-tracker-events` — a JSON array of events: `{ id, type: "feed"|"diaper"|"sleep_start"|"sleep_end", time: ISO-8601, nextMin? }`. `nextMin` is the optional one-off gap in minutes until the next event of that type.
 - `baby-tracker-name` — the baby's name (string).
+- `baby-tracker-intervals` — the planned interval per type, in minutes.
 
 Nothing leaves the browser. The flip side is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
 

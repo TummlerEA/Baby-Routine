@@ -3,6 +3,7 @@
 
   var EVENTS_KEY = "baby-tracker-events";
   var NAME_KEY = "baby-tracker-name";
+  var INTERVALS_KEY = "baby-tracker-intervals";
   var MS_MIN = 60 * 1000;
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
@@ -17,11 +18,20 @@
   var DEFAULT_EXPANDED_DAYS = 2;
   var FORECAST_SAMPLE = 5;
 
-  var DEFAULTS = {
-    feed: 2.5 * MS_HOUR,
-    diaper: 2 * MS_HOUR,
-    sleep: 1.5 * MS_HOUR
+  // Predictions run off a plan the parent sets, not off whatever the last
+  // few gaps happened to be. Stored in minutes.
+  var DEFAULT_INTERVALS = { feed: 180, diaper: 180, sleep: 180 };
+  var INTERVAL_CHOICES = [60, 90, 120, 150, 180, 210, 240, 300, 360, 480, 600, 720];
+  var CHIP_CHOICES = [120, 180, 240, 300, 360, 480];
+  var KINDS = ["feed", "diaper", "sleep"];
+  var KIND_META = {
+    feed: { label: "Feed", icon: "🍼", logged: "Feed logged" },
+    diaper: { label: "Nappy", icon: "🧷", logged: "Nappy logged" },
+    sleep: { label: "Sleep", icon: "🌙", logged: "Sleep logged" }
   };
+  var NEXTUP_TIMEOUT = 20000;
+  // Only flag the gap between plan and reality once it is worth mentioning.
+  var DRIFT_TOLERANCE = 0.25;
 
   var TYPE_META = {
     feed: { label: "Feed", icon: "🍼" },
@@ -74,6 +84,33 @@
     }
   }
 
+  function loadIntervals() {
+    var stored = null;
+    try {
+      var raw = localStorage.getItem(INTERVALS_KEY);
+      stored = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      stored = null;
+    }
+    var out = {};
+    KINDS.forEach(function (kind) {
+      var value = stored ? Number(stored[kind]) : NaN;
+      out[kind] = (value > 0 && value <= 24 * 60) ? Math.round(value) : DEFAULT_INTERVALS[kind];
+    });
+    return out;
+  }
+
+  function saveIntervals() {
+    try {
+      localStorage.setItem(INTERVALS_KEY, JSON.stringify(intervals));
+      hideError();
+      return true;
+    } catch (e) {
+      showError("Couldn't save your settings");
+      return false;
+    }
+  }
+
   function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -84,6 +121,7 @@
   }
 
   var events = loadEvents();
+  var intervals = loadIntervals();
 
   // ---------- dom ----------
 
@@ -100,6 +138,14 @@
     btnSleep: document.getElementById("btnSleep"),
     sleepLabel: document.getElementById("sleepLabel"),
     forecastList: document.getElementById("forecastList"),
+    nextUp: document.getElementById("nextUp"),
+    nextUpTitle: document.getElementById("nextUpTitle"),
+    nextUpLine: document.getElementById("nextUpLine"),
+    nextUpChips: document.getElementById("nextUpChips"),
+    nextUpClose: document.getElementById("nextUpClose"),
+    settingsToggle: document.getElementById("settingsToggle"),
+    settingsToggleText: document.getElementById("settingsToggleText"),
+    settingsPanel: document.getElementById("settingsPanel"),
     logToggle: document.getElementById("logToggle"),
     logToggleText: document.getElementById("logToggleText"),
     logList: document.getElementById("logList"),
@@ -131,6 +177,7 @@
   var logOpen = false;
   var manualOpen = false;
   var infoOpen = false;
+  var settingsOpen = false;
   var dataOpen = false;
   var editingId = null;
   var expandedDays = {};
@@ -287,31 +334,46 @@
 
   // ---------- forecast ----------
 
-  function computeForecast(kind) {
-    var filtered = kind === "sleep"
+  function eventsOfKind(kind) {
+    return kind === "sleep"
       ? events.filter(function (e) { return e.type === "sleep_start"; })
       : events.filter(function (e) { return e.type === kind; });
-    var asc = sortedByTimeAsc(filtered);
+  }
 
-    var intervals = [];
+  // What actually happened, kept only so the plan can be checked against
+  // reality. Median, not mean, so one long night does not dominate.
+  function observedIntervalMs(kind) {
+    var asc = sortedByTimeAsc(eventsOfKind(kind));
+    var gaps = [];
     for (var i = 1; i < asc.length; i++) {
       var gap = new Date(asc[i].time) - new Date(asc[i - 1].time);
-      if (gap >= MIN_VALID_INTERVAL) intervals.push(gap);
+      if (gap >= MIN_VALID_INTERVAL) gaps.push(gap);
     }
+    var lastN = gaps.slice(-FORECAST_SAMPLE);
+    return lastN.length ? median(lastN) : null;
+  }
 
-    var lastN = intervals.slice(-FORECAST_SAMPLE);
-    var isEstimate = lastN.length === 0;
-    // Median, not mean: one unusually long night gap should not drag the
-    // whole prediction with it.
-    var interval = isEstimate ? DEFAULTS[kind] : median(lastN);
+  function customMinutesOf(event) {
+    var value = event && Number(event.nextMin);
+    return (value > 0 && value <= 24 * 60) ? Math.round(value) : null;
+  }
 
-    var lastEvent = asc.length ? asc[asc.length - 1] : null;
+  function plannedMinutesFor(kind, lastEvent) {
+    return customMinutesOf(lastEvent) || intervals[kind];
+  }
+
+  function computeForecast(kind) {
+    var ofKind = eventsOfKind(kind);
+    var lastEvent = ofKind.length ? sortedByTimeDesc(ofKind)[0] : null;
+    var plannedMin = plannedMinutesFor(kind, lastEvent);
     var baseTime = lastEvent ? new Date(lastEvent.time) : new Date();
 
     return {
       hasData: !!lastEvent,
-      isEstimate: isEstimate,
-      nextTime: new Date(baseTime.getTime() + interval)
+      plannedMin: plannedMin,
+      isCustom: !!customMinutesOf(lastEvent),
+      observedMs: observedIntervalMs(kind),
+      nextTime: new Date(baseTime.getTime() + plannedMin * MS_MIN)
     };
   }
 
@@ -342,16 +404,21 @@
 
       var f = computeForecast(item.kind);
       var diff = f.nextTime - now;
-      var timeHtml;
 
-      if (!f.hasData) {
-        timeHtml = '<span class="f-time">in ' + formatDuration(diff) + '</span>' +
-          ' <span class="f-estimate-tag">(estimate)</span>';
-      } else {
-        timeHtml = diff < 0
-          ? '<span class="f-time overdue">overdue by ' + formatDuration(-diff) + '</span>'
-          : '<span class="f-time">in ' + formatDuration(diff) + '</span>';
-        if (f.isEstimate) timeHtml += ' <span class="f-estimate-tag">(estimate)</span>';
+      var timeHtml = diff < 0
+        ? '<span class="f-time overdue">overdue by ' + formatDuration(-diff) + '</span>'
+        : '<span class="f-time">in ' + formatDuration(diff) + '</span>';
+      if (!f.hasData) timeHtml += ' <span class="f-estimate-tag">(nothing logged yet)</span>';
+
+      var note = f.isCustom
+        ? '<span class="f-custom">one-off ' + formatDuration(f.plannedMin * MS_MIN) + '</span>'
+        : 'planned every ' + formatDuration(intervals[item.kind] * MS_MIN);
+      // Say so when the routine has drifted away from the plan.
+      if (f.observedMs) {
+        var plannedMs = f.plannedMin * MS_MIN;
+        if (Math.abs(f.observedMs - plannedMs) / plannedMs > DRIFT_TOLERANCE) {
+          note += ' · actually averaging ' + formatDuration(f.observedMs);
+        }
       }
 
       div.innerHTML =
@@ -359,6 +426,7 @@
         '<div class="f-body">' +
           '<div class="f-type">' + item.label + ' · expected ' + formatWhen(f.nextTime) + '</div>' +
           '<div>' + timeHtml + '</div>' +
+          '<div class="f-note">' + note + '</div>' +
         '</div>';
       el.forecastList.appendChild(div);
     });
@@ -661,6 +729,122 @@
     if (warning) showManualNotice(warning + ". Add it so the sleep is counted correctly.", true);
   });
 
+  // ---------- "next up" prompt ----------
+
+  var nextUpTimer = null;
+  var nextUpKind = null;
+  var nextUpEventId = null;
+
+  function hideNextUp() {
+    clearTimeout(nextUpTimer);
+    el.nextUp.hidden = true;
+    nextUpKind = null;
+    nextUpEventId = null;
+  }
+
+  function chipChoices(currentMin) {
+    var list = CHIP_CHOICES.slice();
+    if (list.indexOf(currentMin) === -1) list.push(currentMin);
+    return list.sort(function (a, b) { return a - b; });
+  }
+
+  function renderNextUp() {
+    if (!nextUpKind) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) {
+      hideNextUp();
+      return;
+    }
+    var planned = plannedMinutesFor(nextUpKind, event);
+    var when = new Date(new Date(event.time).getTime() + planned * MS_MIN);
+
+    el.nextUpTitle.textContent =
+      KIND_META[nextUpKind].logged + " at " + formatClockTime(new Date(event.time));
+    el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
+      ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
+
+    el.nextUpChips.innerHTML = "";
+    chipChoices(planned).forEach(function (mins) {
+      var chip = document.createElement("button");
+      chip.className = "nextup-chip" + (mins === planned ? " selected" : "");
+      chip.setAttribute("data-min", String(mins));
+      chip.textContent = formatDuration(mins * MS_MIN);
+      el.nextUpChips.appendChild(chip);
+    });
+  }
+
+  function showNextUp(kind, eventId) {
+    nextUpKind = kind;
+    nextUpEventId = eventId;
+    el.nextUp.hidden = false;
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  }
+
+  el.nextUpClose.addEventListener("click", hideNextUp);
+
+  el.nextUpChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".nextup-chip");
+    if (!chip || !nextUpKind) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+
+    var mins = parseInt(chip.getAttribute("data-min"), 10);
+    // Picking the everyday plan means there is no exception to remember.
+    if (mins === intervals[nextUpKind]) delete event.nextMin;
+    else event.nextMin = mins;
+
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
+
+  // ---------- planned interval settings ----------
+
+  var settingsSelects = {
+    feed: document.getElementById("intervalFeed"),
+    diaper: document.getElementById("intervalDiaper"),
+    sleep: document.getElementById("intervalSleep")
+  };
+
+  function buildIntervalOptions() {
+    KINDS.forEach(function (kind) {
+      var select = settingsSelects[kind];
+      var choices = INTERVAL_CHOICES.slice();
+      if (choices.indexOf(intervals[kind]) === -1) choices.push(intervals[kind]);
+      choices.sort(function (a, b) { return a - b; });
+      select.innerHTML = "";
+      choices.forEach(function (mins) {
+        var option = document.createElement("option");
+        option.value = String(mins);
+        option.textContent = formatDuration(mins * MS_MIN);
+        select.appendChild(option);
+      });
+      select.value = String(intervals[kind]);
+    });
+  }
+
+  KINDS.forEach(function (kind) {
+    settingsSelects[kind].addEventListener("change", function () {
+      var value = parseInt(settingsSelects[kind].value, 10);
+      if (!(value > 0)) return;
+      intervals[kind] = value;
+      if (!saveIntervals()) return;
+      renderAll();
+      renderNextUp();
+      showToast(KIND_META[kind].label + " planned every " + formatDuration(value * MS_MIN));
+    });
+  });
+
+  el.settingsToggle.addEventListener("click", function () {
+    settingsOpen = !settingsOpen;
+    el.settingsPanel.hidden = !settingsOpen;
+    el.settingsToggleText.textContent = settingsOpen ? "Hide planned intervals" : "Planned intervals";
+  });
+
   // ---------- actions ----------
 
   function addEvent(type, isoTime) {
@@ -680,17 +864,22 @@
 
   el.btnFeed.addEventListener("click", function () {
     flashButton(el.btnFeed);
-    addEvent("feed");
+    var id = addEvent("feed");
+    if (id) showNextUp("feed", id);
   });
 
   el.btnDiaper.addEventListener("click", function () {
     flashButton(el.btnDiaper);
-    addEvent("diaper");
+    var id = addEvent("diaper");
+    if (id) showNextUp("diaper", id);
   });
 
   el.btnSleep.addEventListener("click", function () {
     flashButton(el.btnSleep);
-    addEvent(isSleepingNow() ? "sleep_end" : "sleep_start");
+    // Waking up does not start a new gap, so there is nothing to plan there.
+    var sleeping = isSleepingNow();
+    var id = addEvent(sleeping ? "sleep_end" : "sleep_start");
+    if (id && !sleeping) showNextUp("sleep", id);
   });
 
   // ---------- export ----------
@@ -725,7 +914,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min"]];
     sortedByTimeDesc(events).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -734,7 +923,8 @@
         eventTypeLabel(e.type),
         formatDateTimeLocal(new Date(e.time)),
         e.time,
-        duration ? Math.round(duration / MS_MIN) : ""
+        duration ? Math.round(duration / MS_MIN) : "",
+        customMinutesOf(e) || ""
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -794,7 +984,11 @@
 
   el.exportJson.addEventListener("click", function () {
     if (guardEmpty()) return;
-    var payload = JSON.stringify(sortedByTimeDesc(events), null, 2);
+    var payload = JSON.stringify({
+      name: loadName(),
+      intervals: intervals,
+      events: sortedByTimeDesc(events)
+    }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
       showToast("Backup saved");
     }
@@ -843,6 +1037,7 @@
     var iIso = header.indexOf("time_iso");
     var iTime = header.indexOf("time");
     var iLocal = header.indexOf("time_local");
+    var iNext = header.indexOf("next_interval_min");
     var timeCol = iIso >= 0 ? iIso : (iTime >= 0 ? iTime : iLocal);
     if (iType < 0 || timeCol < 0) return null;
 
@@ -852,7 +1047,8 @@
       out.push({
         id: iId >= 0 ? cells[iId] : "",
         type: (cells[iType] || "").trim(),
-        time: (cells[timeCol] || "").trim()
+        time: (cells[timeCol] || "").trim(),
+        nextMin: iNext >= 0 ? cells[iNext] : ""
       });
     }
     return out;
@@ -866,6 +1062,37 @@
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  function applyBackupSettings(text) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    if (!parsed || Array.isArray(parsed)) return;
+
+    if (parsed.intervals) {
+      var changed = false;
+      KINDS.forEach(function (kind) {
+        var value = Number(parsed.intervals[kind]);
+        if (value > 0 && value <= 24 * 60) {
+          intervals[kind] = Math.round(value);
+          changed = true;
+        }
+      });
+      if (changed) {
+        saveIntervals();
+        buildIntervalOptions();
+      }
+    }
+    // Only fill in a name when there isn't one, so restoring a file never
+    // quietly renames a baby that already has one.
+    if (parsed.name && !loadName().trim()) {
+      saveName(String(parsed.name));
+      el.babyName.value = String(parsed.name);
     }
   }
 
@@ -901,7 +1128,10 @@
       }
       seenIds[id] = true;
       seenKeys[raw.type + "|" + iso] = true;
-      events.push({ id: id, type: raw.type, time: iso });
+      var entry = { id: id, type: raw.type, time: iso };
+      var nextMin = Number(raw.nextMin);
+      if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
+      events.push(entry);
       added++;
     });
 
@@ -921,11 +1151,13 @@
       return;
     }
     var first = clean.charAt(0);
-    var list = (first === "[" || first === "{") ? parseJsonImport(clean) : parseCsvImport(clean);
+    var isJson = first === "[" || first === "{";
+    var list = isJson ? parseJsonImport(clean) : parseCsvImport(clean);
     if (!list) {
       showToast("Couldn't read that file");
       return;
     }
+    if (isJson) applyBackupSettings(clean);
     mergeImported(list);
   }
 
@@ -992,6 +1224,7 @@
     renderAll({ log: needLog });
   }
 
+  buildIntervalOptions();
   renderAll();
   setInterval(tick, 30 * 1000);
 
