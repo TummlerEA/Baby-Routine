@@ -233,6 +233,73 @@ body {
   font-weight: 400;
 }
 
+.manual-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.manual-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manual-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.manual-select,
+.manual-input {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 12px 12px;
+  min-height: 48px;
+  color-scheme: dark;
+}
+
+.manual-select:focus,
+.manual-input:focus {
+  outline: 2px solid var(--accent-sleep);
+  outline-offset: -1px;
+}
+
+.manual-error {
+  background: var(--danger-bg);
+  color: var(--overdue);
+  border: 1px solid #4a2626;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.manual-submit {
+  background: var(--accent-sleep);
+  color: #14121f;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px;
+  min-height: 52px;
+  cursor: pointer;
+}
+
+.manual-submit:active {
+  opacity: 0.85;
+}
+
 .log-toggle {
   width: 100%;
   background: none;
