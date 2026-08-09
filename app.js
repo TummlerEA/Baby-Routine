@@ -4,6 +4,7 @@
   var EVENTS_KEY = "baby-tracker-events";
   var NAME_KEY = "baby-tracker-name";
   var INTERVALS_KEY = "baby-tracker-intervals";
+  var DOB_KEY = "baby-tracker-dob";
   var MS_MIN = 60 * 1000;
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
@@ -41,11 +42,29 @@
   // Only flag the gap between plan and reality once it is worth mentioning.
   var DRIFT_TOLERANCE = 0.25;
 
+  // Measurements are ordinary events with a numeric value. They deliberately
+  // stay out of KINDS: predicting "next weight in 3h" would be nonsense.
+  var MEASURES = {
+    weight: { label: "Weight", icon: "⚖️", unit: "g",  step: "10",  max: 30000, decimals: 0 },
+    height: { label: "Length", icon: "📏", unit: "cm", step: "0.5", max: 150,   decimals: 1 },
+    temp:   { label: "Temperature", icon: "🌡", unit: "°C", step: "0.1", max: 45, decimals: 1 }
+  };
+  var MEASURE_ORDER = ["weight", "height", "temp"];
+
+  // Mirrors the guidance already in the app, which follows NHS advice.
+  var FEVER_UNDER_3M = 38;
+  var FEVER_OVER_3M = 39;
+  var LOW_TEMP = 36;
+  var FEVER_BANNER_MAX_AGE = 6 * 60 * 60 * 1000;
+
   var TYPE_META = {
     feed: { label: "Feed", icon: "🍼" },
     diaper: { label: "Nappy", icon: "🧷" },
     sleep_start: { label: "Fell asleep", icon: "🌙" },
-    sleep_end: { label: "Woke up", icon: "☀️" }
+    sleep_end: { label: "Woke up", icon: "☀️" },
+    weight: { label: "Weight", icon: "⚖️" },
+    height: { label: "Length", icon: "📏" },
+    temp: { label: "Temperature", icon: "🌡" }
   };
 
   var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -119,6 +138,54 @@
     }
   }
 
+  function loadDob() {
+    try {
+      return localStorage.getItem(DOB_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function saveDob(value) {
+    try {
+      if (value) localStorage.setItem(DOB_KEY, value);
+      else localStorage.removeItem(DOB_KEY);
+      hideError();
+    } catch (e) {
+      showError("Couldn't save the date of birth");
+    }
+  }
+
+  // Midnight local on the day of birth, or null when it is not set.
+  function dobDate() {
+    var raw = loadDob();
+    if (!raw) return null;
+    var parts = raw.split("-");
+    if (parts.length !== 3) return null;
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function ageDaysAt(time) {
+    var dob = dobDate();
+    if (!dob) return null;
+    var at = new Date(time);
+    var midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+    return Math.floor((midnight - dob) / MS_DAY);
+  }
+
+  function formatAge(days) {
+    if (days === null || days < 0) return "";
+    if (days < 14) return "day " + days;
+    var weeks = Math.floor(days / 7);
+    var rest = days % 7;
+    if (weeks < 9) {
+      return weeks + (weeks === 1 ? " week" : " weeks") + (rest ? " " + rest + (rest === 1 ? " day" : " days") : "");
+    }
+    var months = Math.floor(days / 30.44);
+    return months + (months === 1 ? " month" : " months");
+  }
+
   function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -141,6 +208,19 @@
     sleepBanner: document.getElementById("sleepBanner"),
     sleepDuration: document.getElementById("sleepDuration"),
     sleepWarning: document.getElementById("sleepWarning"),
+    tempBanner: document.getElementById("tempBanner"),
+    tempBannerLine: document.getElementById("tempBannerLine"),
+    tempBannerAdvice: document.getElementById("tempBannerAdvice"),
+    measureToggle: document.getElementById("measureToggle"),
+    measureToggleText: document.getElementById("measureToggleText"),
+    measurePanel: document.getElementById("measurePanel"),
+    measureCards: document.getElementById("measureCards"),
+    manualValueField: document.getElementById("manualValueField"),
+    manualValueLabel: document.getElementById("manualValueLabel"),
+    manualValue: document.getElementById("manualValue"),
+    manualValueEcho: document.getElementById("manualValueEcho"),
+    babyDob: document.getElementById("babyDob"),
+    babyDobEcho: document.getElementById("babyDobEcho"),
     btnFeed: document.getElementById("btnFeed"),
     btnDiaper: document.getElementById("btnDiaper"),
     btnSleep: document.getElementById("btnSleep"),
@@ -188,6 +268,7 @@
   var logOpen = false;
   var manualOpen = false;
   var infoOpen = false;
+  var measureOpen = false;
   var editingId = null;
   var expandedDays = {};
   var lastLogDayKey = null;
@@ -280,6 +361,70 @@
     if (key === dayKeyOf(now)) return "Today";
     if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "Yesterday";
     return formatDateHeader(date);
+  }
+
+  function formatMeasure(type, value) {
+    if (type === "weight") {
+      // 3470 -> "3.47 kg", 3200 -> "3.2 kg", 3000 -> "3 kg"
+      return String(Math.round(value) / 1000) + " kg";
+    }
+    var meta = MEASURES[type];
+    if (!meta) return String(value);
+    return value.toFixed(meta.decimals) + " " + meta.unit;
+  }
+
+  // Birth weights get quoted in pounds and ounces constantly in the UK.
+  function formatImperial(grams) {
+    var totalOunces = grams / 28.349523125;
+    var pounds = Math.floor(totalOunces / 16);
+    var ounces = Math.round(totalOunces - pounds * 16);
+    if (ounces === 16) {
+      pounds += 1;
+      ounces = 0;
+    }
+    return pounds + " lb " + ounces + " oz";
+  }
+
+  function measureValueOf(event) {
+    if (!event || !MEASURES[event.type]) return null;
+    var value = Number(event.value);
+    return (isFinite(value) && value > 0) ? value : null;
+  }
+
+  function measurementsOf(type) {
+    return sortedByTimeAsc(events.filter(function (e) {
+      return e.type === type && measureValueOf(e) !== null;
+    }));
+  }
+
+  function feverThresholdAt(time) {
+    var days = ageDaysAt(time);
+    // Without a date of birth, assume the youngest and therefore lowest bar.
+    if (days === null) return FEVER_UNDER_3M;
+    return days < 92 ? FEVER_UNDER_3M : FEVER_OVER_3M;
+  }
+
+  function temperatureConcern(event) {
+    var value = measureValueOf(event);
+    if (value === null || event.type !== "temp") return null;
+    var threshold = feverThresholdAt(event.time);
+    if (value >= threshold) {
+      return {
+        level: "high",
+        headline: formatMeasure("temp", value) + " is a high temperature",
+        advice: ageDaysAt(event.time) === null
+          ? "At 38°C or above in a baby under 3 months, call 999. Set the date of birth in Settings and this will use the right threshold for your baby's age."
+          : "Call 999 straight away for a baby this age. For anything less urgent, call NHS 111."
+      };
+    }
+    if (value < LOW_TEMP) {
+      return {
+        level: "low",
+        headline: formatMeasure("temp", value) + " is low",
+        advice: "A temperature below 36°C in a baby needs checking — call NHS 111, or 999 if they are also floppy, pale or hard to wake."
+      };
+    }
+    return null;
   }
 
   function eventTypeLabel(type) {
@@ -465,6 +610,109 @@
     el.btnSleep.classList.toggle("sleeping", sleeping);
   }
 
+  // ---------- measurements ----------
+
+  function measureLine(event) {
+    var value = measureValueOf(event);
+    if (value === null) return "";
+    var text = formatMeasure(event.type, value);
+    if (event.type === "weight") text += " · " + formatImperial(value);
+    return text;
+  }
+
+  function signed(delta, digits, unit) {
+    var rounded = Number(delta.toFixed(digits));
+    var sign = rounded > 0 ? "+" : "";
+    return sign + rounded.toFixed(digits) + unit;
+  }
+
+  function renderMeasureCards() {
+    el.measureCards.innerHTML = "";
+    MEASURE_ORDER.forEach(function (type) {
+      var meta = MEASURES[type];
+      var list = measurementsOf(type);
+      var card = document.createElement("div");
+      card.className = "measure-card" + (list.length ? "" : " is-empty");
+
+      if (!list.length) {
+        card.innerHTML =
+          '<span class="m-icon">' + meta.icon + '</span>' +
+          '<div class="m-body">' +
+            '<div class="m-label">' + meta.label + '</div>' +
+            '<div class="m-value">Nothing recorded yet</div>' +
+          '</div>';
+        el.measureCards.appendChild(card);
+        return;
+      }
+
+      var latest = list[list.length - 1];
+      var value = measureValueOf(latest);
+      var when = new Date(latest.time);
+      var subParts = [];
+
+      var age = ageDaysAt(latest.time);
+      subParts.push(formatDateHeader(when) + (age !== null ? " · " + formatAge(age) : ""));
+
+      if (list.length > 1) {
+        var previous = measureValueOf(list[list.length - 2]);
+        var delta = value - previous;
+        var digits = type === "weight" ? 0 : 1;
+        var unit = type === "weight" ? " g" : " " + meta.unit;
+        var cls = delta >= 0 ? "m-up" : "m-down";
+        subParts.push('<span class="' + cls + '">' + escapeHtml(signed(delta, digits, unit)) + '</span> since last');
+      }
+
+      // Weight against birth weight is what gets watched in the first weeks.
+      if (type === "weight") {
+        var birth = measureValueOf(list[0]);
+        if (list.length > 1 && birth) {
+          var pct = ((value - birth) / birth) * 100;
+          subParts.push(signed(pct, 1, "%") + " of birth weight");
+        }
+      }
+
+      card.innerHTML =
+        '<span class="m-icon">' + meta.icon + '</span>' +
+        '<div class="m-body">' +
+          '<div class="m-label">' + meta.label + '</div>' +
+          '<div class="m-value">' + escapeHtml(measureLine(latest)) + '</div>' +
+          '<div class="m-sub">' + subParts.join(" · ") + '</div>' +
+        '</div>';
+      el.measureCards.appendChild(card);
+    });
+  }
+
+  function renderMeasurements() {
+    el.measureToggleText.textContent = measureOpen ? "Hide measurements" : "Measurements";
+    el.measurePanel.hidden = !measureOpen;
+    if (measureOpen) renderMeasureCards();
+  }
+
+  function renderTempBanner() {
+    var temps = measurementsOf("temp");
+    var latest = temps.length ? temps[temps.length - 1] : null;
+    var concern = latest ? temperatureConcern(latest) : null;
+    // Only while it is recent — an old reading is history, not a live worry.
+    if (!concern || Date.now() - new Date(latest.time) > FEVER_BANNER_MAX_AGE) {
+      el.tempBanner.hidden = true;
+      return;
+    }
+    el.tempBannerLine.textContent = concern.headline + " (" + formatClockTime(new Date(latest.time)) + ")";
+    el.tempBannerAdvice.textContent = concern.advice;
+    el.tempBanner.hidden = false;
+  }
+
+  el.measureToggle.addEventListener("click", function () {
+    measureOpen = !measureOpen;
+    renderMeasurements();
+  });
+
+  document.querySelectorAll(".measure-add").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      startMeasurement(btn.getAttribute("data-measure"));
+    });
+  });
+
   // ---------- log ----------
 
   function groupByDay(descEvents) {
@@ -563,6 +811,8 @@
               '<div class="l-time">' + formatClockTime(d) + '</div>' +
               (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
+              (measureValueOf(e) !== null
+                ? '<div class="l-measure">' + escapeHtml(measureLine(e)) + '</div>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
             '</div>' +
             '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
@@ -670,12 +920,54 @@
     if (!isNappy) el.manualNappy.value = "";
   }
 
-  el.manualType.addEventListener("change", syncManualNappyField);
+  function syncManualValueField() {
+    var meta = MEASURES[el.manualType.value];
+    el.manualValueField.hidden = !meta;
+    if (!meta) {
+      el.manualValue.value = "";
+      el.manualValueEcho.textContent = "";
+      return;
+    }
+    el.manualValueLabel.textContent = meta.label + " in " + meta.unit;
+    el.manualValue.setAttribute("step", meta.step);
+    el.manualValue.setAttribute("max", String(meta.max));
+    renderValueEcho();
+  }
+
+  function renderValueEcho() {
+    var type = el.manualType.value;
+    var meta = MEASURES[type];
+    var value = Number(el.manualValue.value);
+    if (!meta || !el.manualValue.value || !isFinite(value) || value <= 0) {
+      el.manualValueEcho.textContent = "";
+      return;
+    }
+    if (type === "weight") {
+      el.manualValueEcho.textContent = formatMeasure(type, value) + " · " + formatImperial(value);
+      return;
+    }
+    if (type === "temp") {
+      var concern = temperatureConcern({ type: "temp", value: value, time: el.manualDateTime.value || new Date().toISOString() });
+      el.manualValueEcho.textContent = concern ? concern.headline : "";
+      return;
+    }
+    el.manualValueEcho.textContent = "";
+  }
+
+  el.manualValue.addEventListener("input", renderValueEcho);
+
+  function syncManualFields() {
+    syncManualNappyField();
+    syncManualValueField();
+  }
+
+  el.manualType.addEventListener("change", syncManualFields);
 
   function resetManualForm() {
     editingId = null;
     el.manualNappy.value = "";
-    syncManualNappyField();
+    el.manualValue.value = "";
+    syncManualFields();
     el.manualTitle.textContent = "New entry";
     el.manualSubmit.textContent = "Add entry";
     el.manualCancel.hidden = true;
@@ -691,12 +983,25 @@
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
     el.manualNappy.value = nappyOf(found) || "";
-    syncManualNappyField();
+    el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
+    syncManualFields();
     el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
     el.manualSubmit.textContent = "Save";
     el.manualCancel.hidden = false;
     hideManualNotice();
     el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function startMeasurement(type) {
+    if (!MEASURES[type]) return;
+    resetManualForm();
+    openManualPanel();
+    el.manualTitle.textContent = "New " + MEASURES[type].label.toLowerCase();
+    el.manualType.value = type;
+    syncManualFields();
+    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+    el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.manualValue.focus();
   }
 
   el.manualDateTime.value = toDateTimeLocalValue(new Date());
@@ -731,6 +1036,20 @@
       return;
     }
 
+    var measureMeta = MEASURES[type];
+    var measureValue = null;
+    if (measureMeta) {
+      measureValue = Number(el.manualValue.value);
+      if (!el.manualValue.value || !isFinite(measureValue) || measureValue <= 0) {
+        showManualNotice("Enter a " + measureMeta.label.toLowerCase() + " in " + measureMeta.unit);
+        return;
+      }
+      if (measureValue > measureMeta.max) {
+        showManualNotice("That looks too high for a " + measureMeta.label.toLowerCase() + " in " + measureMeta.unit);
+        return;
+      }
+    }
+
     hideManualNotice();
     var savedId;
 
@@ -749,6 +1068,8 @@
       target.time = picked.toISOString();
       if (type === "diaper" && NAPPY_TYPES[el.manualNappy.value]) target.nappy = el.manualNappy.value;
       else delete target.nappy;
+      if (measureMeta) target.value = measureValue;
+      else delete target.value;
       savedId = editingId;
       if (!saveEvents(events)) return;
       resetManualForm();
@@ -756,7 +1077,7 @@
       showToast("Entry updated");
     } else {
       savedId = addEvent(type, picked.toISOString(),
-        type === "diaper" ? el.manualNappy.value : "");
+        type === "diaper" ? el.manualNappy.value : "", measureValue);
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
@@ -769,6 +1090,13 @@
     // Backfilling history one record at a time easily produces a "fell
     // asleep" with no matching "woke up" - say so instead of silently
     // flipping the app into sleep mode.
+    var saved = events.filter(function (e) { return e.id === savedId; })[0];
+    var concern = saved ? temperatureConcern(saved) : null;
+    if (concern) {
+      showManualNotice(concern.headline + ". " + concern.advice);
+      return;
+    }
+
     var warning = analyzeSleep().warningById[savedId];
     if (warning) showManualNotice(warning + ". Add it so the sleep is counted correctly.", true);
   });
@@ -917,9 +1245,10 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy) {
+  function addEvent(type, isoTime, nappy, value) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
+    if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
     events.push(event);
     if (!saveEvents(events)) return null;
     renderAll();
@@ -985,7 +1314,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value"]];
     sortedByTimeDesc(events).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -996,7 +1325,8 @@
         e.time,
         duration ? Math.round(duration / MS_MIN) : "",
         customMinutesOf(e) || "",
-        nappyOf(e) || ""
+        nappyOf(e) || "",
+        measureValueOf(e) === null ? "" : e.value
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -1026,6 +1356,7 @@
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
+          (measureValueOf(e) !== null ? " — " + measureLine(e) : "") +
           " | " + (duration ? formatDuration(duration) : "—") + " |");
       });
       out.push("");
@@ -1059,6 +1390,7 @@
     if (guardEmpty()) return;
     var payload = JSON.stringify({
       name: loadName(),
+      dob: loadDob(),
       intervals: intervals,
       events: sortedByTimeDesc(events)
     }, null, 2);
@@ -1112,6 +1444,7 @@
     var iLocal = header.indexOf("time_local");
     var iNext = header.indexOf("next_interval_min");
     var iNappy = header.indexOf("nappy");
+    var iValue = header.indexOf("value");
     var timeCol = iIso >= 0 ? iIso : (iTime >= 0 ? iTime : iLocal);
     if (iType < 0 || timeCol < 0) return null;
 
@@ -1123,7 +1456,8 @@
         type: (cells[iType] || "").trim(),
         time: (cells[timeCol] || "").trim(),
         nextMin: iNext >= 0 ? cells[iNext] : "",
-        nappy: iNappy >= 0 ? (cells[iNappy] || "").trim() : ""
+        nappy: iNappy >= 0 ? (cells[iNappy] || "").trim() : "",
+        value: iValue >= 0 ? (cells[iValue] || "").trim() : ""
       });
     }
     return out;
@@ -1165,6 +1499,11 @@
     }
     // Only fill in a name when there isn't one, so restoring a file never
     // quietly renames a baby that already has one.
+    if (parsed.dob && !loadDob()) {
+      saveDob(String(parsed.dob));
+      el.babyDob.value = loadDob();
+      renderDobEcho();
+    }
     if (parsed.name && !loadName().trim()) {
       saveName(String(parsed.name));
       el.babyName.value = String(parsed.name);
@@ -1197,17 +1536,34 @@
       var iso = parsedTime.toISOString();
       // Ids arrive from a file, so keep only characters safe to put in markup.
       var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
-      if (!id) id = uuid();
-      if (seenIds[id] || seenKeys[raw.type + "|" + iso]) {
+      var contentKey = raw.type + "|" + iso;
+      // An id is the trustworthy duplicate signal. Falling back to type+time
+      // for entries that carry one would discard genuinely separate readings
+      // taken in the same minute, since the form records minutes only.
+      if (id) {
+        if (seenIds[id]) {
+          skipped++;
+          return;
+        }
+      } else if (seenKeys[contentKey]) {
         skipped++;
         return;
       }
+      if (!id) id = uuid();
       seenIds[id] = true;
-      seenKeys[raw.type + "|" + iso] = true;
+      seenKeys[contentKey] = true;
       var entry = { id: id, type: raw.type, time: iso };
       var nextMin = Number(raw.nextMin);
       if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
       if (raw.type === "diaper" && NAPPY_TYPES[raw.nappy]) entry.nappy = raw.nappy;
+      if (MEASURES[raw.type]) {
+        var measured = Number(raw.value);
+        if (!isFinite(measured) || measured <= 0) {
+          invalid++;
+          return;
+        }
+        entry.value = measured;
+      }
       events.push(entry);
       added++;
     });
@@ -1291,6 +1647,20 @@
     el.babyNameDisplay.classList.toggle("is-empty", !name);
   }
 
+  function renderDobEcho() {
+    var days = ageDaysAt(new Date());
+    el.babyDobEcho.textContent = days === null
+      ? "Not set — the app will assume the strictest temperature threshold."
+      : "Today: " + formatAge(days) + " old";
+  }
+
+  el.babyDob.value = loadDob();
+  el.babyDob.addEventListener("change", function () {
+    saveDob(el.babyDob.value);
+    renderDobEcho();
+    renderAll();
+  });
+
   el.babyName.value = loadName();
   el.babyName.addEventListener("input", function () {
     saveName(el.babyName.value);
@@ -1312,6 +1682,8 @@
     renderSleepBanner();
     renderSleepButton();
     renderForecast();
+    renderTempBanner();
+    renderMeasurements();
     if (withLog) renderLog();
   }
 
@@ -1323,7 +1695,8 @@
   }
 
   buildIntervalOptions();
-  syncManualNappyField();
+  syncManualFields();
+  renderDobEcho();
   renderAll();
   setInterval(tick, 30 * 1000);
 

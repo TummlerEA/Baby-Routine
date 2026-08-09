@@ -13,7 +13,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -43,6 +43,14 @@
         <span class="sleep-banner-body">
           <span>Asleep for <strong id="sleepDuration">—</strong></span>
           <span class="sleep-warning" id="sleepWarning" hidden>You may have forgotten to log the wake-up</span>
+        </span>
+      </section>
+
+      <section id="tempBanner" class="banner banner-fever" hidden>
+        <span class="sleep-icon">🌡</span>
+        <span class="sleep-banner-body">
+          <span id="tempBannerLine">—</span>
+          <span class="fever-advice" id="tempBannerAdvice"></span>
         </span>
       </section>
 
@@ -84,7 +92,7 @@
       <section class="manual-entry">
         <button class="log-toggle" id="manualToggle">
           <span class="log-icon">➕</span>
-          <span id="manualToggleText">Add a past entry</span>
+          <span id="manualToggleText">Add or edit an entry</span>
         </button>
         <div class="manual-panel" id="manualPanel" hidden>
           <div class="manual-title" id="manualTitle">New entry</div>
@@ -95,7 +103,15 @@
               <option value="diaper">Nappy</option>
               <option value="sleep_start">Fell asleep</option>
               <option value="sleep_end">Woke up</option>
+              <option value="weight">Weight</option>
+              <option value="height">Length</option>
+              <option value="temp">Temperature</option>
             </select>
+          </label>
+          <label class="manual-field" id="manualValueField" hidden>
+            <span class="manual-label" id="manualValueLabel">Value</span>
+            <input type="number" id="manualValue" class="manual-input" inputmode="decimal" step="any" min="0">
+            <span class="manual-echo" id="manualValueEcho"></span>
           </label>
           <label class="manual-field" id="manualNappyField" hidden>
             <span class="manual-label">What was in it?</span>
@@ -125,6 +141,22 @@
           <span id="logToggleText">Show history (0)</span>
         </button>
         <div class="log-list" id="logList" hidden></div>
+      </section>
+
+      <section class="measure-section">
+        <button class="log-toggle" id="measureToggle">
+          <span class="log-icon">📐</span>
+          <span id="measureToggleText">Measurements</span>
+        </button>
+        <div class="measure-panel" id="measurePanel" hidden>
+          <div class="measure-cards" id="measureCards"></div>
+          <div class="measure-actions">
+            <button class="data-btn measure-add" data-measure="weight">⚖️ Add weight</button>
+            <button class="data-btn measure-add" data-measure="height">📏 Add length</button>
+            <button class="data-btn measure-add" data-measure="temp">🌡 Add temperature</button>
+          </div>
+          <p class="settings-hint">Growth is plotted on the centile charts in your red book — that is what your health visitor uses. These are just the numbers and how they have changed.</p>
+        </div>
       </section>
 
       <section class="info-section">
@@ -214,6 +246,12 @@
             <span class="manual-label">Name</span>
             <input id="babyName" class="manual-input" type="text" maxlength="40" placeholder="Baby's name" autocomplete="off">
           </label>
+          <label class="manual-field">
+            <span class="manual-label">Date of birth</span>
+            <input id="babyDob" class="manual-input" type="date">
+            <span class="manual-echo" id="babyDobEcho"></span>
+          </label>
+          <p class="settings-hint">Used to show your baby's age, to work out weight change since birth, and to pick the right temperature threshold — under 3 months it is lower.</p>
         </div>
       </section>
 
@@ -249,7 +287,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 8</p>
+      <p class="data-version">Version 9</p>
 
     </main>
   </div>
@@ -261,6 +299,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
