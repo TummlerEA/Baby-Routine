@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- Baby Tracker. Free and open source under the MIT licence — see LICENSE.
+     SPDX-License-Identifier: MIT -->
 <html lang="en-GB">
 <head>
 <meta charset="UTF-8">
@@ -13,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -238,6 +240,24 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">⚖️</span> About</h2>
+        <div class="info-panel">
+
+          <article class="info-card">
+            <h3>Free and open source</h3>
+            <p>Baby Tracker is released under the <strong>MIT licence</strong>. You are free to use it, copy it, change it and pass it on — including commercially — as long as the copyright notice and the licence text travel with it. It comes with no warranty of any kind.</p>
+            <p>It is three files of plain HTML, CSS and JavaScript with no build step, short enough to read through in an evening. The source is at <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">github.com/TummlerEA/Baby-Routine</a>.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Your data stays yours</h3>
+            <p>There is no account, no server and no analytics. Everything you record lives in this browser's own storage and is never sent anywhere. That is a deliberate trade: total privacy in exchange for you keeping your own backups.</p>
+          </article>
+
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">💡</span> For new parents</h2>
         <div class="info-panel" id="infoPanel">
 
@@ -362,7 +382,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 10</p>
+      <p class="data-version">Version 11 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -374,6 +394,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

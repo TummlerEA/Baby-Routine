@@ -1,3 +1,5 @@
+/* Baby Tracker. Free and open source under the MIT licence — see LICENSE.
+   SPDX-License-Identifier: MIT */
 :root {
   --bg: #0b0c10;
   --bg-elevated: #15171c;
@@ -997,3 +999,8 @@ body {
 .gs-steps strong { color: var(--text); }
 
 #gsMore { text-align: center; }
+
+.info-card a,
+.data-version a {
+  color: var(--accent-sleep);
+}
