@@ -143,9 +143,6 @@
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
     nextUpClose: document.getElementById("nextUpClose"),
-    settingsToggle: document.getElementById("settingsToggle"),
-    settingsToggleText: document.getElementById("settingsToggleText"),
-    settingsPanel: document.getElementById("settingsPanel"),
     logToggle: document.getElementById("logToggle"),
     logToggleText: document.getElementById("logToggleText"),
     logList: document.getElementById("logList"),
@@ -161,9 +158,11 @@
     infoToggle: document.getElementById("infoToggle"),
     infoToggleText: document.getElementById("infoToggleText"),
     infoPanel: document.getElementById("infoPanel"),
-    dataToggle: document.getElementById("dataToggle"),
-    dataToggleText: document.getElementById("dataToggleText"),
-    dataPanel: document.getElementById("dataPanel"),
+    screenMain: document.getElementById("screenMain"),
+    screenSettings: document.getElementById("screenSettings"),
+    settingsOpenBtn: document.getElementById("settingsOpen"),
+    settingsBack: document.getElementById("settingsBack"),
+    babyNameDisplay: document.getElementById("babyNameDisplay"),
     exportCsv: document.getElementById("exportCsv"),
     exportMd: document.getElementById("exportMd"),
     exportJson: document.getElementById("exportJson"),
@@ -177,8 +176,6 @@
   var logOpen = false;
   var manualOpen = false;
   var infoOpen = false;
-  var settingsOpen = false;
-  var dataOpen = false;
   var editingId = null;
   var expandedDays = {};
   var lastLogDayKey = null;
@@ -839,12 +836,6 @@
     });
   });
 
-  el.settingsToggle.addEventListener("click", function () {
-    settingsOpen = !settingsOpen;
-    el.settingsPanel.hidden = !settingsOpen;
-    el.settingsToggleText.textContent = settingsOpen ? "Hide planned intervals" : "Planned intervals";
-  });
-
   // ---------- actions ----------
 
   function addEvent(type, isoTime) {
@@ -1093,6 +1084,7 @@
     if (parsed.name && !loadName().trim()) {
       saveName(String(parsed.name));
       el.babyName.value = String(parsed.name);
+      renderName();
     }
   }
 
@@ -1187,17 +1179,37 @@
     el.infoToggleText.textContent = infoOpen ? "Hide guidance" : "For new parents";
   });
 
-  el.dataToggle.addEventListener("click", function () {
-    dataOpen = !dataOpen;
-    el.dataPanel.hidden = !dataOpen;
-    el.dataToggleText.textContent = dataOpen ? "Hide export & backup" : "Export & backup";
-  });
+  // ---------- screens ----------
+
+  function showSettings(focusName) {
+    el.screenMain.hidden = true;
+    el.screenSettings.hidden = false;
+    window.scrollTo(0, 0);
+    if (focusName) el.babyName.focus();
+  }
+
+  function showMain() {
+    el.screenSettings.hidden = true;
+    el.screenMain.hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  el.settingsOpenBtn.addEventListener("click", function () { showSettings(false); });
+  el.settingsBack.addEventListener("click", showMain);
+  el.babyNameDisplay.addEventListener("click", function () { showSettings(true); });
 
   // ---------- name ----------
+
+  function renderName() {
+    var name = loadName().trim();
+    el.babyNameDisplay.textContent = name || "Baby's name";
+    el.babyNameDisplay.classList.toggle("is-empty", !name);
+  }
 
   el.babyName.value = loadName();
   el.babyName.addEventListener("input", function () {
     saveName(el.babyName.value);
+    renderName();
   });
 
   // ---------- clock & render ----------
@@ -1211,6 +1223,7 @@
   function renderAll(opts) {
     var withLog = !opts || opts.log !== false;
     renderClock();
+    renderName();
     renderSleepBanner();
     renderSleepButton();
     renderForecast();

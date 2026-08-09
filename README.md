@@ -18,7 +18,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **Undo on delete**: a deleted entry can be restored for seven seconds.
 - **Export and backup**: CSV (opens in Excel), Markdown (a readable report) and JSON (a full backup). Restoring from CSV or JSON adds entries to what you have and skips duplicates.
 - **Guidance for new parents**: how to read your baby's sleep phases, how to check they're breathing without waking them, the red flags that mean calling 999, and safer sleep basics.
-- Editable baby name.
+- **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
 - Dark theme with large touch targets, for one-handed use in the middle of the night.
 - Live clock; the screen refreshes the moment you return to the app.
 

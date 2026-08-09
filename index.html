@@ -13,204 +13,231 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
+
+<div id="errorBanner" class="banner banner-error" hidden></div>
+
 <div class="app">
 
-  <header class="topbar">
-    <div class="topbar-date" id="topDate">—</div>
-    <div class="topbar-clock" id="topClock">--:--</div>
-  </header>
+  <!-- ============ main screen ============ -->
+  <div class="screen" id="screenMain">
 
-  <main class="content">
-
-    <section class="name-row">
-      <input id="babyName" class="name-input" type="text" maxlength="40" placeholder="Baby's name" autocomplete="off" aria-label="Baby's name">
-    </section>
-
-    <div id="errorBanner" class="banner banner-error" hidden></div>
-
-    <section id="sleepBanner" class="banner banner-sleep" hidden>
-      <span class="sleep-icon">🌙</span>
-      <span class="sleep-banner-body">
-        <span>Asleep for <strong id="sleepDuration">—</strong></span>
-        <span class="sleep-warning" id="sleepWarning" hidden>You may have forgotten to log the wake-up</span>
-      </span>
-    </section>
-
-    <section class="actions">
-      <button class="action-btn" id="btnFeed" data-type="feed">
-        <span class="action-icon">🍼</span>
-        <span class="action-label">Feed</span>
-      </button>
-      <button class="action-btn" id="btnDiaper" data-type="diaper">
-        <span class="action-icon">🧷</span>
-        <span class="action-label">Nappy</span>
-      </button>
-      <button class="action-btn" id="btnSleep" data-type="sleep">
-        <span class="action-icon">🌙</span>
-        <span class="action-label" id="sleepLabel">Sleep</span>
-      </button>
-    </section>
-
-    <section class="nextup" id="nextUp" hidden>
-      <div class="nextup-head">
-        <span class="nextup-title" id="nextUpTitle">Feed logged</span>
-        <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
+    <header class="topbar">
+      <div class="topbar-date" id="topDate">—</div>
+      <div class="topbar-right">
+        <span class="topbar-clock" id="topClock">--:--</span>
+        <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
       </div>
-      <div class="nextup-line" id="nextUpLine">Next at —</div>
-      <div class="nextup-chips" id="nextUpChips"></div>
-    </section>
+    </header>
 
-    <section class="forecast">
-      <h2 class="section-title"><span class="section-icon">📈</span> What's next</h2>
-      <div class="forecast-list" id="forecastList"></div>
-    </section>
+    <main class="content">
 
-    <section class="manual-entry">
-      <button class="log-toggle" id="manualToggle">
-        <span class="log-icon">➕</span>
-        <span id="manualToggleText">Add a past entry</span>
-      </button>
-      <div class="manual-panel" id="manualPanel" hidden>
-        <div class="manual-title" id="manualTitle">New entry</div>
-        <label class="manual-field">
-          <span class="manual-label">Event type</span>
-          <select id="manualType" class="manual-select">
-            <option value="feed">Feed</option>
-            <option value="diaper">Nappy</option>
-            <option value="sleep_start">Fell asleep</option>
-            <option value="sleep_end">Woke up</option>
-          </select>
-        </label>
-        <label class="manual-field">
-          <span class="manual-label">Date and time</span>
-          <input type="datetime-local" id="manualDateTime" class="manual-input">
-        </label>
-        <div id="manualError" class="manual-error" hidden></div>
-        <div class="manual-buttons">
-          <button class="manual-submit" id="manualSubmit">Add entry</button>
-          <button class="manual-cancel" id="manualCancel" hidden>Cancel</button>
+      <section class="name-row">
+        <button class="name-display" id="babyNameDisplay">Baby's name</button>
+      </section>
+
+      <section id="sleepBanner" class="banner banner-sleep" hidden>
+        <span class="sleep-icon">🌙</span>
+        <span class="sleep-banner-body">
+          <span>Asleep for <strong id="sleepDuration">—</strong></span>
+          <span class="sleep-warning" id="sleepWarning" hidden>You may have forgotten to log the wake-up</span>
+        </span>
+      </section>
+
+      <section class="actions">
+        <button class="action-btn" id="btnFeed" data-type="feed">
+          <span class="action-icon">🍼</span>
+          <span class="action-label">Feed</span>
+        </button>
+        <button class="action-btn" id="btnDiaper" data-type="diaper">
+          <span class="action-icon">🧷</span>
+          <span class="action-label">Nappy</span>
+        </button>
+        <button class="action-btn" id="btnSleep" data-type="sleep">
+          <span class="action-icon">🌙</span>
+          <span class="action-label" id="sleepLabel">Sleep</span>
+        </button>
+      </section>
+
+      <section class="nextup" id="nextUp" hidden>
+        <div class="nextup-head">
+          <span class="nextup-title" id="nextUpTitle">Feed logged</span>
+          <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
-      </div>
-    </section>
+        <div class="nextup-line" id="nextUpLine">Next at —</div>
+        <div class="nextup-chips" id="nextUpChips"></div>
+      </section>
 
-    <section class="log">
-      <button class="log-toggle" id="logToggle">
-        <span class="log-icon">🕐</span>
-        <span id="logToggleText">Show history (0)</span>
-      </button>
-      <div class="log-list" id="logList" hidden></div>
-    </section>
+      <section class="forecast">
+        <h2 class="section-title"><span class="section-icon">📈</span> What's next</h2>
+        <div class="forecast-list" id="forecastList"></div>
+      </section>
 
-    <section class="info-section">
-      <button class="log-toggle" id="infoToggle">
-        <span class="log-icon">💡</span>
-        <span id="infoToggleText">For new parents</span>
-      </button>
-      <div class="info-panel" id="infoPanel" hidden>
+      <section class="manual-entry">
+        <button class="log-toggle" id="manualToggle">
+          <span class="log-icon">➕</span>
+          <span id="manualToggleText">Add a past entry</span>
+        </button>
+        <div class="manual-panel" id="manualPanel" hidden>
+          <div class="manual-title" id="manualTitle">New entry</div>
+          <label class="manual-field">
+            <span class="manual-label">Event type</span>
+            <select id="manualType" class="manual-select">
+              <option value="feed">Feed</option>
+              <option value="diaper">Nappy</option>
+              <option value="sleep_start">Fell asleep</option>
+              <option value="sleep_end">Woke up</option>
+            </select>
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Date and time</span>
+            <input type="datetime-local" id="manualDateTime" class="manual-input">
+          </label>
+          <div id="manualError" class="manual-error" hidden></div>
+          <div class="manual-buttons">
+            <button class="manual-submit" id="manualSubmit">Add entry</button>
+            <button class="manual-cancel" id="manualCancel" hidden>Cancel</button>
+          </div>
+        </div>
+      </section>
 
-        <article class="info-card">
-          <h3>Reading your baby's sleep</h3>
-          <p>Newborns spend about half their sleep in <strong>active sleep</strong>, and it can look alarming when you don't know what you're seeing.</p>
-          <ul>
-            <li><strong>Active sleep (REM).</strong> Eyelids flutter, the face makes grimaces and half-smiles, arms and legs twitch, breathing is irregular, and there are little grunts and squeaks. Your baby is asleep. Picking them up now often wakes them properly — most babies settle again on their own.</li>
-            <li><strong>Quiet sleep.</strong> The body is still, the face relaxed, breathing steady and even. This is the deep phase, and they are much harder to wake.</li>
-          </ul>
-          <p>Sleep cycles are short — roughly 40 to 50 minutes — so babies surface frequently. That is normal, not a sign anything is wrong.</p>
-        </article>
+      <section class="log">
+        <button class="log-toggle" id="logToggle">
+          <span class="log-icon">🕐</span>
+          <span id="logToggleText">Show history (0)</span>
+        </button>
+        <div class="log-list" id="logList" hidden></div>
+      </section>
 
-        <article class="info-card">
-          <h3>Checking they're breathing — without waking them</h3>
-          <ul>
-            <li>Watch the chest and tummy rise and fall for half a minute. This is usually all you need, and it wakes nobody.</li>
-            <li>If you want more reassurance, <strong>warm your hand first</strong>, then rest it very lightly on their chest or back. A cold hand or firm pressure will wake them.</li>
-            <li>Do it during quiet sleep if you can. In active sleep the twitching and uneven breathing can worry you for no reason.</li>
-          </ul>
-          <p><strong>What's normal for a newborn:</strong> around 30 to 60 breaths a minute, and an uneven rhythm — a few quick breaths, then a pause of up to about 5 seconds, then breathing resumes. This is called periodic breathing and it settles as they grow.</p>
-        </article>
+      <section class="info-section">
+        <button class="log-toggle" id="infoToggle">
+          <span class="log-icon">💡</span>
+          <span id="infoToggleText">For new parents</span>
+        </button>
+        <div class="info-panel" id="infoPanel" hidden>
 
-        <article class="info-card info-card-urgent">
-          <h3>⚠ When to call 999 straight away</h3>
-          <ul>
-            <li>A pause in breathing longer than 20 seconds, or any pause where they go pale, blue, grey or floppy</li>
-            <li>Blue or grey lips, tongue or face</li>
-            <li>Struggling to breathe: nostrils flaring, grunting with every breath, or the skin sucking in under and between the ribs</li>
-            <li>Limp, unresponsive, or very difficult to wake</li>
-            <li>A temperature of 38°C or higher in a baby under 3 months</li>
-          </ul>
-          <p>For anything that worries you but isn't an emergency, call <strong>NHS 111</strong>, or speak to your midwife, health visitor or GP. You know your baby — if something feels wrong, get it checked.</p>
-        </article>
+          <article class="info-card">
+            <h3>Reading your baby's sleep</h3>
+            <p>Newborns spend about half their sleep in <strong>active sleep</strong>, and it can look alarming when you don't know what you're seeing.</p>
+            <ul>
+              <li><strong>Active sleep (REM).</strong> Eyelids flutter, the face makes grimaces and half-smiles, arms and legs twitch, breathing is irregular, and there are little grunts and squeaks. Your baby is asleep. Picking them up now often wakes them properly — most babies settle again on their own.</li>
+              <li><strong>Quiet sleep.</strong> The body is still, the face relaxed, breathing steady and even. This is the deep phase, and they are much harder to wake.</li>
+            </ul>
+            <p>Sleep cycles are short — roughly 40 to 50 minutes — so babies surface frequently. That is normal, not a sign anything is wrong.</p>
+          </article>
 
-        <article class="info-card">
-          <h3>Safer sleep basics</h3>
-          <ul>
-            <li>On their <strong>back</strong> for every sleep, day and night</li>
-            <li>Feet at the foot of the cot, with blankets tucked no higher than the shoulders</li>
-            <li>A firm, flat mattress. No pillows, duvets, cot bumpers or soft toys</li>
-            <li>Room temperature between 16°C and 20°C, with light layers or a sleeping bag. No hat indoors</li>
-            <li>Sleep in the same room as your baby for the first 6 months</li>
-            <li>Never sleep with your baby on a sofa or an armchair</li>
-            <li>Keep the room and the car smoke-free</li>
-          </ul>
-          <p>This follows the guidance from The Lullaby Trust and the NHS, which are worth reading in full.</p>
-        </article>
+          <article class="info-card">
+            <h3>Checking they're breathing — without waking them</h3>
+            <ul>
+              <li>Watch the chest and tummy rise and fall for half a minute. This is usually all you need, and it wakes nobody.</li>
+              <li>If you want more reassurance, <strong>warm your hand first</strong>, then rest it very lightly on their chest or back. A cold hand or firm pressure will wake them.</li>
+              <li>Do it during quiet sleep if you can. In active sleep the twitching and uneven breathing can worry you for no reason.</li>
+            </ul>
+            <p><strong>What's normal for a newborn:</strong> around 30 to 60 breaths a minute, and an uneven rhythm — a few quick breaths, then a pause of up to about 5 seconds, then breathing resumes. This is called periodic breathing and it settles as they grow.</p>
+          </article>
 
-        <article class="info-card">
-          <h3>Feeds and nappies, roughly</h3>
-          <ul>
-            <li>Newborns commonly feed 8 to 12 times in 24 hours, and rarely on a tidy schedule. Several feeds bunched together in the evening is normal.</li>
-            <li>From about day 5, six or more properly wet nappies a day is a good sign they're getting enough.</li>
-            <li>Steady weight gain and wet nappies tell you far more than any clock does.</li>
-          </ul>
-        </article>
+          <article class="info-card info-card-urgent">
+            <h3>⚠ When to call 999 straight away</h3>
+            <ul>
+              <li>A pause in breathing longer than 20 seconds, or any pause where they go pale, blue, grey or floppy</li>
+              <li>Blue or grey lips, tongue or face</li>
+              <li>Struggling to breathe: nostrils flaring, grunting with every breath, or the skin sucking in under and between the ribs</li>
+              <li>Limp, unresponsive, or very difficult to wake</li>
+              <li>A temperature of 38°C or higher in a baby under 3 months</li>
+            </ul>
+            <p>For anything that worries you but isn't an emergency, call <strong>NHS 111</strong>, or speak to your midwife, health visitor or GP. You know your baby — if something feels wrong, get it checked.</p>
+          </article>
 
-        <p class="info-disclaimer">The predictions in this app are simply an average of what your baby has already done — they are a pattern, not a schedule. Feed your baby when they ask, not when the countdown says so. This page is general information, not medical advice.</p>
+          <article class="info-card">
+            <h3>Safer sleep basics</h3>
+            <ul>
+              <li>On their <strong>back</strong> for every sleep, day and night</li>
+              <li>Feet at the foot of the cot, with blankets tucked no higher than the shoulders</li>
+              <li>A firm, flat mattress. No pillows, duvets, cot bumpers or soft toys</li>
+              <li>Room temperature between 16°C and 20°C, with light layers or a sleeping bag. No hat indoors</li>
+              <li>Sleep in the same room as your baby for the first 6 months</li>
+              <li>Never sleep with your baby on a sofa or an armchair</li>
+              <li>Keep the room and the car smoke-free</li>
+            </ul>
+            <p>This follows the guidance from The Lullaby Trust and the NHS, which are worth reading in full.</p>
+          </article>
 
-      </div>
-    </section>
+          <article class="info-card">
+            <h3>Feeds and nappies, roughly</h3>
+            <ul>
+              <li>Newborns commonly feed 8 to 12 times in 24 hours, and rarely on a tidy schedule. Several feeds bunched together in the evening is normal.</li>
+              <li>From about day 5, six or more properly wet nappies a day is a good sign they're getting enough.</li>
+              <li>Steady weight gain and wet nappies tell you far more than any clock does.</li>
+            </ul>
+          </article>
 
-    <section class="settings-section">
-      <button class="log-toggle" id="settingsToggle">
-        <span class="log-icon">⚙️</span>
-        <span id="settingsToggleText">Planned intervals</span>
-      </button>
-      <div class="settings-panel" id="settingsPanel" hidden>
-        <p class="settings-intro">How often you plan each one to happen. Predictions are built from these, so they match your routine from the very first entry rather than waiting for a pattern to emerge.</p>
-        <label class="settings-row">
-          <span class="settings-label">🍼 Feed every</span>
-          <select class="settings-select" id="intervalFeed" data-kind="feed"></select>
-        </label>
-        <label class="settings-row">
-          <span class="settings-label">🧷 Nappy every</span>
-          <select class="settings-select" id="intervalDiaper" data-kind="diaper"></select>
-        </label>
-        <label class="settings-row">
-          <span class="settings-label">🌙 Sleep every</span>
-          <select class="settings-select" id="intervalSleep" data-kind="sleep"></select>
-        </label>
-        <p class="settings-hint">These are your everyday defaults. After logging something you can set a different gap just for that one time — handy for a long night stretch.</p>
-      </div>
-    </section>
+          <p class="info-disclaimer">The predictions in this app are simply an average of what your baby has already done — they are a pattern, not a schedule. Feed your baby when they ask, not when the countdown says so. This page is general information, not medical advice.</p>
 
-    <section class="data-section">
-      <button class="log-toggle" id="dataToggle">
-        <span class="log-icon">💾</span>
-        <span id="dataToggleText">Export &amp; backup</span>
-      </button>
-      <div class="data-panel" id="dataPanel" hidden>
-        <button class="data-btn" id="exportCsv">Download CSV — for spreadsheets</button>
-        <button class="data-btn" id="exportMd">Download Markdown — readable report</button>
-        <button class="data-btn" id="exportJson">Download JSON — full backup</button>
-        <button class="data-btn data-btn-import" id="importBtn">Restore from a file</button>
-        <input type="file" id="importFile" accept=".csv,.json,text/csv,application/json" hidden>
-        <p class="data-hint">Everything is stored in this browser only. Clearing site data or changing phone will delete it, so save a backup now and then. Restoring <strong>adds</strong> entries to what you already have and skips anything it has seen before.</p>
-        <p class="data-version">Version 6</p>
-      </div>
-    </section>
+        </div>
+      </section>
 
-  </main>
+    </main>
+  </div>
+
+  <!-- ============ settings screen ============ -->
+  <div class="screen" id="screenSettings" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="settingsBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Settings</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">👶</span> Baby</h2>
+        <div class="settings-panel">
+          <label class="manual-field">
+            <span class="manual-label">Name</span>
+            <input id="babyName" class="manual-input" type="text" maxlength="40" placeholder="Baby's name" autocomplete="off">
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">⏱</span> Planned intervals</h2>
+        <div class="settings-panel">
+          <p class="settings-intro">How often you plan each one to happen. Predictions are built from these, so they match your routine from the very first entry rather than waiting for a pattern to emerge.</p>
+          <label class="settings-row">
+            <span class="settings-label">🍼 Feed every</span>
+            <select class="settings-select" id="intervalFeed" data-kind="feed"></select>
+          </label>
+          <label class="settings-row">
+            <span class="settings-label">🧷 Nappy every</span>
+            <select class="settings-select" id="intervalDiaper" data-kind="diaper"></select>
+          </label>
+          <label class="settings-row">
+            <span class="settings-label">🌙 Sleep every</span>
+            <select class="settings-select" id="intervalSleep" data-kind="sleep"></select>
+          </label>
+          <p class="settings-hint">These are your everyday defaults. After logging something you can set a different gap just for that one time — handy for a long night stretch.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">💾</span> Export &amp; backup</h2>
+        <div class="data-panel">
+          <button class="data-btn" id="exportCsv">Download CSV — for spreadsheets</button>
+          <button class="data-btn" id="exportMd">Download Markdown — readable report</button>
+          <button class="data-btn" id="exportJson">Download JSON — full backup</button>
+          <button class="data-btn data-btn-import" id="importBtn">Restore from a file</button>
+          <input type="file" id="importFile" accept=".csv,.json,text/csv,application/json" hidden>
+          <p class="data-hint">Everything is stored in this browser only. Clearing site data or changing phone will delete it, so save a backup now and then. Restoring <strong>adds</strong> entries to what you already have and skips anything it has seen before.</p>
+        </div>
+      </section>
+
+      <p class="data-version">Version 7</p>
+
+    </main>
+  </div>
+
 </div>
 
 <div class="toast" id="toast" hidden>
@@ -218,6 +245,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
