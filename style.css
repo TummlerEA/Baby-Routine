@@ -580,3 +580,69 @@ body {
 }
 
 .toast-action:active { opacity: 0.7; }
+
+/* ---------- info block for new parents ---------- */
+
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.info-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.info-card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.info-card p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.info-card p:last-child { margin-bottom: 0; }
+
+.info-card ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-card ul:last-child { margin-bottom: 0; }
+
+.info-card li {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.info-card strong { color: var(--text); }
+
+.info-card-urgent {
+  background: #2a1a1a;
+  border-color: #5c2f2f;
+}
+
+.info-card-urgent h3 { color: var(--overdue); }
+
+.info-card-urgent strong { color: var(--overdue); }
+
+.info-disclaimer {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  margin: 2px 4px 0;
+}

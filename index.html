@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en-GB">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0c10">
-<title>Baby Tracker — трекер режима малыша</title>
+<title>Baby Tracker — feeds, nappies and sleep</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👶</text></svg>">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%230b0c10%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 text-anchor=%22middle%22>👶</text></svg>">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Малышка">
+<meta name="apple-mobile-web-app-title" content="Baby">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
   <main class="content">
 
     <section class="name-row">
-      <input id="babyName" class="name-input" type="text" maxlength="40" placeholder="Имя малыша" autocomplete="off" aria-label="Имя малыша">
+      <input id="babyName" class="name-input" type="text" maxlength="40" placeholder="Baby's name" autocomplete="off" aria-label="Baby's name">
     </section>
 
     <div id="errorBanner" class="banner banner-error" hidden></div>
@@ -31,55 +31,55 @@
     <section id="sleepBanner" class="banner banner-sleep" hidden>
       <span class="sleep-icon">🌙</span>
       <span class="sleep-banner-body">
-        <span>Спит уже <strong id="sleepDuration">—</strong></span>
-        <span class="sleep-warning" id="sleepWarning" hidden>Возможно, забыли отметить пробуждение</span>
+        <span>Asleep for <strong id="sleepDuration">—</strong></span>
+        <span class="sleep-warning" id="sleepWarning" hidden>You may have forgotten to log the wake-up</span>
       </span>
     </section>
 
     <section class="actions">
       <button class="action-btn" id="btnFeed" data-type="feed">
         <span class="action-icon">🍼</span>
-        <span class="action-label">Кормление</span>
+        <span class="action-label">Feed</span>
       </button>
       <button class="action-btn" id="btnDiaper" data-type="diaper">
         <span class="action-icon">🧷</span>
-        <span class="action-label">Подгузник</span>
+        <span class="action-label">Nappy</span>
       </button>
       <button class="action-btn" id="btnSleep" data-type="sleep">
         <span class="action-icon">🌙</span>
-        <span class="action-label" id="sleepLabel">Уснула</span>
+        <span class="action-label" id="sleepLabel">Sleep</span>
       </button>
     </section>
 
     <section class="forecast">
-      <h2 class="section-title"><span class="section-icon">📈</span> Прогноз</h2>
+      <h2 class="section-title"><span class="section-icon">📈</span> What's next</h2>
       <div class="forecast-list" id="forecastList"></div>
     </section>
 
     <section class="manual-entry">
       <button class="log-toggle" id="manualToggle">
         <span class="log-icon">➕</span>
-        <span id="manualToggleText">Добавить запись задним числом</span>
+        <span id="manualToggleText">Add a past entry</span>
       </button>
       <div class="manual-panel" id="manualPanel" hidden>
-        <div class="manual-title" id="manualTitle">Новая запись</div>
+        <div class="manual-title" id="manualTitle">New entry</div>
         <label class="manual-field">
-          <span class="manual-label">Тип события</span>
+          <span class="manual-label">Event type</span>
           <select id="manualType" class="manual-select">
-            <option value="feed">Кормление</option>
-            <option value="diaper">Подгузник</option>
-            <option value="sleep_start">Уснула</option>
-            <option value="sleep_end">Проснулась</option>
+            <option value="feed">Feed</option>
+            <option value="diaper">Nappy</option>
+            <option value="sleep_start">Fell asleep</option>
+            <option value="sleep_end">Woke up</option>
           </select>
         </label>
         <label class="manual-field">
-          <span class="manual-label">Дата и время</span>
+          <span class="manual-label">Date and time</span>
           <input type="datetime-local" id="manualDateTime" class="manual-input">
         </label>
         <div id="manualError" class="manual-error" hidden></div>
         <div class="manual-buttons">
-          <button class="manual-submit" id="manualSubmit">Добавить запись</button>
-          <button class="manual-cancel" id="manualCancel" hidden>Отмена</button>
+          <button class="manual-submit" id="manualSubmit">Add entry</button>
+          <button class="manual-cancel" id="manualCancel" hidden>Cancel</button>
         </div>
       </div>
     </section>
@@ -87,23 +87,90 @@
     <section class="log">
       <button class="log-toggle" id="logToggle">
         <span class="log-icon">🕐</span>
-        <span id="logToggleText">Показать журнал (0)</span>
+        <span id="logToggleText">Show history (0)</span>
       </button>
       <div class="log-list" id="logList" hidden></div>
+    </section>
+
+    <section class="info-section">
+      <button class="log-toggle" id="infoToggle">
+        <span class="log-icon">💡</span>
+        <span id="infoToggleText">For new parents</span>
+      </button>
+      <div class="info-panel" id="infoPanel" hidden>
+
+        <article class="info-card">
+          <h3>Reading your baby's sleep</h3>
+          <p>Newborns spend about half their sleep in <strong>active sleep</strong>, and it can look alarming when you don't know what you're seeing.</p>
+          <ul>
+            <li><strong>Active sleep (REM).</strong> Eyelids flutter, the face makes grimaces and half-smiles, arms and legs twitch, breathing is irregular, and there are little grunts and squeaks. Your baby is asleep. Picking them up now often wakes them properly — most babies settle again on their own.</li>
+            <li><strong>Quiet sleep.</strong> The body is still, the face relaxed, breathing steady and even. This is the deep phase, and they are much harder to wake.</li>
+          </ul>
+          <p>Sleep cycles are short — roughly 40 to 50 minutes — so babies surface frequently. That is normal, not a sign anything is wrong.</p>
+        </article>
+
+        <article class="info-card">
+          <h3>Checking they're breathing — without waking them</h3>
+          <ul>
+            <li>Watch the chest and tummy rise and fall for half a minute. This is usually all you need, and it wakes nobody.</li>
+            <li>If you want more reassurance, <strong>warm your hand first</strong>, then rest it very lightly on their chest or back. A cold hand or firm pressure will wake them.</li>
+            <li>Do it during quiet sleep if you can. In active sleep the twitching and uneven breathing can worry you for no reason.</li>
+          </ul>
+          <p><strong>What's normal for a newborn:</strong> around 30 to 60 breaths a minute, and an uneven rhythm — a few quick breaths, then a pause of up to about 5 seconds, then breathing resumes. This is called periodic breathing and it settles as they grow.</p>
+        </article>
+
+        <article class="info-card info-card-urgent">
+          <h3>⚠ When to call 999 straight away</h3>
+          <ul>
+            <li>A pause in breathing longer than 20 seconds, or any pause where they go pale, blue, grey or floppy</li>
+            <li>Blue or grey lips, tongue or face</li>
+            <li>Struggling to breathe: nostrils flaring, grunting with every breath, or the skin sucking in under and between the ribs</li>
+            <li>Limp, unresponsive, or very difficult to wake</li>
+            <li>A temperature of 38°C or higher in a baby under 3 months</li>
+          </ul>
+          <p>For anything that worries you but isn't an emergency, call <strong>NHS 111</strong>, or speak to your midwife, health visitor or GP. You know your baby — if something feels wrong, get it checked.</p>
+        </article>
+
+        <article class="info-card">
+          <h3>Safer sleep basics</h3>
+          <ul>
+            <li>On their <strong>back</strong> for every sleep, day and night</li>
+            <li>Feet at the foot of the cot, with blankets tucked no higher than the shoulders</li>
+            <li>A firm, flat mattress. No pillows, duvets, cot bumpers or soft toys</li>
+            <li>Room temperature between 16°C and 20°C, with light layers or a sleeping bag. No hat indoors</li>
+            <li>Sleep in the same room as your baby for the first 6 months</li>
+            <li>Never sleep with your baby on a sofa or an armchair</li>
+            <li>Keep the room and the car smoke-free</li>
+          </ul>
+          <p>This follows the guidance from The Lullaby Trust and the NHS, which are worth reading in full.</p>
+        </article>
+
+        <article class="info-card">
+          <h3>Feeds and nappies, roughly</h3>
+          <ul>
+            <li>Newborns commonly feed 8 to 12 times in 24 hours, and rarely on a tidy schedule. Several feeds bunched together in the evening is normal.</li>
+            <li>From about day 5, six or more properly wet nappies a day is a good sign they're getting enough.</li>
+            <li>Steady weight gain and wet nappies tell you far more than any clock does.</li>
+          </ul>
+        </article>
+
+        <p class="info-disclaimer">The predictions in this app are simply an average of what your baby has already done — they are a pattern, not a schedule. Feed your baby when they ask, not when the countdown says so. This page is general information, not medical advice.</p>
+
+      </div>
     </section>
 
     <section class="data-section">
       <button class="log-toggle" id="dataToggle">
         <span class="log-icon">💾</span>
-        <span id="dataToggleText">Экспорт и импорт</span>
+        <span id="dataToggleText">Export &amp; backup</span>
       </button>
       <div class="data-panel" id="dataPanel" hidden>
-        <button class="data-btn" id="exportCsv">Скачать CSV — для таблиц и врача</button>
-        <button class="data-btn" id="exportMd">Скачать Markdown — читаемый отчёт</button>
-        <button class="data-btn" id="exportJson">Скачать JSON — резервная копия</button>
-        <button class="data-btn data-btn-import" id="importBtn">Загрузить из файла</button>
+        <button class="data-btn" id="exportCsv">Download CSV — for spreadsheets</button>
+        <button class="data-btn" id="exportMd">Download Markdown — readable report</button>
+        <button class="data-btn" id="exportJson">Download JSON — full backup</button>
+        <button class="data-btn data-btn-import" id="importBtn">Restore from a file</button>
         <input type="file" id="importFile" accept=".csv,.json,text/csv,application/json" hidden>
-        <p class="data-hint">Данные хранятся только в этом браузере. Если очистить данные сайта или сменить телефон — записи пропадут, поэтому иногда сохраняйте резервную копию. При загрузке записи <strong>добавляются</strong> к существующим, повторы пропускаются.</p>
+        <p class="data-hint">Everything is stored in this browser only. Clearing site data or changing phone will delete it, so save a backup now and then. Restoring <strong>adds</strong> entries to what you already have and skips anything it has seen before.</p>
       </div>
     </section>
 
@@ -112,7 +179,7 @@
 
 <div class="toast" id="toast" hidden>
   <span id="toastText"></span>
-  <button class="toast-action" id="toastAction" hidden>Отменить</button>
+  <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
 <script src="app.js"></script>
