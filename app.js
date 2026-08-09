@@ -247,9 +247,11 @@
     manualError: document.getElementById("manualError"),
     manualSubmit: document.getElementById("manualSubmit"),
     manualCancel: document.getElementById("manualCancel"),
-    infoToggle: document.getElementById("infoToggle"),
-    infoToggleText: document.getElementById("infoToggleText"),
-    infoPanel: document.getElementById("infoPanel"),
+    screenInfo: document.getElementById("screenInfo"),
+    infoOpenBtn: document.getElementById("infoOpen"),
+    infoBack: document.getElementById("infoBack"),
+    gettingStarted: document.getElementById("gettingStarted"),
+    gsMore: document.getElementById("gsMore"),
     screenMain: document.getElementById("screenMain"),
     screenSettings: document.getElementById("screenSettings"),
     settingsOpenBtn: document.getElementById("settingsOpen"),
@@ -267,7 +269,6 @@
 
   var logOpen = false;
   var manualOpen = false;
-  var infoOpen = false;
   var measureOpen = false;
   var editingId = null;
   var expandedDays = {};
@@ -686,6 +687,10 @@
     el.measureToggleText.textContent = measureOpen ? "Hide measurements" : "Measurements";
     el.measurePanel.hidden = !measureOpen;
     if (measureOpen) renderMeasureCards();
+  }
+
+  function renderGettingStarted() {
+    el.gettingStarted.hidden = events.length > 0;
   }
 
   function renderTempBanner() {
@@ -1614,30 +1619,30 @@
     reader.readAsText(file);
   });
 
-  el.infoToggle.addEventListener("click", function () {
-    infoOpen = !infoOpen;
-    el.infoPanel.hidden = !infoOpen;
-    el.infoToggleText.textContent = infoOpen ? "Hide guidance" : "For new parents";
-  });
-
   // ---------- screens ----------
 
-  function showSettings(focusName) {
-    el.screenMain.hidden = true;
-    el.screenSettings.hidden = false;
+  function showScreen(name) {
+    el.screenMain.hidden = name !== "main";
+    el.screenSettings.hidden = name !== "settings";
+    el.screenInfo.hidden = name !== "info";
     window.scrollTo(0, 0);
+  }
+
+  function showSettings(focusName) {
+    showScreen("settings");
     if (focusName) el.babyName.focus();
   }
 
   function showMain() {
-    el.screenSettings.hidden = true;
-    el.screenMain.hidden = false;
-    window.scrollTo(0, 0);
+    showScreen("main");
   }
 
   el.settingsOpenBtn.addEventListener("click", function () { showSettings(false); });
   el.settingsBack.addEventListener("click", showMain);
   el.babyNameDisplay.addEventListener("click", function () { showSettings(true); });
+  el.infoOpenBtn.addEventListener("click", function () { showScreen("info"); });
+  el.infoBack.addEventListener("click", showMain);
+  el.gsMore.addEventListener("click", function () { showScreen("info"); });
 
   // ---------- name ----------
 
@@ -1682,6 +1687,7 @@
     renderSleepBanner();
     renderSleepButton();
     renderForecast();
+    renderGettingStarted();
     renderTempBanner();
     renderMeasurements();
     if (withLog) renderLog();
