@@ -1,3 +1,5 @@
+/* Baby Tracker. Free and open source under the MIT licence — see LICENSE.
+   SPDX-License-Identifier: MIT */
 (function () {
   "use strict";
 

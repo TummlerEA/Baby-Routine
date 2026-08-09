@@ -55,4 +55,8 @@ The information in the "For new parents" section follows general NHS and Lullaby
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+Free and open source software under the **MIT licence** — see [LICENSE](LICENSE).
+
+You may use, copy, modify, merge, publish, distribute, sublicense and sell copies of it, including commercially, provided the copyright notice and the licence text are included. It is provided as is, without warranty of any kind.
+
+Each source file carries an `SPDX-License-Identifier: MIT` header, so the licence stays with the file if only part of the project is reused. The app itself states its licence and links back here from the Help screen.
