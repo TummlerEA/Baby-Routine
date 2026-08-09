@@ -53,6 +53,30 @@
       <div class="forecast-list" id="forecastList"></div>
     </section>
 
+    <section class="manual-entry">
+      <button class="log-toggle" id="manualToggle">
+        <span class="log-icon">➕</span>
+        <span id="manualToggleText">Добавить запись задним числом</span>
+      </button>
+      <div class="manual-panel" id="manualPanel" hidden>
+        <label class="manual-field">
+          <span class="manual-label">Тип события</span>
+          <select id="manualType" class="manual-select">
+            <option value="feed">Кормление</option>
+            <option value="diaper">Подгузник</option>
+            <option value="sleep_start">Уснула</option>
+            <option value="sleep_end">Проснулась</option>
+          </select>
+        </label>
+        <label class="manual-field">
+          <span class="manual-label">Дата и время</span>
+          <input type="datetime-local" id="manualDateTime" class="manual-input">
+        </label>
+        <div id="manualError" class="manual-error" hidden></div>
+        <button class="manual-submit" id="manualSubmit">Добавить запись</button>
+      </div>
+    </section>
+
     <section class="log">
       <button class="log-toggle" id="logToggle">
         <span class="log-icon">🕐</span>

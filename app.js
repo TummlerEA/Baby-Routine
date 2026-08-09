@@ -87,10 +87,18 @@
     forecastList: document.getElementById("forecastList"),
     logToggle: document.getElementById("logToggle"),
     logToggleText: document.getElementById("logToggleText"),
-    logList: document.getElementById("logList")
+    logList: document.getElementById("logList"),
+    manualToggle: document.getElementById("manualToggle"),
+    manualToggleText: document.getElementById("manualToggleText"),
+    manualPanel: document.getElementById("manualPanel"),
+    manualType: document.getElementById("manualType"),
+    manualDateTime: document.getElementById("manualDateTime"),
+    manualError: document.getElementById("manualError"),
+    manualSubmit: document.getElementById("manualSubmit")
   };
 
   var logOpen = false;
+  var manualOpen = false;
 
   // ---------- helpers ----------
 
@@ -141,6 +149,12 @@
     var h = String(date.getHours()).padStart(2, "0");
     var m = String(date.getMinutes()).padStart(2, "0");
     return h + ":" + m;
+  }
+
+  function toDateTimeLocalValue(date) {
+    var pad = function (n) { return String(n).padStart(2, "0"); };
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+      "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
   }
 
   var WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
@@ -318,10 +332,66 @@
     renderLog();
   });
 
+  // ---------- manual (backdated) entry ----------
+
+  function showManualError(msg) {
+    el.manualError.textContent = msg;
+    el.manualError.hidden = false;
+  }
+
+  function hideManualError() {
+    el.manualError.hidden = true;
+  }
+
+  el.manualDateTime.value = toDateTimeLocalValue(new Date());
+
+  el.manualToggle.addEventListener("click", function () {
+    manualOpen = !manualOpen;
+    el.manualPanel.hidden = !manualOpen;
+    el.manualToggleText.textContent = manualOpen ? "Скрыть форму" : "Добавить запись задним числом";
+    if (manualOpen) {
+      hideManualError();
+    }
+  });
+
+  el.manualSubmit.addEventListener("click", function () {
+    var type = el.manualType.value;
+    var raw = el.manualDateTime.value;
+
+    if (!raw) {
+      showManualError("Укажите дату и время");
+      return;
+    }
+
+    var picked = new Date(raw);
+    if (isNaN(picked.getTime())) {
+      showManualError("Некорректная дата и время");
+      return;
+    }
+
+    if (picked.getTime() > Date.now() + 60 * 1000) {
+      showManualError("Нельзя добавить запись в будущем");
+      return;
+    }
+
+    hideManualError();
+    addEvent(type, picked.toISOString());
+
+    // keep the panel open so the parent can log several backdated
+    // entries in a row; reset the time field to "now" for convenience
+    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+
+    var originalLabel = el.manualSubmit.textContent;
+    el.manualSubmit.textContent = "Добавлено ✓";
+    setTimeout(function () {
+      el.manualSubmit.textContent = originalLabel;
+    }, 900);
+  });
+
   // ---------- actions ----------
 
-  function addEvent(type) {
-    var event = { id: uuid(), type: type, time: new Date().toISOString() };
+  function addEvent(type, isoTime) {
+    var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     events.push(event);
     if (saveEvents(events)) {
       renderAll();
