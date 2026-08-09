@@ -22,13 +22,21 @@
   // few gaps happened to be. Stored in minutes.
   var DEFAULT_INTERVALS = { feed: 180, diaper: 180, sleep: 180 };
   var INTERVAL_CHOICES = [60, 90, 120, 150, 180, 210, 240, 300, 360, 480, 600, 720];
-  var CHIP_CHOICES = [120, 180, 240, 300, 360, 480];
+  var CHIP_CHOICES = [120, 180, 240, 360, 480];
   var KINDS = ["feed", "diaper", "sleep"];
   var KIND_META = {
     feed: { label: "Feed", icon: "🍼", logged: "Feed logged" },
     diaper: { label: "Nappy", icon: "🧷", logged: "Nappy logged" },
     sleep: { label: "Sleep", icon: "🌙", logged: "Sleep logged" }
   };
+  // Optional detail on a nappy change. Absent means nobody recorded it.
+  var NAPPY_TYPES = {
+    wet:   { label: "Wee",       chip: "💧 Wee",  detail: "💧 Wee" },
+    dirty: { label: "Poo",       chip: "💩 Poo",  detail: "💩 Poo" },
+    both:  { label: "Wee & poo", chip: "Both",    detail: "💧💩 Wee & poo" },
+    dry:   { label: "Dry",       chip: "Dry",     detail: "Dry" }
+  };
+  var NAPPY_ORDER = ["wet", "dirty", "both", "dry"];
   var NEXTUP_TIMEOUT = 20000;
   // Only flag the gap between plan and reality once it is worth mentioning.
   var DRIFT_TOLERANCE = 0.25;
@@ -142,6 +150,10 @@
     nextUpTitle: document.getElementById("nextUpTitle"),
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
+    nappyBlock: document.getElementById("nappyBlock"),
+    nappyChips: document.getElementById("nappyChips"),
+    manualNappyField: document.getElementById("manualNappyField"),
+    manualNappy: document.getElementById("manualNappy"),
     nextUpClose: document.getElementById("nextUpClose"),
     logToggle: document.getElementById("logToggle"),
     logToggleText: document.getElementById("logToggleText"),
@@ -350,6 +362,10 @@
     return lastN.length ? median(lastN) : null;
   }
 
+  function nappyOf(event) {
+    return (event && NAPPY_TYPES[event.nappy]) ? event.nappy : null;
+  }
+
   function customMinutesOf(event) {
     var value = event && Number(event.nextMin);
     return (value > 0 && value <= 24 * 60) ? Math.round(value) : null;
@@ -469,14 +485,24 @@
   function daySummary(group, analysis) {
     var feeds = 0;
     var diapers = 0;
+    var wet = 0;
+    var dirty = 0;
     group.events.forEach(function (e) {
       if (e.type === "feed") feeds++;
-      if (e.type === "diaper") diapers++;
+      if (e.type !== "diaper") return;
+      diapers++;
+      var kind = nappyOf(e);
+      if (kind === "wet" || kind === "both") wet++;
+      if (kind === "dirty" || kind === "both") dirty++;
     });
     var dayStart = new Date(group.date);
     dayStart.setHours(0, 0, 0, 0);
     var sleepMs = sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, Date.now());
-    return "🍼 " + feeds + " · 🧷 " + diapers + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
+    // Wet-nappy counts are what a health visitor asks about, so surface them
+    // once there is anything to show.
+    var nappies = "🧷 " + diapers;
+    if (wet || dirty) nappies += " (💧" + wet + " 💩" + dirty + ")";
+    return "🍼 " + feeds + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
   }
 
   function isDayExpanded(key, index) {
@@ -536,6 +562,7 @@
               '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) + '</div>' +
               '<div class="l-time">' + formatClockTime(d) + '</div>' +
               (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
+              (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
             '</div>' +
             '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
@@ -637,8 +664,18 @@
     el.manualToggleText.textContent = "Hide form";
   }
 
+  function syncManualNappyField() {
+    var isNappy = el.manualType.value === "diaper";
+    el.manualNappyField.hidden = !isNappy;
+    if (!isNappy) el.manualNappy.value = "";
+  }
+
+  el.manualType.addEventListener("change", syncManualNappyField);
+
   function resetManualForm() {
     editingId = null;
+    el.manualNappy.value = "";
+    syncManualNappyField();
     el.manualTitle.textContent = "New entry";
     el.manualSubmit.textContent = "Add entry";
     el.manualCancel.hidden = true;
@@ -653,6 +690,8 @@
     openManualPanel();
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
+    el.manualNappy.value = nappyOf(found) || "";
+    syncManualNappyField();
     el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
     el.manualSubmit.textContent = "Save";
     el.manualCancel.hidden = false;
@@ -701,15 +740,23 @@
         resetManualForm();
         return;
       }
+      // datetime-local carries minutes only, so re-saving an untouched time
+      // would drop the seconds and could reorder two entries logged in the
+      // same minute. Keep the original instant when the minute is unchanged.
+      var previous = new Date(target.time);
+      if (toDateTimeLocalValue(previous) === raw) picked = previous;
       target.type = type;
       target.time = picked.toISOString();
+      if (type === "diaper" && NAPPY_TYPES[el.manualNappy.value]) target.nappy = el.manualNappy.value;
+      else delete target.nappy;
       savedId = editingId;
       if (!saveEvents(events)) return;
       resetManualForm();
       renderAll();
       showToast("Entry updated");
     } else {
-      savedId = addEvent(type, picked.toISOString());
+      savedId = addEvent(type, picked.toISOString(),
+        type === "diaper" ? el.manualNappy.value : "");
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
@@ -760,6 +807,20 @@
     el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
       ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
 
+    var isNappy = nextUpKind === "diaper";
+    el.nappyBlock.hidden = !isNappy;
+    if (isNappy) {
+      var current = nappyOf(event);
+      el.nappyChips.innerHTML = "";
+      NAPPY_ORDER.forEach(function (key) {
+        var chip = document.createElement("button");
+        chip.className = "nextup-chip nappy-chip" + (key === current ? " selected" : "");
+        chip.setAttribute("data-nappy", key);
+        chip.textContent = NAPPY_TYPES[key].chip;
+        el.nappyChips.appendChild(chip);
+      });
+    }
+
     el.nextUpChips.innerHTML = "";
     chipChoices(planned).forEach(function (mins) {
       var chip = document.createElement("button");
@@ -780,6 +841,24 @@
   }
 
   el.nextUpClose.addEventListener("click", hideNextUp);
+
+  el.nappyChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".nappy-chip");
+    if (!chip) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+
+    var key = chip.getAttribute("data-nappy");
+    // Tapping the same answer again clears it, so a mis-tap is undoable.
+    if (nappyOf(event) === key) delete event.nappy;
+    else event.nappy = key;
+
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
 
   el.nextUpChips.addEventListener("click", function (ev) {
     var chip = ev.target.closest(".nextup-chip");
@@ -838,8 +917,9 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime) {
+  function addEvent(type, isoTime, nappy) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
+    if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     events.push(event);
     if (!saveEvents(events)) return null;
     renderAll();
@@ -905,7 +985,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy"]];
     sortedByTimeDesc(events).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -915,7 +995,8 @@
         formatDateTimeLocal(new Date(e.time)),
         e.time,
         duration ? Math.round(duration / MS_MIN) : "",
-        customMinutesOf(e) || ""
+        customMinutesOf(e) || "",
+        nappyOf(e) || ""
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -944,6 +1025,7 @@
         var duration = analysis.durationById[e.id];
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
+          (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
           " | " + (duration ? formatDuration(duration) : "—") + " |");
       });
       out.push("");
@@ -1029,6 +1111,7 @@
     var iTime = header.indexOf("time");
     var iLocal = header.indexOf("time_local");
     var iNext = header.indexOf("next_interval_min");
+    var iNappy = header.indexOf("nappy");
     var timeCol = iIso >= 0 ? iIso : (iTime >= 0 ? iTime : iLocal);
     if (iType < 0 || timeCol < 0) return null;
 
@@ -1039,7 +1122,8 @@
         id: iId >= 0 ? cells[iId] : "",
         type: (cells[iType] || "").trim(),
         time: (cells[timeCol] || "").trim(),
-        nextMin: iNext >= 0 ? cells[iNext] : ""
+        nextMin: iNext >= 0 ? cells[iNext] : "",
+        nappy: iNappy >= 0 ? (cells[iNappy] || "").trim() : ""
       });
     }
     return out;
@@ -1123,6 +1207,7 @@
       var entry = { id: id, type: raw.type, time: iso };
       var nextMin = Number(raw.nextMin);
       if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
+      if (raw.type === "diaper" && NAPPY_TYPES[raw.nappy]) entry.nappy = raw.nappy;
       events.push(entry);
       added++;
     });
@@ -1238,6 +1323,7 @@
   }
 
   buildIntervalOptions();
+  syncManualNappyField();
   renderAll();
   setInterval(tick, 30 * 1000);
 

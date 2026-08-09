@@ -714,7 +714,7 @@ body {
 .nextup-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nextup-chip {
@@ -725,8 +725,9 @@ body {
   font-family: inherit;
   font-size: 15px;
   font-weight: 600;
-  padding: 10px 16px;
+  padding: 10px 12px;
   min-height: 44px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -838,4 +839,29 @@ body {
 
 .data-version {
   margin-top: 8px;
+}
+
+/* ---------- nappy detail ---------- */
+
+.nextup-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nextup-sublabel {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.nextup-chip.nappy-chip.selected {
+  background: var(--accent-feed);
+  border-color: var(--accent-feed);
+  color: #2a1608;
+}
+
+.log-item .l-detail {
+  font-size: 12px;
+  color: var(--accent-feed);
+  margin-top: 2px;
 }
