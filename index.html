@@ -13,7 +13,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -66,8 +66,14 @@
           <span class="nextup-title" id="nextUpTitle">Feed logged</span>
           <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
-        <div class="nextup-line" id="nextUpLine">Next at —</div>
-        <div class="nextup-chips" id="nextUpChips"></div>
+        <div class="nextup-block" id="nappyBlock" hidden>
+          <div class="nextup-sublabel">What was in it?</div>
+          <div class="nextup-chips" id="nappyChips"></div>
+        </div>
+        <div class="nextup-block">
+          <div class="nextup-line" id="nextUpLine">Next at —</div>
+          <div class="nextup-chips" id="nextUpChips"></div>
+        </div>
       </section>
 
       <section class="forecast">
@@ -89,6 +95,16 @@
               <option value="diaper">Nappy</option>
               <option value="sleep_start">Fell asleep</option>
               <option value="sleep_end">Woke up</option>
+            </select>
+          </label>
+          <label class="manual-field" id="manualNappyField" hidden>
+            <span class="manual-label">What was in it?</span>
+            <select id="manualNappy" class="manual-select">
+              <option value="">Not recorded</option>
+              <option value="wet">Wee</option>
+              <option value="dirty">Poo</option>
+              <option value="both">Wee &amp; poo</option>
+              <option value="dry">Dry</option>
             </select>
           </label>
           <label class="manual-field">
@@ -233,7 +249,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 7</p>
+      <p class="data-version">Version 8</p>
 
     </main>
   </div>
@@ -245,6 +261,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

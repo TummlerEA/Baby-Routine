@@ -7,6 +7,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 ## Features
 
 - Three large one-tap buttons: Feed, Nappy, and Sleep (which toggles to Wake up while your baby is asleep).
+- **What was in the nappy** — wee, poo, both or dry. The entry is saved the instant you tap Nappy, and the question appears in the prompt that follows, so answering it is optional and never stands between you and a one-handed tap in the dark. Day summaries then show the wet and dirty counts a health visitor asks about.
 - **Predictions built from your plan, not from averages.** You set how often you intend each thing to happen (3 hours by default for all three) and the forecast follows that from the very first entry, instead of waiting for a pattern to emerge. A single long overnight stretch no longer drags the daytime predictions hours late.
 - **A one-off gap for any single entry.** Right after logging something, a prompt offers the planned time and a row of alternatives — tap 8h when you put your baby down for the night, and only that one gap changes. Your everyday plan stays put.
 - **Plan versus reality.** Each prediction shows the plan it is based on, and says "actually averaging 4h 30m" when the real routine has drifted meaningfully away from it (median of the last 5 gaps, ignoring anything under 10 minutes so an accidental double tap can't skew it).
@@ -36,7 +37,7 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## How data is stored
 
-- `baby-tracker-events` — a JSON array of events: `{ id, type: "feed"|"diaper"|"sleep_start"|"sleep_end", time: ISO-8601, nextMin? }`. `nextMin` is the optional one-off gap in minutes until the next event of that type.
+- `baby-tracker-events` — a JSON array of events: `{ id, type: "feed"|"diaper"|"sleep_start"|"sleep_end", time: ISO-8601, nextMin?, nappy? }`. `nextMin` is the optional one-off gap in minutes until the next event of that type; `nappy` is `"wet"`, `"dirty"`, `"both"` or `"dry"` and only appears on nappy changes.
 - `baby-tracker-name` — the baby's name (string).
 - `baby-tracker-intervals` — the planned interval per type, in minutes.
 
