@@ -962,3 +962,38 @@ body {
   color: var(--accent-diaper);
   margin-top: 2px;
 }
+
+/* ---------- getting started card ---------- */
+
+.getting-started {
+  background: linear-gradient(135deg, #1c2438, #171a24);
+  border: 1px solid #34406b;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gs-head {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gs-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gs-steps li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.gs-steps strong { color: var(--text); }
+
+#gsMore { text-align: center; }

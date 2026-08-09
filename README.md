@@ -21,8 +21,10 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **Measurements** — weight, length and temperature, tucked behind a collapsible section rather than a button, since they are not something you log half-asleep. Weight shows in kg and in lb/oz, with the change since the last reading and the percentage of birth weight. No centile charts: those live in your red book, which is what your health visitor plots.
 - **Temperature is treated as a safety matter.** A reading at or above the threshold for your baby's age raises an alert on entry and a banner on the main screen while it is recent, repeating the NHS routing the app already carries: 999 for a baby under 3 months at 38°C or above, NHS 111 otherwise. A reading below 36°C is flagged too.
 - **Date of birth** in Settings, used for your baby's age, weight change since birth, and picking the right temperature threshold.
-- **Guidance for new parents**: how to read your baby's sleep phases, how to check they're breathing without waking them, the red flags that mean calling 999, and safer sleep basics.
-- **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
+- **A Help screen** behind the ℹ️ in the top bar, covering how the app works: what one tap does, what the card after it is for, where predictions come from, how to correct a mistake, and — prominently — that the data lives only in this browser and wants backing up. It also explains adding the app to your home screen.
+- **A getting-started card** for a brand new user, shown under the buttons while there is nothing logged and gone the moment there is.
+- **Guidance for new parents**, on the same Help screen: how to read your baby's sleep phases, how to check they're breathing without waking them, the red flags that mean calling 999, and safer sleep basics.
+- **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, date of birth, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
 - Dark theme with large touch targets, for one-handed use in the middle of the night.
 - Live clock; the screen refreshes the moment you return to the app.
 

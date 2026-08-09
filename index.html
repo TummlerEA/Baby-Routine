@@ -13,7 +13,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -28,6 +28,7 @@
       <div class="topbar-date" id="topDate">—</div>
       <div class="topbar-right">
         <span class="topbar-clock" id="topClock">--:--</span>
+        <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
       </div>
     </header>
@@ -67,6 +68,16 @@
           <span class="action-icon">🌙</span>
           <span class="action-label" id="sleepLabel">Sleep</span>
         </button>
+      </section>
+
+      <section class="getting-started" id="gettingStarted" hidden>
+        <div class="gs-head">👋 Getting started</div>
+        <ol class="gs-steps">
+          <li>Tap <strong>Feed</strong>, <strong>Nappy</strong> or <strong>Sleep</strong> the moment it happens. One tap saves it.</li>
+          <li><strong>Sleep</strong> is a toggle — tap it again when your baby wakes.</li>
+          <li>Set the name and date of birth under <strong>⚙️ Settings</strong>, top right.</li>
+        </ol>
+        <button class="data-btn" id="gsMore">ℹ️ Read the full guide</button>
       </section>
 
       <section class="nextup" id="nextUp" hidden>
@@ -159,12 +170,76 @@
         </div>
       </section>
 
-      <section class="info-section">
-        <button class="log-toggle" id="infoToggle">
-          <span class="log-icon">💡</span>
-          <span id="infoToggleText">For new parents</span>
-        </button>
-        <div class="info-panel" id="infoPanel" hidden>
+    </main>
+  </div>
+
+  <!-- ============ help screen ============ -->
+  <div class="screen" id="screenInfo" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="infoBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Help</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">🚀</span> Using this app</h2>
+        <div class="info-panel">
+
+          <article class="info-card">
+            <h3>The three buttons</h3>
+            <p>Tap <strong>Feed</strong>, <strong>Nappy</strong> or <strong>Sleep</strong> at the moment it happens. One tap is the whole job — the entry is saved straight away, and you can put the phone down.</p>
+            <p><strong>Sleep</strong> is a toggle. Tap it when your baby goes down, and it changes to <strong>Wake up</strong>; tap it again when they wake, and the app works out how long they slept.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>The card that appears after a tap</h3>
+            <ul>
+              <li>It shows when the next one is due, with a row of alternatives. Tapping one changes <strong>only that gap</strong> — useful for a long night stretch — and leaves your everyday plan alone.</li>
+              <li>After a nappy it also asks what was in it: wee, poo, both or dry. Answering is optional. Tap the same answer twice to clear it if you mis-tap.</li>
+              <li>It disappears on its own after twenty seconds, or with the ✕.</li>
+            </ul>
+          </article>
+
+          <article class="info-card">
+            <h3>What's next</h3>
+            <p>Predictions come from the intervals you set in <strong>Settings → Planned intervals</strong>, three hours by default. That means they match your routine from the very first entry, rather than waiting for a pattern to emerge.</p>
+            <p>Each one also shows what is actually happening. If it says <em>actually averaging 4h 30m</em>, your real routine has drifted from the plan — change the plan, or don't; the app is not going to nag.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Fixing mistakes</h3>
+            <ul>
+              <li><strong>Tap any entry</strong> in the history to change its type, time or details.</li>
+              <li><strong>Deleting</strong> gives you seven seconds to undo.</li>
+              <li><strong>Add or edit an entry</strong> lets you record something you forgot, at the time it really happened.</li>
+            </ul>
+          </article>
+
+          <article class="info-card">
+            <h3>History and measurements</h3>
+            <p><strong>History</strong> groups entries by day. Today and yesterday are open; older days are one tap away. Each day header totals that day's feeds, nappies — including wet and dirty counts — and sleep.</p>
+            <p><strong>Measurements</strong> holds weight, length and temperature. They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
+          </article>
+
+          <article class="info-card info-card-urgent">
+            <h3>⚠ Keep a backup</h3>
+            <p>Everything is stored in this browser and nowhere else. There is no account and no server — which is why nothing about your baby ever leaves your phone, and equally why <strong>clearing your browser data or changing phone will destroy it all</strong>.</p>
+            <p>Every so often: <strong>Settings → Export &amp; backup → Download JSON</strong>. Restoring from that file brings back your entries, your planned intervals and the date of birth.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Putting it on your home screen</h3>
+            <p>On iPhone, open the app in Safari, tap the share button, then <strong>Add to Home Screen</strong>. It then opens like an ordinary app, full screen, and keeps working without a signal.</p>
+          </article>
+
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">💡</span> For new parents</h2>
+        <div class="info-panel" id="infoPanel">
 
           <article class="info-card">
             <h3>Reading your baby's sleep</h3>
@@ -287,7 +362,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 9</p>
+      <p class="data-version">Version 10</p>
 
     </main>
   </div>
@@ -299,6 +374,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
