@@ -24,14 +24,14 @@
   };
 
   var TYPE_META = {
-    feed: { label: "Кормление", icon: "🍼" },
-    diaper: { label: "Подгузник", icon: "🧷" },
-    sleep_start: { label: "Уснула", icon: "🌙" },
-    sleep_end: { label: "Проснулась", icon: "☀️" }
+    feed: { label: "Feed", icon: "🍼" },
+    diaper: { label: "Nappy", icon: "🧷" },
+    sleep_start: { label: "Fell asleep", icon: "🌙" },
+    sleep_end: { label: "Woke up", icon: "☀️" }
   };
 
-  var WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
-  var MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   // ---------- storage ----------
 
@@ -52,7 +52,7 @@
       hideError();
       return true;
     } catch (e) {
-      showError("Не удалось сохранить данные");
+      showError("Couldn't save your data");
       return false;
     }
   }
@@ -70,7 +70,7 @@
       localStorage.setItem(NAME_KEY, name);
       hideError();
     } catch (e) {
-      showError("Не удалось сохранить имя");
+      showError("Couldn't save the name");
     }
   }
 
@@ -112,6 +112,9 @@
     manualError: document.getElementById("manualError"),
     manualSubmit: document.getElementById("manualSubmit"),
     manualCancel: document.getElementById("manualCancel"),
+    infoToggle: document.getElementById("infoToggle"),
+    infoToggleText: document.getElementById("infoToggleText"),
+    infoPanel: document.getElementById("infoPanel"),
     dataToggle: document.getElementById("dataToggle"),
     dataToggleText: document.getElementById("dataToggleText"),
     dataPanel: document.getElementById("dataPanel"),
@@ -127,6 +130,7 @@
 
   var logOpen = false;
   var manualOpen = false;
+  var infoOpen = false;
   var dataOpen = false;
   var editingId = null;
   var expandedDays = {};
@@ -176,9 +180,9 @@
     var totalMin = Math.floor(ms / MS_MIN);
     var h = Math.floor(totalMin / 60);
     var m = totalMin % 60;
-    if (h <= 0) return m + " мин";
-    if (m === 0) return h + " ч";
-    return h + " ч " + m + " мин";
+    if (h <= 0) return m + "m";
+    if (m === 0) return h + "h";
+    return h + "h " + m + "m";
   }
 
   function formatClockTime(date) {
@@ -200,7 +204,7 @@
   }
 
   function formatDateHeader(date) {
-    return date.getDate() + " " + MONTHS[date.getMonth()] + ", " + WEEKDAYS[date.getDay()];
+    return WEEKDAYS[date.getDay()] + ", " + date.getDate() + " " + MONTHS[date.getMonth()];
   }
 
   // Same clock time, but says which day it lands on when that is not today.
@@ -209,16 +213,16 @@
     var key = dayKeyOf(date);
     var time = formatClockTime(date);
     if (key === dayKeyOf(now)) return time;
-    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "завтра " + time;
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "вчера " + time;
+    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "tomorrow " + time;
+    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "yesterday " + time;
     return date.getDate() + " " + MONTHS[date.getMonth()] + " " + time;
   }
 
   function dayLabel(date) {
     var now = new Date();
     var key = dayKeyOf(date);
-    if (key === dayKeyOf(now)) return "Сегодня";
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "Вчера";
+    if (key === dayKeyOf(now)) return "Today";
+    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "Yesterday";
     return formatDateHeader(date);
   }
 
@@ -232,8 +236,8 @@
 
   // ---------- sleep pairing ----------
 
-  // Walks sleep events in order and pairs each "уснула" with the "проснулась"
-  // that follows it. Unpaired records are flagged so they can be spotted and
+  // Walks sleep events in order and pairs each "fell asleep" with the
+  // "woke up" that follows it. Unpaired records are flagged so they can be spotted and
   // fixed in the log instead of silently skewing everything.
   function analyzeSleep() {
     var asc = sortedByTimeAsc(events.filter(function (e) {
@@ -246,11 +250,11 @@
 
     asc.forEach(function (e) {
       if (e.type === "sleep_start") {
-        if (open) warningById[open.id] = "Нет парной записи «Проснулась»";
+        if (open) warningById[open.id] = "No matching \u2018Woke up\u2019 entry";
         open = e;
       } else {
         if (!open) {
-          warningById[e.id] = "Нет парной записи «Уснула»";
+          warningById[e.id] = "No matching \u2018Fell asleep\u2019 entry";
         } else {
           var startMs = +new Date(open.time);
           var endMs = +new Date(e.time);
@@ -314,9 +318,9 @@
   function renderForecast() {
     var now = new Date();
     var items = [
-      { kind: "feed", icon: "🍼", label: "Кормление" },
-      { kind: "diaper", icon: "🧷", label: "Подгузник" },
-      { kind: "sleep", icon: "🌙", label: "Сон" }
+      { kind: "feed", icon: "🍼", label: "Feed" },
+      { kind: "diaper", icon: "🧷", label: "Nappy" },
+      { kind: "sleep", icon: "🌙", label: "Sleep" }
     ];
     var sleeping = isSleepingNow();
 
@@ -330,7 +334,7 @@
           '<span class="f-icon">' + item.icon + '</span>' +
           '<div class="f-body">' +
             '<div class="f-type">' + item.label + '</div>' +
-            '<div class="f-time">малышка сейчас спит</div>' +
+            '<div class="f-time">asleep right now</div>' +
           '</div>';
         el.forecastList.appendChild(div);
         return;
@@ -341,19 +345,19 @@
       var timeHtml;
 
       if (!f.hasData) {
-        timeHtml = '<span class="f-time">через ' + formatDuration(diff) + '</span>' +
-          ' <span class="f-estimate-tag">(оценка)</span>';
+        timeHtml = '<span class="f-time">in ' + formatDuration(diff) + '</span>' +
+          ' <span class="f-estimate-tag">(estimate)</span>';
       } else {
         timeHtml = diff < 0
-          ? '<span class="f-time overdue">просрочено на ' + formatDuration(-diff) + '</span>'
-          : '<span class="f-time">через ' + formatDuration(diff) + '</span>';
-        if (f.isEstimate) timeHtml += ' <span class="f-estimate-tag">(оценка)</span>';
+          ? '<span class="f-time overdue">overdue by ' + formatDuration(-diff) + '</span>'
+          : '<span class="f-time">in ' + formatDuration(diff) + '</span>';
+        if (f.isEstimate) timeHtml += ' <span class="f-estimate-tag">(estimate)</span>';
       }
 
       div.innerHTML =
         '<span class="f-icon">' + item.icon + '</span>' +
         '<div class="f-body">' +
-          '<div class="f-type">' + item.label + ' · ожидается ' + formatWhen(f.nextTime) + '</div>' +
+          '<div class="f-type">' + item.label + ' · expected ' + formatWhen(f.nextTime) + '</div>' +
           '<div>' + timeHtml + '</div>' +
         '</div>';
       el.forecastList.appendChild(div);
@@ -376,7 +380,7 @@
 
   function renderSleepButton() {
     var sleeping = isSleepingNow();
-    el.sleepLabel.textContent = sleeping ? "Проснулась" : "Уснула";
+    el.sleepLabel.textContent = sleeping ? "Wake up" : "Sleep";
     el.btnSleep.classList.toggle("sleeping", sleeping);
   }
 
@@ -407,7 +411,7 @@
     var dayStart = new Date(group.date);
     dayStart.setHours(0, 0, 0, 0);
     var sleepMs = sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, Date.now());
-    return "🍼 " + feeds + " · 🧷 " + diapers + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0 мин");
+    return "🍼 " + feeds + " · 🧷 " + diapers + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
   }
 
   function isDayExpanded(key, index) {
@@ -418,7 +422,7 @@
 
   function renderLog() {
     el.logToggleText.textContent =
-      (logOpen ? "Скрыть журнал" : "Показать журнал") + " (" + events.length + ")";
+      (logOpen ? "Hide history" : "Show history") + " (" + events.length + ")";
     el.logList.hidden = !logOpen;
     if (!logOpen) return;
 
@@ -428,7 +432,7 @@
     if (!events.length) {
       var empty = document.createElement("div");
       empty.className = "log-empty";
-      empty.textContent = "Записей пока нет";
+      empty.textContent = "No entries yet";
       el.logList.appendChild(empty);
       return;
     }
@@ -466,10 +470,10 @@
             '<div class="l-body">' +
               '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) + '</div>' +
               '<div class="l-time">' + formatClockTime(d) + '</div>' +
-              (duration ? '<div class="l-duration">сон ' + formatDuration(duration) + '</div>' : '') +
+              (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
             '</div>' +
-            '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Удалить запись">✕</button>';
+            '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
           section.appendChild(row);
         });
       }
@@ -516,7 +520,7 @@
     if (!saveEvents(events)) return;
     if (editingId === id) resetManualForm();
     renderAll();
-    showToast("Запись удалена", function () {
+    showToast("Entry deleted", function () {
       events.push(removed);
       saveEvents(events);
       renderAll();
@@ -565,13 +569,13 @@
   function openManualPanel() {
     manualOpen = true;
     el.manualPanel.hidden = false;
-    el.manualToggleText.textContent = "Скрыть форму";
+    el.manualToggleText.textContent = "Hide form";
   }
 
   function resetManualForm() {
     editingId = null;
-    el.manualTitle.textContent = "Новая запись";
-    el.manualSubmit.textContent = "Добавить запись";
+    el.manualTitle.textContent = "New entry";
+    el.manualSubmit.textContent = "Add entry";
     el.manualCancel.hidden = true;
     el.manualDateTime.value = toDateTimeLocalValue(new Date());
     hideManualNotice();
@@ -582,10 +586,10 @@
     if (!found) return;
     editingId = id;
     openManualPanel();
-    el.manualTitle.textContent = "Изменить запись";
+    el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
     el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
-    el.manualSubmit.textContent = "Сохранить";
+    el.manualSubmit.textContent = "Save";
     el.manualCancel.hidden = false;
     hideManualNotice();
     el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -596,7 +600,7 @@
   el.manualToggle.addEventListener("click", function () {
     manualOpen = !manualOpen;
     el.manualPanel.hidden = !manualOpen;
-    el.manualToggleText.textContent = manualOpen ? "Скрыть форму" : "Добавить запись задним числом";
+    el.manualToggleText.textContent = manualOpen ? "Hide form" : "Add a past entry";
     if (!manualOpen) resetManualForm();
     else hideManualNotice();
   });
@@ -610,16 +614,16 @@
     var raw = el.manualDateTime.value;
 
     if (!raw) {
-      showManualNotice("Укажите дату и время");
+      showManualNotice("Enter a date and time");
       return;
     }
     var picked = new Date(raw);
     if (isNaN(picked.getTime())) {
-      showManualNotice("Некорректная дата и время");
+      showManualNotice("That date and time isn't valid");
       return;
     }
     if (picked.getTime() > Date.now() + MS_MIN) {
-      showManualNotice("Нельзя добавить запись в будущем");
+      showManualNotice("You can't add an entry in the future");
       return;
     }
 
@@ -638,23 +642,23 @@
       if (!saveEvents(events)) return;
       resetManualForm();
       renderAll();
-      showToast("Запись изменена");
+      showToast("Entry updated");
     } else {
       savedId = addEvent(type, picked.toISOString());
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
-      el.manualSubmit.textContent = "Добавлено ✓";
+      el.manualSubmit.textContent = "Added ✓";
       setTimeout(function () {
         if (!editingId) el.manualSubmit.textContent = original;
       }, 900);
     }
 
-    // Backfilling history one record at a time easily produces an "уснула"
-    // with no matching "проснулась" — say so instead of silently flipping
-    // the app into sleep mode.
+    // Backfilling history one record at a time easily produces a "fell
+    // asleep" with no matching "woke up" - say so instead of silently
+    // flipping the app into sleep mode.
     var warning = analyzeSleep().warningById[savedId];
-    if (warning) showManualNotice(warning + ". Добавьте её, чтобы сон посчитался верно.", true);
+    if (warning) showManualNotice(warning + ". Add it so the sleep is counted correctly.", true);
   });
 
   // ---------- actions ----------
@@ -704,7 +708,7 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
       return true;
     } catch (e) {
-      showError("Не удалось сохранить файл");
+      showError("Couldn't save the file");
       return false;
     }
   }
@@ -733,20 +737,19 @@
         duration ? Math.round(duration / MS_MIN) : ""
       ]);
     });
-    // Semicolons keep the file openable in a Russian-locale Excel.
-    return rows.map(function (r) { return r.map(csvEscape).join(";"); }).join("\r\n");
+    return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
   }
 
   function buildMarkdown() {
     var analysis = analyzeSleep();
-    var name = loadName().trim() || "Малышка";
+    var name = loadName().trim() || "Baby";
     var groups = groupByDay(sortedByTimeDesc(events));
     var out = [];
 
-    out.push("# Журнал — " + name);
+    out.push("# " + name + " — log");
     out.push("");
-    out.push("Выгружено: " + formatDateTimeLocal(new Date()) + "  ");
-    out.push("Всего записей: " + events.length);
+    out.push("Exported: " + formatDateTimeLocal(new Date()) + "  ");
+    out.push("Entries: " + events.length);
     out.push("");
 
     groups.forEach(function (group) {
@@ -754,7 +757,7 @@
       out.push("");
       out.push(daySummary(group, analysis));
       out.push("");
-      out.push("| Время | Событие | Длительность |");
+      out.push("| Time | Event | Duration |");
       out.push("| --- | --- | --- |");
       sortedByTimeAsc(group.events).forEach(function (e) {
         var duration = analysis.durationById[e.id];
@@ -770,7 +773,7 @@
 
   function guardEmpty() {
     if (events.length) return false;
-    showToast("Нет записей для выгрузки");
+    showToast("Nothing to export yet");
     return true;
   }
 
@@ -778,14 +781,14 @@
     if (guardEmpty()) return;
     // BOM so Excel detects UTF-8 and Cyrillic labels survive.
     if (downloadFile(exportBaseName() + ".csv", "﻿" + buildCsv(), "text/csv;charset=utf-8")) {
-      showToast("CSV сохранён");
+      showToast("CSV saved");
     }
   });
 
   el.exportMd.addEventListener("click", function () {
     if (guardEmpty()) return;
     if (downloadFile(exportBaseName() + ".md", buildMarkdown(), "text/markdown;charset=utf-8")) {
-      showToast("Markdown сохранён");
+      showToast("Markdown saved");
     }
   });
 
@@ -793,7 +796,7 @@
     if (guardEmpty()) return;
     var payload = JSON.stringify(sortedByTimeDesc(events), null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
-      showToast("Резервная копия сохранена");
+      showToast("Backup saved");
     }
   });
 
@@ -905,22 +908,22 @@
     if (added && !saveEvents(events)) return;
 
     renderAll();
-    var msg = "Добавлено записей: " + added;
-    if (skipped) msg += ", повторов пропущено: " + skipped;
-    if (invalid) msg += ", не распознано: " + invalid;
+    var msg = "Added " + added + (added === 1 ? " entry" : " entries");
+    if (skipped) msg += ", " + skipped + " duplicate" + (skipped === 1 ? "" : "s") + " skipped";
+    if (invalid) msg += ", " + invalid + " not recognised";
     showToast(msg);
   }
 
   function importFromText(text) {
     var clean = text.replace(/^﻿/, "").trim();
     if (!clean) {
-      showToast("Файл пуст");
+      showToast("That file is empty");
       return;
     }
     var first = clean.charAt(0);
     var list = (first === "[" || first === "{") ? parseJsonImport(clean) : parseCsvImport(clean);
     if (!list) {
-      showToast("Не удалось разобрать файл");
+      showToast("Couldn't read that file");
       return;
     }
     mergeImported(list);
@@ -940,16 +943,22 @@
       el.importFile.value = "";
     };
     reader.onerror = function () {
-      showToast("Не удалось прочитать файл");
+      showToast("Couldn't open that file");
       el.importFile.value = "";
     };
     reader.readAsText(file);
   });
 
+  el.infoToggle.addEventListener("click", function () {
+    infoOpen = !infoOpen;
+    el.infoPanel.hidden = !infoOpen;
+    el.infoToggleText.textContent = infoOpen ? "Hide guidance" : "For new parents";
+  });
+
   el.dataToggle.addEventListener("click", function () {
     dataOpen = !dataOpen;
     el.dataPanel.hidden = !dataOpen;
-    el.dataToggleText.textContent = dataOpen ? "Скрыть экспорт и импорт" : "Экспорт и импорт";
+    el.dataToggleText.textContent = dataOpen ? "Hide export & backup" : "Export & backup";
   });
 
   // ---------- name ----------
