@@ -865,3 +865,100 @@ body {
   color: var(--accent-feed);
   margin-top: 2px;
 }
+
+/* ---------- measurements ---------- */
+
+.banner-fever {
+  background: #3a1f1f;
+  border: 1px solid #6b3333;
+  color: var(--text);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 16px;
+}
+
+.fever-advice {
+  font-size: 13px;
+  color: var(--overdue);
+  line-height: 1.45;
+}
+
+.manual-echo {
+  font-size: 12px;
+  color: var(--text-faint);
+  min-height: 15px;
+}
+
+.measure-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.measure-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.measure-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.measure-card .m-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.measure-card .m-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.measure-card .m-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.measure-card .m-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-card .m-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.measure-card .m-sub .m-up { color: var(--accent-diaper); }
+.measure-card .m-sub .m-down { color: var(--overdue); }
+
+.measure-card.is-empty .m-value {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.measure-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.measure-add { text-align: left; }
+
+.log-item .l-measure {
+  font-size: 12px;
+  color: var(--accent-diaper);
+  margin-top: 2px;
+}
