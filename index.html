@@ -13,7 +13,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <div class="app">
@@ -52,6 +52,15 @@
         <span class="action-icon">🌙</span>
         <span class="action-label" id="sleepLabel">Sleep</span>
       </button>
+    </section>
+
+    <section class="nextup" id="nextUp" hidden>
+      <div class="nextup-head">
+        <span class="nextup-title" id="nextUpTitle">Feed logged</span>
+        <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
+      </div>
+      <div class="nextup-line" id="nextUpLine">Next at —</div>
+      <div class="nextup-chips" id="nextUpChips"></div>
     </section>
 
     <section class="forecast">
@@ -162,6 +171,29 @@
       </div>
     </section>
 
+    <section class="settings-section">
+      <button class="log-toggle" id="settingsToggle">
+        <span class="log-icon">⚙️</span>
+        <span id="settingsToggleText">Planned intervals</span>
+      </button>
+      <div class="settings-panel" id="settingsPanel" hidden>
+        <p class="settings-intro">How often you plan each one to happen. Predictions are built from these, so they match your routine from the very first entry rather than waiting for a pattern to emerge.</p>
+        <label class="settings-row">
+          <span class="settings-label">🍼 Feed every</span>
+          <select class="settings-select" id="intervalFeed" data-kind="feed"></select>
+        </label>
+        <label class="settings-row">
+          <span class="settings-label">🧷 Nappy every</span>
+          <select class="settings-select" id="intervalDiaper" data-kind="diaper"></select>
+        </label>
+        <label class="settings-row">
+          <span class="settings-label">🌙 Sleep every</span>
+          <select class="settings-select" id="intervalSleep" data-kind="sleep"></select>
+        </label>
+        <p class="settings-hint">These are your everyday defaults. After logging something you can set a different gap just for that one time — handy for a long night stretch.</p>
+      </div>
+    </section>
+
     <section class="data-section">
       <button class="log-toggle" id="dataToggle">
         <span class="log-icon">💾</span>
@@ -174,7 +206,7 @@
         <button class="data-btn data-btn-import" id="importBtn">Restore from a file</button>
         <input type="file" id="importFile" accept=".csv,.json,text/csv,application/json" hidden>
         <p class="data-hint">Everything is stored in this browser only. Clearing site data or changing phone will delete it, so save a backup now and then. Restoring <strong>adds</strong> entries to what you already have and skips anything it has seen before.</p>
-        <p class="data-version">Version 5</p>
+        <p class="data-version">Version 6</p>
       </div>
     </section>
 
@@ -186,6 +218,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
