@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -229,6 +229,7 @@
             <h3>⚠ Keep a backup</h3>
             <p>Everything is stored in this browser and nowhere else. There is no account and no server — which is why nothing about your baby ever leaves your phone, and equally why <strong>clearing your browser data or changing phone will destroy it all</strong>.</p>
             <p>Every so often: <strong>Settings → Export &amp; backup → Download JSON</strong>. Restoring from that file brings back your entries, your planned intervals and the date of birth.</p>
+            <p>Restoring <strong>merges</strong> rather than replaces, so you can send the file to another phone and import it there. Each entry remembers when it last changed: the newer version of an entry wins, deletions carry across, and importing an out-of-date file cannot undo newer work.</p>
           </article>
 
           <article class="info-card">
@@ -382,7 +383,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 11 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 12 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -394,6 +395,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

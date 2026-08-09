@@ -17,7 +17,8 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **Editing**: tap any entry in the history to open it in the form.
 - **Backdated entries** for anything you missed at the time.
 - **Undo on delete**: a deleted entry can be restored for seven seconds.
-- **Export and backup**: CSV (opens in Excel), Markdown (a readable report) and JSON (a full backup). Restoring from CSV or JSON adds entries to what you have and skips duplicates.
+- **Export and backup**: CSV (opens in Excel), Markdown (a readable report) and JSON (a full backup).
+- **Merging, not replacing.** Every entry records when it last changed, and deleting marks an entry rather than dropping the row. Restoring a file therefore merges correctly in any order: the newer version of an entry wins, deletions travel with it, and importing an out-of-date file cannot resurrect something deleted or undo a newer edit. That makes passing a JSON file between two phones a workable way to share a log, and lays the groundwork for real sync later.
 - **Measurements** — weight, length and temperature, tucked behind a collapsible section rather than a button, since they are not something you log half-asleep. Weight shows in kg and in lb/oz, with the change since the last reading and the percentage of birth weight. No centile charts: those live in your red book, which is what your health visitor plots.
 - **Temperature is treated as a safety matter.** A reading at or above the threshold for your baby's age raises an alert on entry and a banner on the main screen while it is recent, repeating the NHS routing the app already carries: 999 for a baby under 3 months at 38°C or above, NHS 111 otherwise. A reading below 36°C is flagged too.
 - **Date of birth** in Settings, used for your baby's age, weight change since birth, and picking the right temperature threshold.
@@ -42,7 +43,7 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## How data is stored
 
-- `baby-tracker-events` — a JSON array of events: `{ id, type, time: ISO-8601, nextMin?, nappy?, value? }`. `type` is one of `feed`, `diaper`, `sleep_start`, `sleep_end`, `weight`, `height`, `temp`. `nextMin` is the optional one-off gap in minutes until the next event of that type; `nappy` is `"wet"`, `"dirty"`, `"both"` or `"dry"`; `value` carries the reading for a measurement — grams for weight, cm for length, °C for temperature.
+- `baby-tracker-events` — a JSON array of events: `{ id, type, time: ISO-8601, updatedAt, nextMin?, nappy?, value?, deleted? }`. `updatedAt` is when the entry last changed and decides which side wins on merge; `deleted: true` is a tombstone, kept so the deletion can propagate. CSV and Markdown exports omit tombstones; the JSON backup keeps them. `type` is one of `feed`, `diaper`, `sleep_start`, `sleep_end`, `weight`, `height`, `temp`. `nextMin` is the optional one-off gap in minutes until the next event of that type; `nappy` is `"wet"`, `"dirty"`, `"both"` or `"dry"`; `value` carries the reading for a measurement — grams for weight, cm for length, °C for temperature.
 - `baby-tracker-name` — the baby's name (string).
 - `baby-tracker-intervals` — the planned interval per type, in minutes.
 - `baby-tracker-dob` — the date of birth as `YYYY-MM-DD`.

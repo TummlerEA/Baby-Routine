@@ -198,6 +198,31 @@
   }
 
   var events = loadEvents();
+
+  // Two phones both writing means the log has to merge cleanly in any order.
+  // Every record carries when it last changed, and deleting marks a record
+  // rather than dropping it — a dropped row is indistinguishable from one the
+  // other device has not seen yet, and would come back to life on the next
+  // import.
+  function touch(event) {
+    event.updatedAt = new Date().toISOString();
+    return event;
+  }
+
+  function isDeleted(event) {
+    return !!(event && event.deleted);
+  }
+
+  function updatedAtOf(event) {
+    // Records written before this existed fall back to their own timestamp.
+    return event.updatedAt || event.time;
+  }
+
+  // Everything the app shows works from this; only sync and backup see the
+  // tombstones.
+  function liveEvents() {
+    return events.filter(function (e) { return !isDeleted(e); });
+  }
   var intervals = loadIntervals();
 
   // ---------- dom ----------
@@ -395,7 +420,7 @@
   }
 
   function measurementsOf(type) {
-    return sortedByTimeAsc(events.filter(function (e) {
+    return sortedByTimeAsc(liveEvents().filter(function (e) {
       return e.type === type && measureValueOf(e) !== null;
     }));
   }
@@ -444,7 +469,7 @@
   // "woke up" that follows it. Unpaired records are flagged so they can be spotted and
   // fixed in the log instead of silently skewing everything.
   function analyzeSleep() {
-    var asc = sortedByTimeAsc(events.filter(function (e) {
+    var asc = sortedByTimeAsc(liveEvents().filter(function (e) {
       return e.type === "sleep_start" || e.type === "sleep_end";
     }));
     var sessions = [];
@@ -493,8 +518,8 @@
 
   function eventsOfKind(kind) {
     return kind === "sleep"
-      ? events.filter(function (e) { return e.type === "sleep_start"; })
-      : events.filter(function (e) { return e.type === kind; });
+      ? liveEvents().filter(function (e) { return e.type === "sleep_start"; })
+      : liveEvents().filter(function (e) { return e.type === kind; });
   }
 
   // What actually happened, kept only so the plan can be checked against
@@ -692,7 +717,7 @@
   }
 
   function renderGettingStarted() {
-    el.gettingStarted.hidden = events.length > 0;
+    el.gettingStarted.hidden = liveEvents().length > 0;
   }
 
   function renderTempBanner() {
@@ -767,15 +792,16 @@
   }
 
   function renderLog() {
+    var visible = liveEvents();
     el.logToggleText.textContent =
-      (logOpen ? "Hide history" : "Show history") + " (" + events.length + ")";
+      (logOpen ? "Hide history" : "Show history") + " (" + visible.length + ")";
     el.logList.hidden = !logOpen;
     if (!logOpen) return;
 
     lastLogDayKey = dayKeyOf(new Date());
     el.logList.innerHTML = "";
 
-    if (!events.length) {
+    if (!visible.length) {
       var empty = document.createElement("div");
       empty.className = "log-empty";
       empty.textContent = "No entries yet";
@@ -784,7 +810,7 @@
     }
 
     var analysis = analyzeSleep();
-    var groups = groupByDay(sortedByTimeDesc(events));
+    var groups = groupByDay(sortedByTimeDesc(visible));
 
     groups.forEach(function (group, i) {
       var expanded = isDayExpanded(group.key, i);
@@ -857,20 +883,16 @@
   });
 
   function deleteEvent(id) {
-    var removed = null;
-    events = events.filter(function (e) {
-      if (e.id === id) {
-        removed = e;
-        return false;
-      }
-      return true;
-    });
-    if (!removed) return;
+    var target = events.filter(function (e) { return e.id === id; })[0];
+    if (!target || isDeleted(target)) return;
+    target.deleted = true;
+    touch(target);
     if (!saveEvents(events)) return;
     if (editingId === id) resetManualForm();
     renderAll();
     showToast("Entry deleted", function () {
-      events.push(removed);
+      delete target.deleted;
+      touch(target);
       saveEvents(events);
       renderAll();
     });
@@ -1077,6 +1099,7 @@
       else delete target.nappy;
       if (measureMeta) target.value = measureValue;
       else delete target.value;
+      touch(target);
       savedId = editingId;
       if (!saveEvents(events)) return;
       resetManualForm();
@@ -1187,6 +1210,7 @@
     // Tapping the same answer again clears it, so a mis-tap is undoable.
     if (nappyOf(event) === key) delete event.nappy;
     else event.nappy = key;
+    touch(event);
 
     if (!saveEvents(events)) return;
     renderAll();
@@ -1205,6 +1229,7 @@
     // Picking the everyday plan means there is no exception to remember.
     if (mins === intervals[nextUpKind]) delete event.nextMin;
     else event.nextMin = mins;
+    touch(event);
 
     if (!saveEvents(events)) return;
     renderAll();
@@ -1256,6 +1281,7 @@
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
+    touch(event);
     events.push(event);
     if (!saveEvents(events)) return null;
     renderAll();
@@ -1321,8 +1347,8 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value"]];
-    sortedByTimeDesc(events).forEach(function (e) {
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value", "updated_iso"]];
+    sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
         e.id,
@@ -1333,7 +1359,8 @@
         duration ? Math.round(duration / MS_MIN) : "",
         customMinutesOf(e) || "",
         nappyOf(e) || "",
-        measureValueOf(e) === null ? "" : e.value
+        measureValueOf(e) === null ? "" : e.value,
+        updatedAtOf(e)
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -1342,13 +1369,13 @@
   function buildMarkdown() {
     var analysis = analyzeSleep();
     var name = loadName().trim() || "Baby";
-    var groups = groupByDay(sortedByTimeDesc(events));
+    var groups = groupByDay(sortedByTimeDesc(liveEvents()));
     var out = [];
 
     out.push("# " + name + " — log");
     out.push("");
     out.push("Exported: " + formatDateTimeLocal(new Date()) + "  ");
-    out.push("Entries: " + events.length);
+    out.push("Entries: " + liveEvents().length);
     out.push("");
 
     groups.forEach(function (group) {
@@ -1373,7 +1400,7 @@
   }
 
   function guardEmpty() {
-    if (events.length) return false;
+    if (liveEvents().length) return false;
     showToast("Nothing to export yet");
     return true;
   }
@@ -1399,7 +1426,7 @@
       name: loadName(),
       dob: loadDob(),
       intervals: intervals,
-      events: sortedByTimeDesc(events)
+      events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
       showToast("Backup saved");
@@ -1452,6 +1479,7 @@
     var iNext = header.indexOf("next_interval_min");
     var iNappy = header.indexOf("nappy");
     var iValue = header.indexOf("value");
+    var iUpdated = header.indexOf("updated_iso");
     var timeCol = iIso >= 0 ? iIso : (iTime >= 0 ? iTime : iLocal);
     if (iType < 0 || timeCol < 0) return null;
 
@@ -1464,7 +1492,8 @@
         time: (cells[timeCol] || "").trim(),
         nextMin: iNext >= 0 ? cells[iNext] : "",
         nappy: iNappy >= 0 ? (cells[iNappy] || "").trim() : "",
-        value: iValue >= 0 ? (cells[iValue] || "").trim() : ""
+        value: iValue >= 0 ? (cells[iValue] || "").trim() : "",
+        updatedAt: iUpdated >= 0 ? (cells[iUpdated] || "").trim() : ""
       });
     }
     return out;
@@ -1518,68 +1547,93 @@
     }
   }
 
+  // Turns one incoming record into the shape we store, or null if it is junk.
+  function normaliseImported(raw) {
+    if (!raw || !TYPE_META[raw.type]) return null;
+    var parsedTime = new Date(String(raw.time || "").trim().replace(" ", "T"));
+    if (isNaN(parsedTime.getTime())) return null;
+
+    var entry = { id: "", type: raw.type, time: parsedTime.toISOString() };
+
+    var nextMin = Number(raw.nextMin);
+    if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
+    if (raw.type === "diaper" && NAPPY_TYPES[raw.nappy]) entry.nappy = raw.nappy;
+    if (MEASURES[raw.type]) {
+      var measured = Number(raw.value);
+      if (!isFinite(measured) || measured <= 0) return null;
+      entry.value = measured;
+    }
+    if (raw.deleted) entry.deleted = true;
+
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    entry.updatedAt = isNaN(stamped.getTime()) ? entry.time : stamped.toISOString();
+
+    // Ids arrive from a file, so keep only characters safe to put in markup.
+    entry.id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    return entry;
+  }
+
   function mergeImported(list) {
-    var seenIds = {};
+    var byId = {};
     var seenKeys = {};
     events.forEach(function (e) {
-      seenIds[e.id] = true;
+      byId[e.id] = e;
       seenKeys[e.type + "|" + e.time] = true;
     });
 
     var added = 0;
+    var updated = 0;
     var skipped = 0;
     var invalid = 0;
 
     list.forEach(function (raw) {
-      if (!raw || !TYPE_META[raw.type]) {
+      var entry = normaliseImported(raw);
+      if (!entry) {
         invalid++;
         return;
       }
-      var parsedTime = new Date(String(raw.time || "").trim().replace(" ", "T"));
-      if (isNaN(parsedTime.getTime())) {
-        invalid++;
-        return;
-      }
-      var iso = parsedTime.toISOString();
-      // Ids arrive from a file, so keep only characters safe to put in markup.
-      var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
-      var contentKey = raw.type + "|" + iso;
-      // An id is the trustworthy duplicate signal. Falling back to type+time
-      // for entries that carry one would discard genuinely separate readings
-      // taken in the same minute, since the form records minutes only.
-      if (id) {
-        if (seenIds[id]) {
+
+      // Without an id there is nothing to match on but the content itself.
+      if (!entry.id) {
+        var contentKey = entry.type + "|" + entry.time;
+        if (seenKeys[contentKey]) {
           skipped++;
           return;
         }
-      } else if (seenKeys[contentKey]) {
-        skipped++;
+        entry.id = uuid();
+        seenKeys[contentKey] = true;
+        byId[entry.id] = entry;
+        events.push(entry);
+        added++;
         return;
       }
-      if (!id) id = uuid();
-      seenIds[id] = true;
-      seenKeys[contentKey] = true;
-      var entry = { id: id, type: raw.type, time: iso };
-      var nextMin = Number(raw.nextMin);
-      if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
-      if (raw.type === "diaper" && NAPPY_TYPES[raw.nappy]) entry.nappy = raw.nappy;
-      if (MEASURES[raw.type]) {
-        var measured = Number(raw.value);
-        if (!isFinite(measured) || measured <= 0) {
-          invalid++;
-          return;
-        }
-        entry.value = measured;
+
+      var existing = byId[entry.id];
+      if (!existing) {
+        byId[entry.id] = entry;
+        seenKeys[entry.type + "|" + entry.time] = true;
+        events.push(entry);
+        added++;
+        return;
       }
-      events.push(entry);
-      added++;
+
+      // Same record on both sides: the newer edit wins, whichever device made
+      // it. A tie keeps what is here, so re-importing the same file is quiet.
+      if (entry.updatedAt > updatedAtOf(existing)) {
+        events[events.indexOf(existing)] = entry;
+        byId[entry.id] = entry;
+        updated++;
+      } else {
+        skipped++;
+      }
     });
 
-    if (added && !saveEvents(events)) return;
+    if ((added || updated) && !saveEvents(events)) return;
 
     renderAll();
     var msg = "Added " + added + (added === 1 ? " entry" : " entries");
-    if (skipped) msg += ", " + skipped + " duplicate" + (skipped === 1 ? "" : "s") + " skipped";
+    if (updated) msg += ", " + updated + " updated";
+    if (skipped) msg += ", " + skipped + " unchanged";
     if (invalid) msg += ", " + invalid + " not recognised";
     showToast(msg);
   }
