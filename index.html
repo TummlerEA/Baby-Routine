@@ -10,7 +10,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Baby">
-<link rel="stylesheet" href="style.css">
+<!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
+     browsers cache assets, and without this Safari happily runs a stale
+     app.js against a fresh index.html. -->
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div class="app">
@@ -171,6 +174,7 @@
         <button class="data-btn data-btn-import" id="importBtn">Restore from a file</button>
         <input type="file" id="importFile" accept=".csv,.json,text/csv,application/json" hidden>
         <p class="data-hint">Everything is stored in this browser only. Clearing site data or changing phone will delete it, so save a backup now and then. Restoring <strong>adds</strong> entries to what you already have and skips anything it has seen before.</p>
+        <p class="data-version">Version 5</p>
       </div>
     </section>
 
@@ -182,6 +186,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

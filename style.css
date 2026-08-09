@@ -646,3 +646,10 @@ body {
   color: var(--text-faint);
   margin: 2px 4px 0;
 }
+
+.data-version {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 0;
+  text-align: right;
+}
