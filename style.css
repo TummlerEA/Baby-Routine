@@ -1042,3 +1042,14 @@ body {
   resize: none;
   word-break: break-all;
 }
+
+.settings-intro-spaced { margin-top: 6px; }
+
+.shared-tip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--overdue);
+}
+
+.shared-tip strong { color: var(--overdue); }

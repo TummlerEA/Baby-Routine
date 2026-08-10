@@ -285,6 +285,8 @@
     sharedDiscard: document.getElementById("sharedDiscard"),
     shareRange: document.getElementById("shareRange"),
     shareCreate: document.getElementById("shareCreate"),
+    inviteCreate: document.getElementById("inviteCreate"),
+    sharedTip: document.getElementById("sharedTip"),
     shareSend: document.getElementById("shareSend"),
     shareStatus: document.getElementById("shareStatus"),
     shareBox: document.getElementById("shareBox"),
@@ -1850,6 +1852,49 @@
     return (chars / 1024).toFixed(1) + " KB";
   }
 
+  function appUrl() {
+    return location.origin + location.pathname;
+  }
+
+  // Installed to the home screen, rather than sitting in a browser tab.
+  function isStandalone() {
+    if (window.navigator.standalone === true) return true;
+    return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  }
+
+  function inviteText() {
+    var who = loadName().trim();
+    return "Baby Tracker — a simple log for " + (who ? who + "'s" : "our baby's") +
+      " feeds, nappies and sleep.\n\n" +
+      "Open this on your phone, then add it to your Home Screen so it behaves like an app " +
+      "and your entries are not left in a browser tab:\n" + appUrl() + "\n\n" +
+      "Then I'll send you links with the entries I have logged. Opening one asks whether to " +
+      "merge them into yours, and you can send one back the same way — whatever either of us " +
+      "records ends up in both.";
+  }
+
+  var pendingSharePayload = null;
+
+  // The share sheet takes the payload; the box is the fallback for copying by
+  // hand, so it holds whatever is useful to paste.
+  function offerToShare(payload, note, boxValue) {
+    pendingSharePayload = payload;
+    el.shareBox.value = boxValue;
+    el.shareBox.hidden = false;
+    el.shareStatus.textContent = note;
+    el.shareStatus.hidden = false;
+    el.shareSend.hidden = typeof navigator.share !== "function";
+  }
+
+  el.inviteCreate.addEventListener("click", function () {
+    var text = inviteText();
+    offerToShare(
+      { title: "Baby Tracker", text: text, url: appUrl() },
+      "Invitation ready — send it, then share entries once they have opened it.",
+      text
+    );
+  });
+
   el.shareCreate.addEventListener("click", function () {
     var days = parseInt(el.shareRange.value, 10) || 0;
     el.shareCreate.disabled = true;
@@ -1863,16 +1908,16 @@
         return;
       }
       var url = shareUrlFor(result.text);
-      el.shareBox.value = url;
-      el.shareBox.hidden = false;
-      el.shareSend.hidden = typeof navigator.share !== "function";
       var note = result.count + (result.count === 1 ? " entry" : " entries") +
         " · " + describeSize(url.length);
       if (url.length > SHARE_COMFORTABLE_CHARS) {
         note += " — long enough that some messaging apps may break it. Try a shorter period, or send the JSON backup instead.";
       }
-      el.shareStatus.textContent = note;
-      el.shareStatus.hidden = false;
+      offerToShare({
+        title: "Baby Tracker",
+        text: "Recent entries from " + (loadName().trim() || "the baby") + "'s log",
+        url: url
+      }, note, url);
     }).catch(function () {
       el.shareCreate.disabled = false;
       showError("Couldn't build the share link");
@@ -1880,12 +1925,8 @@
   });
 
   el.shareSend.addEventListener("click", function () {
-    if (typeof navigator.share !== "function" || !el.shareBox.value) return;
-    navigator.share({
-      title: "Baby Tracker",
-      text: "Recent entries from " + (loadName().trim() || "the baby") + "'s log",
-      url: el.shareBox.value
-    }).catch(function () { /* dismissed by the user */ });
+    if (typeof navigator.share !== "function" || !pendingSharePayload) return;
+    navigator.share(pendingSharePayload).catch(function () { /* dismissed by the user */ });
   });
 
   // ---------- sharing: receiving ----------
@@ -1913,6 +1954,7 @@
     if (removed) line += " and " + removed + " deletion" + (removed === 1 ? "" : "s");
     line += ". Merging keeps everything you already have — only newer versions of the same entry replace yours.";
     el.sharedLine.textContent = line;
+    el.sharedTip.hidden = isStandalone();
     el.sharedIn.hidden = false;
   }
 
