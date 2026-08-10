@@ -287,6 +287,9 @@
     shareCreate: document.getElementById("shareCreate"),
     inviteCreate: document.getElementById("inviteCreate"),
     sharedTip: document.getElementById("sharedTip"),
+    sharedCopy: document.getElementById("sharedCopy"),
+    pasteBox: document.getElementById("pasteBox"),
+    pasteMerge: document.getElementById("pasteMerge"),
     shareSend: document.getElementById("shareSend"),
     shareStatus: document.getElementById("shareStatus"),
     shareBox: document.getElementById("shareBox"),
@@ -1852,6 +1855,35 @@
     return (chars / 1024).toFixed(1) + " KB";
   }
 
+  function legacyCopy(text) {
+    try {
+      var box = document.createElement("textarea");
+      box.value = text;
+      box.setAttribute("readonly", "");
+      box.style.position = "fixed";
+      box.style.top = "-1000px";
+      document.body.appendChild(box);
+      box.select();
+      box.setSelectionRange(0, text.length);
+      var ok = document.execCommand("copy");
+      document.body.removeChild(box);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // The Clipboard API needs a secure context, which an in-app browser may not
+  // give us, so fall back to the old selection trick.
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text)
+        .then(function () { return true; })
+        .catch(function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
   function appUrl() {
     return location.origin + location.pathname;
   }
@@ -1866,11 +1898,14 @@
     var who = loadName().trim();
     return "Baby Tracker — a simple log for " + (who ? who + "'s" : "our baby's") +
       " feeds, nappies and sleep.\n\n" +
-      "Open this on your phone, then add it to your Home Screen so it behaves like an app " +
-      "and your entries are not left in a browser tab:\n" + appUrl() + "\n\n" +
-      "Then I'll send you links with the entries I have logged. Opening one asks whether to " +
-      "merge them into yours, and you can send one back the same way — whatever either of us " +
-      "records ends up in both.";
+      "Open this on your phone:\n" + appUrl() + "\n\n" +
+      "You can use it straight from Safari, or add it to your Home Screen so it behaves like " +
+      "an app. Worth knowing: on an iPhone those two keep separate copies of the data, so pick " +
+      "one and stick to it.\n\n" +
+      "Then I'll send you links with the entries I have logged. If you use Safari, just tap " +
+      "one. If you added it to your Home Screen, don't tap the link — hold it, copy it, open " +
+      "the app and paste it into Settings under Share. Either way it asks before merging, and " +
+      "you can send one back the same way, so whatever either of us records ends up in both.";
   }
 
   var pendingSharePayload = null;
@@ -1932,6 +1967,7 @@
   // ---------- sharing: receiving ----------
 
   var pendingShare = null;
+  var pendingShareLink = "";
 
   function clearShareHash() {
     try {
@@ -1943,6 +1979,7 @@
 
   function hideSharedIn() {
     pendingShare = null;
+    pendingShareLink = "";
     el.sharedIn.hidden = true;
   }
 
@@ -1954,7 +1991,11 @@
     if (removed) line += " and " + removed + " deletion" + (removed === 1 ? "" : "s");
     line += ". Merging keeps everything you already have — only newer versions of the same entry replace yours.";
     el.sharedLine.textContent = line;
-    el.sharedTip.hidden = isStandalone();
+    // On iOS a Home Screen app and Safari keep entirely separate storage, and
+    // a tapped link always lands in Safari. Offer a way to carry it across.
+    var browserTab = !isStandalone();
+    el.sharedTip.hidden = !browserTab;
+    el.sharedCopy.hidden = !browserTab || !pendingShareLink;
     el.sharedIn.hidden = false;
   }
 
@@ -1966,6 +2007,15 @@
     mergeImported(incoming.events);
   });
 
+  el.sharedCopy.addEventListener("click", function () {
+    if (!pendingShareLink) return;
+    copyText(shareUrlFor(pendingShareLink)).then(function (ok) {
+      showToast(ok
+        ? "Copied. Open the app from your Home Screen, then Settings → paste it under Share."
+        : "Couldn't copy — select the link in the address bar instead.");
+    });
+  });
+
   el.sharedDiscard.addEventListener("click", function () {
     hideSharedIn();
     showToast("Shared log discarded");
@@ -1975,17 +2025,48 @@
   // fragment, which does not reload anything — so listen for that too.
   window.addEventListener("hashchange", function () { handleShareHash(); });
 
+  // Accepts a whole link or just the payload, however it survived being
+  // copied out of a chat.
+  function payloadFromText(text) {
+    var trimmed = String(text || "").trim();
+    if (!trimmed) return "";
+    var marker = trimmed.indexOf("#s=");
+    if (marker >= 0) trimmed = trimmed.slice(marker + 3);
+    return trimmed.replace(/\s+/g, "");
+  }
+
+  function receiveShareText(payload, onFailure) {
+    return decodeShare(payload).then(function (incoming) {
+      if (!incoming || !incoming.events.length) {
+        onFailure();
+        return false;
+      }
+      pendingShareLink = payload;
+      showScreen("main");
+      offerSharedLog(incoming);
+      return true;
+    });
+  }
+
+  el.pasteMerge.addEventListener("click", function () {
+    var payload = payloadFromText(el.pasteBox.value);
+    if (!payload) {
+      showToast("Paste a share link first");
+      return;
+    }
+    receiveShareText(payload, function () {
+      showToast("That does not look like a share link");
+    }).then(function (ok) {
+      if (ok) el.pasteBox.value = "";
+    });
+  });
+
   function handleShareHash() {
     var match = /^#s=(.+)$/.exec(location.hash || "");
     if (!match) return;
     clearShareHash();
-    decodeShare(match[1]).then(function (incoming) {
-      if (!incoming || !incoming.events.length) {
-        showToast("That share link could not be read");
-        return;
-      }
-      showScreen("main");
-      offerSharedLog(incoming);
+    receiveShareText(match[1], function () {
+      showToast("That share link could not be read");
     });
   }
 
