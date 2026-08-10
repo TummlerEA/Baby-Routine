@@ -21,7 +21,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "24";
+    var fallback = "25";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -80,16 +80,31 @@
   var FEED_MINUTES = [10, 15, 20, 30, 45, 60];
   // Only until the log can suggest the parent's own figure instead.
   var FEED_MINUTES_DEFAULT = 20;
+  // Index 0 is "not recorded", so a share link that predates this column
+  // reads as absent rather than as breast.
+  var FEED_SOURCE_IDS = ["", "breast", "formula", "expressed"];
 
   // How the baby is fed. A standing fact about the baby rather than something
   // to answer at every feed, so it lives in Settings — but the first thing any
   // adviser asks, which is why it is worth carrying at all.
+  // `fallsBackTo` is what a new feed is stamped with unless the parent says
+  // otherwise on the card. Mixed has no single answer, so it asks and stamps
+  // nothing; "prefer not to say" switches the whole question off.
   var FEEDING_OPTIONS = [
-    { id: "",          label: "Prefer not to say", summary: "" },
-    { id: "breast",    label: "Breastfed",         summary: "breastfed" },
-    { id: "formula",   label: "Formula fed",       summary: "formula fed" },
-    { id: "mixed",     label: "Mixed — both",      summary: "mixed feeding, breast and formula" },
-    { id: "expressed", label: "Expressed milk",    summary: "expressed breast milk, from a bottle" }
+    { id: "",          label: "Prefer not to say", summary: "",                                       fallsBackTo: "", asks: false },
+    { id: "breast",    label: "Breastfed",         summary: "breastfed",                              fallsBackTo: "breast",    asks: true },
+    { id: "formula",   label: "Formula fed",       summary: "formula fed",                            fallsBackTo: "formula",   asks: true },
+    { id: "mixed",     label: "Mixed — both",      summary: "mixed feeding, breast and formula",      fallsBackTo: "",          asks: true },
+    { id: "expressed", label: "Expressed milk",    summary: "expressed breast milk, from a bottle",   fallsBackTo: "expressed", asks: true }
+  ];
+
+  // What one feed was. Stamped when the feed is logged rather than read back
+  // through the setting, so changing the regime later cannot rewrite what
+  // already happened.
+  var FEED_SOURCES = [
+    { id: "breast",    label: "Breast",    detail: "🤱 Breast" },
+    { id: "formula",   label: "Formula",   detail: "🍼 Formula" },
+    { id: "expressed", label: "Expressed", detail: "🥛 Expressed" }
   ];
 
   // How the baby's name is set on the main screen. Only system typefaces: a
@@ -512,10 +527,14 @@
     nextUpTitle: document.getElementById("nextUpTitle"),
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
+    sourceBlock: document.getElementById("sourceBlock"),
+    sourceChips: document.getElementById("sourceChips"),
     feedBlock: document.getElementById("feedBlock"),
     feedChips: document.getElementById("feedChips"),
     nappyBlock: document.getElementById("nappyBlock"),
     nappyChips: document.getElementById("nappyChips"),
+    manualSourceField: document.getElementById("manualSourceField"),
+    manualSource: document.getElementById("manualSource"),
     manualFedField: document.getElementById("manualFedField"),
     manualFed: document.getElementById("manualFed"),
     manualNappyField: document.getElementById("manualNappyField"),
@@ -883,6 +902,28 @@
     return (event && NAPPY_TYPES[event.nappy]) ? event.nappy : null;
   }
 
+  function feedSource(id) {
+    for (var i = 0; i < FEED_SOURCES.length; i++) {
+      if (FEED_SOURCES[i].id === id) return FEED_SOURCES[i];
+    }
+    return null;
+  }
+
+  function fedWithOf(event) {
+    if (!event || event.type !== "feed") return "";
+    return feedSource(event.fedWith) ? event.fedWith : "";
+  }
+
+  function defaultFedWith() {
+    var regime = feedingOption(loadFeeding());
+    return regime ? regime.fallsBackTo : "";
+  }
+
+  function asksFedWith() {
+    var regime = feedingOption(loadFeeding());
+    return !!(regime && regime.asks);
+  }
+
   function fedMinutesOf(event) {
     if (!event || event.type !== "feed") return null;
     var value = Number(event.fedMin);
@@ -1237,6 +1278,7 @@
               (fedMinutesOf(e) ? '<div class="l-duration">took ' +
                 formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
+              (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
               (measureValueOf(e) !== null
                 ? '<div class="l-measure">' + escapeHtml(measureLine(e)) + '</div>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
@@ -1407,6 +1449,8 @@
     var isFeed = el.manualType.value === "feed";
     el.manualFedField.hidden = !isFeed;
     if (!isFeed) el.manualFed.value = "";
+    el.manualSourceField.hidden = !(isFeed && asksFedWith());
+    if (!isFeed) el.manualSource.value = "";
   }
 
   function syncManualFields() {
@@ -1420,6 +1464,7 @@
   function resetManualForm() {
     editingId = null;
     el.manualFed.value = "";
+    el.manualSource.value = defaultFedWith();
     el.manualNappy.value = "";
     el.manualValue.value = "";
     el.manualMeasureLabel.value = "";
@@ -1440,6 +1485,7 @@
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
     el.manualFed.value = fedMinutesOf(found) === null ? "" : String(fedMinutesOf(found));
+    el.manualSource.value = fedWithOf(found);
     el.manualNappy.value = nappyOf(found) || "";
     el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
     el.manualMeasureLabel.value = measureLabelOf(found);
@@ -1545,6 +1591,8 @@
       else delete target.nappy;
       if (type === "feed" && fedMinutes) target.fedMin = fedMinutes;
       else delete target.fedMin;
+      if (type === "feed" && feedSource(el.manualSource.value)) target.fedWith = el.manualSource.value;
+      else delete target.fedWith;
       if (measureMeta) target.value = measureValue;
       else delete target.value;
       if (measureLabel) target.label = measureLabel;
@@ -1560,7 +1608,8 @@
     } else {
       savedId = addEvent(type, picked.toISOString(),
         type === "diaper" ? el.manualNappy.value : "", measureValue,
-        measureLabel, measureUnit, type === "feed" ? fedMinutes : 0);
+        measureLabel, measureUnit, type === "feed" ? fedMinutes : 0,
+        type === "feed" ? el.manualSource.value : "");
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
@@ -1619,6 +1668,20 @@
       ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
 
     var isFeed = nextUpKind === "feed";
+    var asksSource = isFeed && asksFedWith();
+    el.sourceBlock.hidden = !asksSource;
+    if (asksSource) {
+      var chosen = fedWithOf(event);
+      el.sourceChips.innerHTML = "";
+      FEED_SOURCES.forEach(function (source) {
+        var chip = document.createElement("button");
+        chip.className = "nextup-chip source-chip" + (source.id === chosen ? " selected" : "");
+        chip.setAttribute("data-source", source.id);
+        chip.textContent = source.label;
+        el.sourceChips.appendChild(chip);
+      });
+    }
+
     el.feedBlock.hidden = !isFeed;
     if (isFeed) {
       var recorded = fedMinutesOf(event);
@@ -1672,6 +1735,27 @@
   }
 
   el.nextUpClose.addEventListener("click", hideNextUp);
+
+  el.sourceChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".source-chip");
+    if (!chip) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+
+    var id = chip.getAttribute("data-source");
+    // Tapping the same answer again clears it, so a mis-tap is undoable — and
+    // clearing means "not recorded", not "back to the setting", or a later
+    // change of regime would rewrite this feed.
+    if (fedWithOf(event) === id) delete event.fedWith;
+    else event.fedWith = id;
+    touch(event);
+
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
 
   el.feedChips.addEventListener("click", function (ev) {
     var chip = ev.target.closest(".feed-chip");
@@ -1769,10 +1853,16 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit, fedMin) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
+    // Stamped now rather than looked up later: the setting is a default for
+    // feeds as they happen, not a verdict on ones already logged.
+    if (type === "feed") {
+      var source = feedSource(fedWith === undefined ? defaultFedWith() : fedWith);
+      if (source) event.fedWith = source.id;
+    }
     if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
     if (label) event.label = label;
     if (unit) event.unit = unit;
@@ -1842,7 +1932,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value", "label", "unit", "updated_iso"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -1853,6 +1943,7 @@
         e.time,
         duration ? Math.round(duration / MS_MIN) : (fedMinutesOf(e) || ""),
         customMinutesOf(e) || "",
+        fedWithOf(e),
         nappyOf(e) || "",
         measureValueOf(e) === null ? "" : e.value,
         measureLabelOf(e),
@@ -1888,6 +1979,7 @@
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
+          (fedWithOf(e) ? " (" + feedSource(e.fedWith).label.toLowerCase() + ")" : "") +
           (measureValueOf(e) !== null ? " — " + measureLine(e) : "") +
           " | " + (duration ? formatDuration(duration) : "—") + " |");
       });
@@ -2009,7 +2101,8 @@
           isDeleted(e) ? 1 : 0,
           measureLabelOf(e),
           measureUnitOf(e),
-          fedMinutesOf(e) || 0
+          fedMinutesOf(e) || 0,
+          FEED_SOURCE_IDS.indexOf(fedWithOf(e))
         ];
       })
     };
@@ -2039,6 +2132,7 @@
       if (row[9]) entry.unit = cleanText(row[9], MAX_UNIT);
       // Appended after the fact: an older link simply has no tenth column.
       if (row[10] && type === "feed") entry.fedMin = row[10];
+      if (row[11] > 0 && type === "feed") entry.fedWith = FEED_SOURCE_IDS[row[11]];
       out.events.push(entry);
     });
     return out;
@@ -2223,6 +2317,7 @@
     if (raw.type === "feed") {
       var fedMin = Number(raw.fedMin);
       if (fedMin > 0 && fedMin <= 24 * 60) entry.fedMin = Math.round(fedMin);
+      if (feedSource(raw.fedWith)) entry.fedWith = raw.fedWith;
     }
     if (MEASURES[raw.type]) {
       var measured = Number(raw.value);
@@ -2999,6 +3094,11 @@
 
   el.babyFeeding.addEventListener("change", function () {
     saveFeeding(el.babyFeeding.value);
+    // The form's default and whether the question is asked at all both hang
+    // off this, and neither should wait for a reload.
+    if (!editingId) el.manualSource.value = defaultFedWith();
+    syncManualFields();
+    renderNextUp();
   });
 
   el.babyDob.value = loadDob();
@@ -3021,7 +3121,7 @@
   // use, so the summary agrees with what the parent can see in the log.
   function aiDayStats(dayStart, analysis) {
     var dayEnd = dayStart + MS_DAY;
-    var out = { feeds: 0, fedMs: 0, fedCount: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    var out = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {}, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     liveEvents().forEach(function (e) {
       var t = +new Date(e.time);
       if (t < dayStart || t >= dayEnd) return;
@@ -3032,6 +3132,8 @@
           out.fedMs += mins * MS_MIN;
           out.fedCount++;
         }
+        var source = fedWithOf(e);
+        if (source) out.bySource[source] = (out.bySource[source] || 0) + 1;
       }
       if (e.type !== "diaper") return;
       out.nappies++;
@@ -3147,7 +3249,7 @@
     today.setHours(0, 0, 0, 0);
     var since = +today - (days - 1) * MS_DAY;
     var counted = 0;
-    var totals = { feeds: 0, fedMs: 0, fedCount: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    var totals = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {}, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     for (var i = 0; i < days; i++) {
       var dayStart = +today - i * MS_DAY;
       var stats = aiDayStats(dayStart, analysis);
@@ -3156,6 +3258,11 @@
       totals.feeds += stats.feeds;
       totals.fedMs += stats.fedMs;
       totals.fedCount += stats.fedCount;
+      FEED_SOURCES.forEach(function (source) {
+        if (stats.bySource[source.id]) {
+          totals.bySource[source.id] = (totals.bySource[source.id] || 0) + stats.bySource[source.id];
+        }
+      });
       totals.nappies += stats.nappies;
       totals.wet += stats.wet;
       totals.dirty += stats.dirty;
@@ -3199,6 +3306,16 @@
     }
     var longestSleep = aiLongestSleep(analysis, since);
     if (longestSleep) out.push("Longest single sleep: " + formatDuration(longestSleep));
+
+    // Only worth a line when the log actually distinguishes them: a purely
+    // breastfed baby has already said so on the "Fed:" line above.
+    var sourceParts = [];
+    FEED_SOURCES.forEach(function (source) {
+      if (totals.bySource[source.id]) {
+        sourceParts.push(totals.bySource[source.id] + " " + source.label.toLowerCase());
+      }
+    });
+    if (sourceParts.length > 1) out.push("Feeds by source: " + sourceParts.join(", "));
 
     out.push("");
     if (totals.fedCount) {

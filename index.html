@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
@@ -113,6 +113,10 @@
           <span class="nextup-title" id="nextUpTitle">Feed logged</span>
           <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
+        <div class="nextup-block" id="sourceBlock" hidden>
+          <div class="nextup-sublabel">What was it?</div>
+          <div class="nextup-chips feed-chips" id="sourceChips"></div>
+        </div>
         <div class="nextup-block" id="feedBlock" hidden>
           <div class="nextup-sublabel">How long did it take?</div>
           <div class="nextup-chips feed-chips" id="feedChips"></div>
@@ -166,6 +170,15 @@
             <span class="manual-label" id="manualValueLabel">Value</span>
             <input type="number" id="manualValue" class="manual-input" inputmode="decimal" step="any" min="0">
             <span class="manual-echo" id="manualValueEcho"></span>
+          </label>
+          <label class="manual-field" id="manualSourceField" hidden>
+            <span class="manual-label">What was it?</span>
+            <select id="manualSource" class="manual-select">
+              <option value="">Not recorded</option>
+              <option value="breast">Breast</option>
+              <option value="formula">Formula</option>
+              <option value="expressed">Expressed</option>
+            </select>
           </label>
           <label class="manual-field" id="manualFedField" hidden>
             <span class="manual-label">How long did it take?</span>
@@ -486,7 +499,7 @@
           <label class="manual-field">
             <span class="manual-label">How your baby is fed</span>
             <select id="babyFeeding" class="manual-input"></select>
-            <span class="manual-echo">The first thing anyone giving advice asks. Used in the summary the <strong>Ask an AI</strong> button builds, and nowhere else.</span>
+            <span class="manual-echo">The first thing anyone giving advice asks. It is also what each new feed is recorded as, and the card after a feed lets you say otherwise for that one.</span>
           </label>
           <div class="manual-field">
             <span class="manual-label">Name style</span>
@@ -609,6 +622,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>
