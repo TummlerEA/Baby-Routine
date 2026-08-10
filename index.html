@@ -15,11 +15,14 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 
-<div id="errorBanner" class="banner banner-error" hidden></div>
+<div id="errorBanner" class="banner banner-error" hidden>
+  <span id="errorText"></span>
+  <button class="banner-close" id="errorClose" aria-label="Dismiss">✕</button>
+</div>
 
 <div class="app">
 
@@ -258,6 +261,19 @@
           </article>
 
           <article class="info-card">
+            <h3>Keeping two phones in step automatically</h3>
+            <p>Swapping links works, but it is manual. <strong>Settings → Sync across phones</strong> keeps both phones in step through a <strong>private</strong> repository on GitHub — no server of ours in the middle, and nobody else can read it.</p>
+            <p>Set it up once on each phone:</p>
+            <ul>
+              <li>Make a <strong>private</strong> repository on GitHub. An empty one is fine; the app creates the file it needs.</li>
+              <li>Make a <strong>fine-grained</strong> access token at <em>Settings → Developer settings → Personal access tokens</em>, give it access to <strong>only</strong> that repository, and set <strong>Contents: Read and write</strong>. A classic token would reach every repository you own — do not use one.</li>
+              <li>Paste the repository as <code>owner/name</code> and the token into Settings, and press Connect.</li>
+            </ul>
+            <p>After that it syncs when you open the app, when you come back to it, about once a minute while it is on screen, and shortly after anything you log. If both of you write at the same moment, nothing is lost: the newer version of each entry wins and the rest is merged.</p>
+            <p>The token stays on the phone you typed it into. It is never put in a backup, a report or a share link. If a phone is lost, delete that token on GitHub and the phone loses access.</p>
+          </article>
+
+          <article class="info-card">
             <h3>Putting it on your home screen</h3>
             <p>On iPhone, open the app in Safari, tap the share button, then <strong>Add to Home Screen</strong>. It then opens like an ordinary app, full screen, and keeps working without a signal.</p>
           </article>
@@ -423,6 +439,31 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">🔄</span> Sync across phones</h2>
+        <div class="data-panel">
+          <p class="settings-intro">Keeps both phones in step automatically through a <strong>private</strong> repository on GitHub. Nobody else can read it, and there is still no server of ours in the middle.</p>
+
+          <div class="sync-status" id="syncStatus">Not connected</div>
+
+          <label class="manual-field">
+            <span class="manual-label">Private repository</span>
+            <input type="text" id="syncRepo" class="manual-input" placeholder="your-name/baby-log" autocomplete="off" autocapitalize="none" spellcheck="false">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Access token</span>
+            <input type="password" id="syncToken" class="manual-input" placeholder="github_pat_…" autocomplete="off" autocapitalize="none" spellcheck="false">
+          </label>
+
+          <button class="data-btn data-btn-import" id="syncConnect">Connect and sync</button>
+          <button class="data-btn" id="syncNow" hidden>Sync now</button>
+          <button class="data-btn" id="syncDisconnect" hidden>Disconnect this phone</button>
+
+          <p class="data-hint">Create the token at <strong>github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens</strong>. Give it access to <strong>only</strong> that one repository, with <strong>Contents: Read and write</strong>. A classic token would reach every repository you own — do not use one here.</p>
+          <p class="data-hint">The token stays on this phone and is never included in a backup, a report or a share link. Both phones need connecting once each.</p>
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">💾</span> Export &amp; backup</h2>
         <div class="data-panel">
           <button class="data-btn" id="exportCsv">Download CSV — for spreadsheets</button>
@@ -434,7 +475,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 15 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 16 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -446,6 +487,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
