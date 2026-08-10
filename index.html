@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -212,6 +212,13 @@
         </div>
       </section>
 
+      <section class="ai-row" id="aiRow" hidden>
+        <button class="log-toggle" id="aiOpen">
+          <span class="log-icon">🤖</span>
+          <span>Ask an AI about this</span>
+        </button>
+      </section>
+
       <section class="version-row">
         <button class="app-version" id="appVersion" title="Tap to fetch the latest version" aria-label="App version. Tap to fetch the latest version.">v—</button>
       </section>
@@ -326,7 +333,7 @@
 
           <article class="info-card">
             <h3>Your data stays yours</h3>
-            <p>There is no account, no server and no analytics. Everything you record lives in this browser's own storage and is never sent anywhere. That is a deliberate trade: total privacy in exchange for you keeping your own backups.</p>
+            <p>There is no account, no server and no analytics. Everything you record lives in this browser's own storage, and it goes nowhere unless you send it: sync writes to a private repository you own, a share link is one you pass on yourself, and <strong>Ask an AI</strong> hands a summary to Claude, ChatGPT or Perplexity. All three are off until you switch them on, and only the last puts anything in a company's hands — you see the exact text first. That is a deliberate trade: total privacy in exchange for you keeping your own backups.</p>
           </article>
 
         </div>
@@ -399,6 +406,51 @@
     </main>
   </div>
 
+  <!-- ============ ask an AI screen ============ -->
+  <div class="screen" id="screenAi" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="aiBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Ask an AI</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <div class="data-panel">
+          <p class="settings-intro">Nothing here answers you. The app writes a short summary of the log, then opens the assistant you already use — your account, your subscription. There is no key to buy and no bill attached to this app.</p>
+
+          <label class="manual-field">
+            <span class="manual-label">Your question</span>
+            <textarea id="aiQuestion" class="ai-question" rows="2" maxlength="500" placeholder="Ask anything about the log…"></textarea>
+          </label>
+          <div class="ai-chips" id="aiChips"></div>
+
+          <label class="settings-row">
+            <span class="settings-label">Summarise</span>
+            <select class="settings-select" id="aiRange">
+              <option value="1">Last 24 hours</option>
+              <option value="3" selected>Last 3 days</option>
+              <option value="7">Last week</option>
+              <option value="14">Last fortnight</option>
+            </select>
+          </label>
+
+          <p class="data-hint">This is the whole of what leaves the phone — read it before you send it:</p>
+          <textarea class="share-box ai-preview" id="aiPreview" readonly rows="16"></textarea>
+          <p class="data-hint" id="aiSize">—</p>
+
+          <div class="ai-targets" id="aiTargets"></div>
+          <button class="data-btn" id="aiCopy">📋 Copy it — I will paste it myself</button>
+
+          <p class="data-hint"><strong>This is the one part of the app that is not private.</strong> Whatever you send goes to that company and is handled under their terms, not ours. Nothing else about your log is uploaded anywhere.</p>
+          <p class="data-hint"><strong>It is not medical advice.</strong> A model will sound confident about a baby it has never seen. Anything that worries you goes to your health visitor, GP or NHS 111.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ settings screen ============ -->
   <div class="screen" id="screenSettings" hidden>
 
@@ -447,6 +499,23 @@
             <select class="settings-select" id="intervalSleep" data-kind="sleep"></select>
           </label>
           <p class="settings-hint">These are your everyday defaults. After logging something you can set a different gap just for that one time — handy for a long night stretch.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">🤖</span> Ask an AI</h2>
+        <div class="settings-panel">
+          <p class="settings-intro">Puts a button on the main screen that hands a summary of the log to Claude, ChatGPT or Perplexity — whichever you already use. The app has no AI of its own and never will; this only saves you typing the numbers out.</p>
+          <label class="settings-check">
+            <input type="checkbox" id="aiEnabled">
+            <span class="settings-label">Show the <strong>Ask an AI</strong> button</span>
+          </label>
+          <label class="settings-check">
+            <input type="checkbox" id="aiUseName">
+            <span class="settings-label">Include your baby's name</span>
+          </label>
+          <p class="settings-hint">Off, the summary says "the baby" — the answer is just as good and one less thing has left the phone. Nothing else identifying is ever included, and your sync token never is.</p>
+          <p class="settings-hint">You see the exact text before anything is sent, and you can stop at copying it. This setting stays on this phone.</p>
         </div>
       </section>
 
@@ -525,6 +594,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>
