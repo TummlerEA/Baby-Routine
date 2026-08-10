@@ -7,6 +7,12 @@
   var NAME_KEY = "baby-tracker-name";
   var INTERVALS_KEY = "baby-tracker-intervals";
   var DOB_KEY = "baby-tracker-dob";
+  var META_STAMP_KEY = "baby-tracker-meta-updated";
+  var SYNC_KEY = "baby-tracker-sync";
+  var SYNC_PATH = "baby-tracker-log.json";
+  var SYNC_DEBOUNCE = 8000;
+  var SYNC_POLL = 60000;
+  var SYNC_RETRIES = 3;
   var MS_MIN = 60 * 1000;
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
@@ -89,6 +95,7 @@
     try {
       localStorage.setItem(EVENTS_KEY, JSON.stringify(list));
       hideError();
+      scheduleSync();
       return true;
     } catch (e) {
       showError("Couldn't save your data");
@@ -107,7 +114,9 @@
   function saveName(name) {
     try {
       localStorage.setItem(NAME_KEY, name);
+      touchMeta();
       hideError();
+      scheduleSync();
     } catch (e) {
       showError("Couldn't save the name");
     }
@@ -132,7 +141,9 @@
   function saveIntervals() {
     try {
       localStorage.setItem(INTERVALS_KEY, JSON.stringify(intervals));
+      touchMeta();
       hideError();
+      scheduleSync();
       return true;
     } catch (e) {
       showError("Couldn't save your settings");
@@ -152,7 +163,9 @@
     try {
       if (value) localStorage.setItem(DOB_KEY, value);
       else localStorage.removeItem(DOB_KEY);
+      touchMeta();
       hideError();
+      scheduleSync();
     } catch (e) {
       showError("Couldn't save the date of birth");
     }
@@ -186,6 +199,50 @@
     }
     var months = Math.floor(days / 30.44);
     return months + (months === 1 ? " month" : " months");
+  }
+
+  // Name, date of birth and intervals travel together and change rarely, so a
+  // single timestamp for the group decides which side wins.
+  function metaStamp() {
+    try {
+      return localStorage.getItem(META_STAMP_KEY) || "1970-01-01T00:00:00.000Z";
+    } catch (e) {
+      return "1970-01-01T00:00:00.000Z";
+    }
+  }
+
+  function setMetaStamp(iso) {
+    try {
+      localStorage.setItem(META_STAMP_KEY, iso);
+    } catch (e) { /* nothing worth reporting */ }
+  }
+
+  function touchMeta() {
+    try {
+      localStorage.setItem(META_STAMP_KEY, new Date().toISOString());
+    } catch (e) { /* the write that mattered has already reported failure */ }
+  }
+
+  function loadSyncConfig() {
+    try {
+      var raw = localStorage.getItem(SYNC_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || !parsed.repo || !parsed.token) return null;
+      return { repo: String(parsed.repo), token: String(parsed.token), sha: parsed.sha || null };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveSyncConfig(config) {
+    try {
+      if (config) localStorage.setItem(SYNC_KEY, JSON.stringify(config));
+      else localStorage.removeItem(SYNC_KEY);
+      return true;
+    } catch (e) {
+      showError("Couldn't save the sync settings");
+      return false;
+    }
   }
 
   function uuid() {
@@ -232,6 +289,8 @@
     topClock: document.getElementById("topClock"),
     babyName: document.getElementById("babyName"),
     errorBanner: document.getElementById("errorBanner"),
+    errorText: document.getElementById("errorText"),
+    errorClose: document.getElementById("errorClose"),
     sleepBanner: document.getElementById("sleepBanner"),
     sleepDuration: document.getElementById("sleepDuration"),
     sleepWarning: document.getElementById("sleepWarning"),
@@ -275,6 +334,12 @@
     manualSubmit: document.getElementById("manualSubmit"),
     manualCancel: document.getElementById("manualCancel"),
     screenInfo: document.getElementById("screenInfo"),
+    syncStatus: document.getElementById("syncStatus"),
+    syncRepo: document.getElementById("syncRepo"),
+    syncToken: document.getElementById("syncToken"),
+    syncConnect: document.getElementById("syncConnect"),
+    syncNow: document.getElementById("syncNow"),
+    syncDisconnect: document.getElementById("syncDisconnect"),
     infoOpenBtn: document.getElementById("infoOpen"),
     infoBack: document.getElementById("infoBack"),
     gettingStarted: document.getElementById("gettingStarted"),
@@ -324,13 +389,16 @@
   }
 
   function showError(msg) {
-    el.errorBanner.textContent = msg;
+    el.errorText.textContent = msg;
     el.errorBanner.hidden = false;
   }
 
   function hideError() {
     el.errorBanner.hidden = true;
   }
+
+  // It is fixed over the top bar, so it must be possible to get rid of.
+  el.errorClose.addEventListener("click", hideError);
 
   function sortedByTimeAsc(list) {
     return list.slice().sort(function (a, b) {
@@ -1655,9 +1723,13 @@
     }
   }
 
+  // Two independent decisions: overwrite is for settings that are genuinely
+  // newer than ours, takeIntervals for cases where the incoming numbers should
+  // be adopted at all. Intervals always hold a value, so they can never be
+  // "filled in when missing" the way a blank name can.
   function applyIncomingSettings(parsed) {
     if (!parsed) return;
-    if (parsed.intervals) {
+    if (parsed.intervals && parsed.takeIntervals) {
       var changed = false;
       KINDS.forEach(function (kind) {
         var value = Number(parsed.intervals[kind]);
@@ -1673,12 +1745,12 @@
     }
     // Only fill in a name when there isn't one, so an incoming file or link
     // never quietly renames a baby that already has one.
-    if (parsed.dob && !loadDob()) {
+    if (parsed.dob && (parsed.overwrite || !loadDob())) {
       saveDob(String(parsed.dob));
       el.babyDob.value = loadDob();
       renderDobEcho();
     }
-    if (parsed.name && !loadName().trim()) {
+    if (parsed.name && (parsed.overwrite || !loadName().trim())) {
       saveName(String(parsed.name));
       el.babyName.value = String(parsed.name);
       renderName();
@@ -1693,7 +1765,12 @@
       return;
     }
     if (!parsed || Array.isArray(parsed)) return;
-    applyIncomingSettings(parsed);
+    // A restore is deliberate, so take the intervals it carries; the name and
+    // date of birth still only fill blanks, so a file never renames a baby.
+    applyIncomingSettings({
+      name: parsed.name, dob: parsed.dob, intervals: parsed.intervals,
+      takeIntervals: true, overwrite: false
+    });
   }
 
   // Turns one incoming record into the shape we store, or null if it is junk.
@@ -2003,7 +2080,10 @@
     if (!pendingShare) return;
     var incoming = pendingShare;
     hideSharedIn();
-    applyIncomingSettings(incoming);
+    applyIncomingSettings({
+      name: incoming.name, dob: incoming.dob, intervals: incoming.intervals,
+      takeIntervals: true, overwrite: false
+    });
     mergeImported(incoming.events);
   });
 
@@ -2070,6 +2150,290 @@
     });
   }
 
+  // ---------- sync through a private repository ----------
+
+  var syncConfig = loadSyncConfig();
+  var syncTimer = null;
+  var syncPoller = null;
+  var syncInFlight = false;
+  var applyingRemote = false;
+  var syncQueued = false;
+  var syncState = { kind: "idle", text: "", at: null };
+
+  function bytesToBase64(bytes) {
+    var binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  function textToBase64(text) {
+    return bytesToBase64(new TextEncoder().encode(text));
+  }
+
+  function base64ToText(text) {
+    var binary = atob(String(text).replace(/\s+/g, ""));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function githubUrl(repo) {
+    return "https://api.github.com/repos/" + repo + "/contents/" + SYNC_PATH;
+  }
+
+  function githubHeaders(token) {
+    return {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+  }
+
+  function describeHttp(status) {
+    if (status === 401) return "Token rejected — check it, or make a new one.";
+    if (status === 403) return "GitHub refused. The token may lack Contents write access, or you have hit a rate limit.";
+    if (status === 404) return "Repository or path not found. Check the owner/repo, and that the token can see it.";
+    if (status === 409) return "Someone else wrote at the same moment.";
+    return "GitHub returned " + status + ".";
+  }
+
+  // Reads the stored document. A 404 simply means nothing has been written yet.
+  function fetchRemote(config) {
+    return fetch(githubUrl(config.repo) + "?ref=HEAD&t=" + Date.now(), {
+      headers: githubHeaders(config.token),
+      cache: "no-store"
+    }).then(function (response) {
+      if (response.status === 404) return { doc: null, sha: null };
+      if (!response.ok) throw { http: response.status };
+      return response.json().then(function (body) {
+        var doc = null;
+        try {
+          doc = JSON.parse(base64ToText(body.content || ""));
+        } catch (e) {
+          doc = null;
+        }
+        return { doc: doc, sha: body.sha || null };
+      });
+    });
+  }
+
+  function putRemote(config, doc, sha) {
+    var payload = {
+      message: "Update baby log (" + new Date().toISOString() + ")",
+      content: textToBase64(JSON.stringify(doc, null, 1))
+    };
+    if (sha) payload.sha = sha;
+    return fetch(githubUrl(config.repo), {
+      method: "PUT",
+      headers: githubHeaders(config.token),
+      body: JSON.stringify(payload)
+    }).then(function (response) {
+      if (!response.ok) throw { http: response.status };
+      return response.json().then(function (body) {
+        return (body.content && body.content.sha) || null;
+      });
+    });
+  }
+
+  function localDocument() {
+    return {
+      app: "baby-tracker",
+      version: 1,
+      meta: {
+        name: loadName(),
+        dob: loadDob(),
+        intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
+        updatedAt: metaStamp()
+      },
+      events: events
+    };
+  }
+
+  // Same rule as an imported file: newer wins per entry, ties keep what is here.
+  function mergeIntoLocal(remoteEvents) {
+    var byId = {};
+    events.forEach(function (e) { byId[e.id] = e; });
+    var changed = 0;
+    (remoteEvents || []).forEach(function (raw) {
+      var entry = normaliseImported(raw);
+      if (!entry || !entry.id) return;
+      var existing = byId[entry.id];
+      if (!existing) {
+        events.push(entry);
+        byId[entry.id] = entry;
+        changed++;
+      } else if (entry.updatedAt > updatedAtOf(existing)) {
+        events[events.indexOf(existing)] = entry;
+        byId[entry.id] = entry;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteHasNothingOfOurs(remoteEvents) {
+    var remoteById = {};
+    (remoteEvents || []).forEach(function (e) { if (e && e.id) remoteById[e.id] = e; });
+    return events.some(function (e) {
+      var mirror = remoteById[e.id];
+      return !mirror || updatedAtOf(e) > (mirror.updatedAt || mirror.time);
+    });
+  }
+
+  function setSyncState(kind, text) {
+    syncState = { kind: kind, text: text, at: kind === "ok" ? new Date() : syncState.at };
+    renderSyncState();
+  }
+
+  function renderSyncState() {
+    var node = el.syncStatus;
+    node.classList.remove("is-ok", "is-busy", "is-bad");
+    if (!syncConfig) {
+      node.textContent = "Not connected. This phone keeps its entries to itself.";
+      el.syncNow.hidden = true;
+      el.syncDisconnect.hidden = true;
+      el.syncConnect.textContent = "Connect and sync";
+      return;
+    }
+    el.syncNow.hidden = false;
+    el.syncDisconnect.hidden = false;
+    el.syncConnect.textContent = "Save changes";
+    if (syncState.kind === "busy") node.classList.add("is-busy");
+    if (syncState.kind === "ok") node.classList.add("is-ok");
+    if (syncState.kind === "bad") node.classList.add("is-bad");
+    var when = syncState.at ? " · last synced " + formatClockTime(syncState.at) : "";
+    node.textContent = (syncState.text || "Connected to " + syncConfig.repo) + when;
+  }
+
+  function syncNow(reason) {
+    if (!syncConfig) return Promise.resolve(false);
+    if (syncInFlight) {
+      syncQueued = true;
+      return Promise.resolve(false);
+    }
+    syncInFlight = true;
+    setSyncState("busy", "Syncing…");
+
+    var attempt = function (remaining) {
+      var config = syncConfig;
+      return fetchRemote(config).then(function (found) {
+        var remoteDoc = found.doc || {};
+        var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
+        var pulled = mergeIntoLocal(remoteEvents);
+
+        var remoteMeta = remoteDoc.meta;
+        applyingRemote = true;
+        try {
+          if (remoteMeta) {
+            var stampBefore = metaStamp();
+            // Genuinely newer settings replace ours. Otherwise we still take
+            // what we are missing, which is how a phone joining an existing
+            // log gets set up — and how logs written before settings carried
+            // a timestamp still fill in a blank phone.
+            var remoteNewer = (remoteMeta.updatedAt || "") > metaStamp();
+            applyIncomingSettings({
+              name: remoteMeta.name,
+              dob: remoteMeta.dob,
+              intervals: remoteMeta.intervals,
+              takeIntervals: remoteNewer,
+              overwrite: remoteNewer
+            });
+            // Adopt their stamp rather than stamping ourselves, or each pull
+            // would look like a local edit and push straight back.
+            // Filling in blanks is not a local edit, so keep our own stamp
+            // where it was rather than claiming to be the newer side.
+            setMetaStamp(remoteNewer ? remoteMeta.updatedAt : stampBefore);
+          }
+          if (pulled) saveEvents(events);
+        } finally {
+          applyingRemote = false;
+        }
+        if (pulled || remoteMeta) renderAll();
+
+        var mustPush = !found.sha || remoteHasNothingOfOurs(remoteEvents) ||
+          metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
+        if (!mustPush) return { pulled: pulled, pushed: 0 };
+
+        return putRemote(config, localDocument(), found.sha).then(function (sha) {
+          syncConfig.sha = sha;
+          saveSyncConfig(syncConfig);
+          return { pulled: pulled, pushed: 1 };
+        }).catch(function (err) {
+          // Another phone committed between our read and our write.
+          if (err && err.http === 409 && remaining > 0) return attempt(remaining - 1);
+          throw err;
+        });
+      });
+    };
+
+    return attempt(SYNC_RETRIES).then(function (result) {
+      syncInFlight = false;
+      setSyncState("ok", "Connected to " + syncConfig.repo);
+      if (result.pulled) {
+        showToast("Synced — " + result.pulled + (result.pulled === 1 ? " entry" : " entries") + " from the other phone");
+      }
+      if (syncQueued) {
+        syncQueued = false;
+        scheduleSync(1000);
+      }
+      return true;
+    }).catch(function (err) {
+      syncInFlight = false;
+      syncQueued = false;
+      var message = (err && err.http) ? describeHttp(err.http) : "No connection to GitHub.";
+      setSyncState("bad", message);
+      if (reason === "manual") showToast("Sync failed. " + message);
+      return false;
+    });
+  }
+
+  // A burst of taps should become one commit, not one each.
+  function scheduleSync(delay) {
+    if (!syncConfig || applyingRemote) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function () { syncNow("auto"); }, delay || SYNC_DEBOUNCE);
+  }
+
+  function startSyncPolling() {
+    clearInterval(syncPoller);
+    if (!syncConfig) return;
+    syncPoller = setInterval(function () {
+      if (!document.hidden) syncNow("poll");
+    }, SYNC_POLL);
+  }
+
+  el.syncConnect.addEventListener("click", function () {
+    var repo = el.syncRepo.value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "");
+    var token = el.syncToken.value.trim();
+    if (!/^[^\/\s]+\/[^\/\s]+$/.test(repo)) {
+      setSyncState("bad", "Give the repository as owner/name, for example jane/baby-log.");
+      return;
+    }
+    if (!token) {
+      setSyncState("bad", "Paste the access token as well.");
+      return;
+    }
+    syncConfig = { repo: repo, token: token, sha: null };
+    if (!saveSyncConfig(syncConfig)) return;
+    renderSyncState();
+    startSyncPolling();
+    syncNow("manual").then(function (ok) {
+      if (ok) showToast("Connected. Both phones will keep themselves in step.");
+    });
+  });
+
+  el.syncNow.addEventListener("click", function () { syncNow("manual"); });
+
+  el.syncDisconnect.addEventListener("click", function () {
+    syncConfig = null;
+    saveSyncConfig(null);
+    clearTimeout(syncTimer);
+    clearInterval(syncPoller);
+    el.syncToken.value = "";
+    renderSyncState();
+    showToast("Disconnected. Your entries stay on this phone.");
+  });
+
   // ---------- name ----------
 
   function renderName() {
@@ -2127,6 +2491,10 @@
   }
 
   buildIntervalOptions();
+  el.syncRepo.value = syncConfig ? syncConfig.repo : "";
+  renderSyncState();
+  startSyncPolling();
+  if (syncConfig) syncNow("open");
   handleShareHash();
   syncManualFields();
   renderDobEcho();
@@ -2136,7 +2504,9 @@
   // iOS freezes timers in the background, so refresh the moment the app
   // comes back instead of showing stale numbers for up to half a minute.
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) renderAll();
+    if (document.hidden) return;
+    renderAll();
+    if (syncConfig) syncNow("resume");
   });
   window.addEventListener("focus", function () { renderAll(); });
   window.addEventListener("pageshow", function () { renderAll(); });

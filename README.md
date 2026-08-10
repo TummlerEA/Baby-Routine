@@ -18,6 +18,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **Backdated entries** for anything you missed at the time.
 - **Undo on delete**: a deleted entry can be restored for seven seconds.
 - **Export and backup**: CSV (opens in Excel), Markdown (a readable report) and JSON (a full backup).
+- **Automatic sync between phones**, through a **private** GitHub repository holding one JSON file. No server of ours: the app talks to the GitHub Contents API directly. It syncs on open, on return, roughly once a minute while on screen, and shortly after anything you log, batching a burst of taps into one commit. Concurrent writes are safe — a stale-sha conflict is retried after re-merging, and because merging is order-independent nothing is lost either way. The access token is stored on the device that typed it and never appears in a backup, a report or a share link.
 - **Pasting a link, for Home Screen users.** On iOS a web app added to the Home Screen keeps its data entirely separately from Safari, and a tapped link always opens in Safari — never in the installed app. So Settings takes a pasted share link: copy the link out of the chat instead of tapping it, and the entries land where you actually work. A link already opened in Safari offers a button that copies it ready for pasting.
 - **Inviting a partner.** One button produces a message with the app's address and a short explanation of how the two of you will swap entries — worth sending before any data, since it also asks them to open it in Safari and add it to their Home Screen. Your baby's name, date of birth and planned intervals travel across with the first batch of entries, so nobody retypes them.
 - **Share links for a partner.** Settings makes a link carrying your recent entries — a day, two days, a week, or everything. The data rides in the URL fragment, so it is never uploaded anywhere and the hosting server never sees it. Opening the link on another phone offers to merge it rather than doing so silently, and because merging is order-independent it works in both directions: send one back after your shift and both logs agree. A two-day link is about 1.6 KB; the app warns when a period is long enough that messaging apps might mangle it.
@@ -50,6 +51,8 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 - `baby-tracker-name` — the baby's name (string).
 - `baby-tracker-intervals` — the planned interval per type, in minutes.
 - `baby-tracker-dob` — the date of birth as `YYYY-MM-DD`.
+- `baby-tracker-meta-updated` — when the name, date of birth or intervals last changed, so settings merge by recency too.
+- `baby-tracker-sync` — the private repository and access token, if sync is connected. Deliberately excluded from every export.
 
 Nothing leaves the browser. The flip side is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
 

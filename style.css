@@ -105,6 +105,9 @@ body {
 }
 
 .banner-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   position: fixed;
   top: calc(8px + var(--safe-top));
   left: 12px;
@@ -1055,3 +1058,45 @@ body {
 }
 
 .shared-tip strong { color: var(--overdue); }
+
+/* ---------- sync ---------- */
+
+.sync-status {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  background: var(--bg-elevated-2);
+}
+
+.sync-status.is-ok {
+  border-color: #35603f;
+  color: var(--accent-diaper);
+}
+
+.sync-status.is-busy {
+  border-color: #3d3a75;
+  color: var(--accent-sleep);
+}
+
+.sync-status.is-bad {
+  border-color: #5c2f2f;
+  color: var(--overdue);
+}
+
+#errorText { flex: 1; }
+
+.banner-close {
+  background: none;
+  border: none;
+  color: var(--overdue);
+  font-size: 16px;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px -12px -12px 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
