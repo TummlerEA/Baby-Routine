@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 
@@ -473,6 +473,11 @@
             <input id="babyDob" class="manual-input" type="date">
             <span class="manual-echo" id="babyDobEcho"></span>
           </label>
+          <label class="manual-field">
+            <span class="manual-label">How your baby is fed</span>
+            <select id="babyFeeding" class="manual-input"></select>
+            <span class="manual-echo">The first thing anyone giving advice asks. Used in the summary the <strong>Ask an AI</strong> button builds, and nowhere else.</span>
+          </label>
           <div class="manual-field">
             <span class="manual-label">Name style</span>
             <div class="name-fonts" id="nameFonts"></div>
@@ -594,6 +599,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

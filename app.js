@@ -9,6 +9,7 @@
   var DOB_KEY = "baby-tracker-dob";
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
+  var FEEDING_KEY = "baby-tracker-feeding";
   var NAME_FONT_KEY = "baby-tracker-name-font";
   var SYNC_PATH = "baby-tracker-log.json";
   var SYNC_DEBOUNCE = 8000;
@@ -20,7 +21,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "22";
+    var fallback = "23";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -72,6 +73,17 @@
   };
   var NAPPY_ORDER = ["wet", "dirty", "both", "dry"];
 
+  // How the baby is fed. A standing fact about the baby rather than something
+  // to answer at every feed, so it lives in Settings — but the first thing any
+  // adviser asks, which is why it is worth carrying at all.
+  var FEEDING_OPTIONS = [
+    { id: "",          label: "Prefer not to say", summary: "" },
+    { id: "breast",    label: "Breastfed",         summary: "breastfed" },
+    { id: "formula",   label: "Formula fed",       summary: "formula fed" },
+    { id: "mixed",     label: "Mixed — both",      summary: "mixed feeding, breast and formula" },
+    { id: "expressed", label: "Expressed milk",    summary: "expressed breast milk, from a bottle" }
+  ];
+
   // How the baby's name is set on the main screen. Only system typefaces: a
   // web font would mean an external request, which this app does not make.
   // `probe` names the faces worth having — an entry with none is always on
@@ -108,6 +120,9 @@
   var AI_DEFAULT_DAYS = 3;
   var AI_MAX_QUESTION = 500;
   var AI_MAX_FREEFORM = 8;
+  // What counts as overnight, in local hours: from 19:00 to 05:00.
+  var AI_NIGHT_FROM = 19;
+  var AI_NIGHT_TO = 5;
   var AI_FALLBACK_QUESTION = "What stands out in this, and is there anything I should keep an eye on?";
   // Openers worth a tap at 3am, when composing a question is the hard part.
   var AI_SUGGESTIONS = [
@@ -234,6 +249,30 @@
       return localStorage.getItem(DOB_KEY) || "";
     } catch (e) {
       return "";
+    }
+  }
+
+  function feedingOption(id) {
+    for (var i = 0; i < FEEDING_OPTIONS.length; i++) {
+      if (FEEDING_OPTIONS[i].id === id) return FEEDING_OPTIONS[i];
+    }
+    return null;
+  }
+
+  function loadFeeding() {
+    var raw = localStorage.getItem(FEEDING_KEY) || "";
+    return feedingOption(raw) ? raw : "";
+  }
+
+  function saveFeeding(value) {
+    try {
+      if (value) localStorage.setItem(FEEDING_KEY, value);
+      else localStorage.removeItem(FEEDING_KEY);
+      touchMeta();
+      hideError();
+      scheduleSync();
+    } catch (e) {
+      showError("Couldn't save how your baby is fed");
     }
   }
 
@@ -454,6 +493,7 @@
     manualUnitField: document.getElementById("manualUnitField"),
     manualMeasureUnit: document.getElementById("manualMeasureUnit"),
     babyDob: document.getElementById("babyDob"),
+    babyFeeding: document.getElementById("babyFeeding"),
     babyDobEcho: document.getElementById("babyDobEcho"),
     btnFeed: document.getElementById("btnFeed"),
     btnDiaper: document.getElementById("btnDiaper"),
@@ -588,6 +628,12 @@
 
   function pad2(n) {
     return String(n).padStart(2, "0");
+  }
+
+  // One decimal, but no ".0" hanging off a whole number.
+  function perDay(total, days) {
+    var value = total / days;
+    return String(Math.round(value * 10) / 10);
   }
 
   function formatDuration(ms) {
@@ -1778,6 +1824,7 @@
     var payload = JSON.stringify({
       name: loadName(),
       dob: loadDob(),
+      feeding: loadFeeding(),
       intervals: intervals,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
@@ -1849,6 +1896,7 @@
       v: SHARE_VERSION,
       n: loadName(),
       b: loadDob(),
+      f: loadFeeding(),
       i: [intervals.feed, intervals.diaper, intervals.sleep],
       e: chosen.map(function (e) {
         return [
@@ -1869,7 +1917,7 @@
 
   function readSharePayload(payload) {
     if (!payload || payload.v !== SHARE_VERSION || !Array.isArray(payload.e)) return null;
-    var out = { name: payload.n || "", dob: payload.b || "", intervals: null, events: [] };
+    var out = { name: payload.n || "", dob: payload.b || "", feeding: payload.f || "", intervals: null, events: [] };
     if (Array.isArray(payload.i) && payload.i.length === 3) {
       out.intervals = { feed: payload.i[0], diaper: payload.i[1], sleep: payload.i[2] };
     }
@@ -2036,6 +2084,11 @@
       renderName();
       renderNameFonts();
     }
+    if (parsed.feeding && feedingOption(String(parsed.feeding)) &&
+        (parsed.overwrite || !loadFeeding())) {
+      saveFeeding(String(parsed.feeding));
+      el.babyFeeding.value = loadFeeding();
+    }
   }
 
   function applyBackupSettings(text) {
@@ -2049,7 +2102,7 @@
     // A restore is deliberate, so take the intervals it carries; the name and
     // date of birth still only fill blanks, so a file never renames a baby.
     applyIncomingSettings({
-      name: parsed.name, dob: parsed.dob, intervals: parsed.intervals,
+      name: parsed.name, dob: parsed.dob, feeding: parsed.feeding, intervals: parsed.intervals,
       takeIntervals: true, overwrite: false
     });
   }
@@ -2370,7 +2423,7 @@
     var incoming = pendingShare;
     hideSharedIn();
     applyIncomingSettings({
-      name: incoming.name, dob: incoming.dob, intervals: incoming.intervals,
+      name: incoming.name, dob: incoming.dob, feeding: incoming.feeding, intervals: incoming.intervals,
       takeIntervals: true, overwrite: false
     });
     mergeImported(incoming.events);
@@ -2531,6 +2584,7 @@
       meta: {
         name: loadName(),
         dob: loadDob(),
+        feeding: loadFeeding(),
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         updatedAt: metaStamp()
       },
@@ -2624,6 +2678,7 @@
             applyIncomingSettings({
               name: remoteMeta.name,
               dob: remoteMeta.dob,
+              feeding: remoteMeta.feeding,
               intervals: remoteMeta.intervals,
               takeIntervals: remoteNewer,
               overwrite: remoteNewer
@@ -2814,6 +2869,21 @@
       : "Today: " + formatAge(days) + " old";
   }
 
+  function buildFeedingOptions() {
+    el.babyFeeding.innerHTML = "";
+    FEEDING_OPTIONS.forEach(function (option) {
+      var node = document.createElement("option");
+      node.value = option.id;
+      node.textContent = option.label;
+      el.babyFeeding.appendChild(node);
+    });
+    el.babyFeeding.value = loadFeeding();
+  }
+
+  el.babyFeeding.addEventListener("change", function () {
+    saveFeeding(el.babyFeeding.value);
+  });
+
   el.babyDob.value = loadDob();
   el.babyDob.addEventListener("change", function () {
     saveDob(el.babyDob.value);
@@ -2880,6 +2950,57 @@
     return lines;
   }
 
+  // Gaps inside the chosen window only. The forecast's own figure is the median
+  // of the last five across all of history, which answers a different question
+  // — what to expect next — and would quietly contradict the days listed above
+  // it. Anything under ten minutes is a double tap, not a feed.
+  function aiGaps(kind, sinceMs) {
+    var asc = sortedByTimeAsc(eventsOfKind(kind).filter(function (e) {
+      return +new Date(e.time) >= sinceMs;
+    }));
+    var gaps = [];
+    for (var i = 1; i < asc.length; i++) {
+      var ms = +new Date(asc[i].time) - +new Date(asc[i - 1].time);
+      if (ms >= MIN_VALID_INTERVAL) gaps.push({ ms: ms, startedAt: new Date(asc[i - 1].time) });
+    }
+    return gaps;
+  }
+
+  function aiGapLine(label, gaps) {
+    if (!gaps.length) return "";
+    var lengths = gaps.map(function (g) { return g.ms; });
+    var shortest = Math.min.apply(null, lengths);
+    var longest = Math.max.apply(null, lengths);
+    var line = label + ": typically " + formatDuration(median(lengths));
+    // One number is a summary; three are a picture, and the spread is what
+    // tells a stranger whether the routine is settled or all over the place.
+    if (longest > shortest) {
+      line += " (shortest " + formatDuration(shortest) + ", longest " + formatDuration(longest) + ")";
+    }
+    return line;
+  }
+
+  // The number every parent actually wants: the longest stretch they got at
+  // night. Defined by when the gap began so a 3am feed cannot be counted as
+  // the start of a daytime one.
+  function aiNightGap(gaps) {
+    var best = 0;
+    gaps.forEach(function (g) {
+      var hour = g.startedAt.getHours();
+      if (hour >= AI_NIGHT_FROM || hour < AI_NIGHT_TO) best = Math.max(best, g.ms);
+    });
+    return best;
+  }
+
+  function aiLongestSleep(analysis, sinceMs) {
+    var best = 0;
+    analysis.sessions.forEach(function (session) {
+      if (session.endMs < sinceMs) return;
+      best = Math.max(best, session.endMs - Math.max(session.startMs, sinceMs));
+    });
+    return best;
+  }
+
   // A digest, not the log itself: a fortnight of raw entries would neither fit
   // in a link nor read any better once it got there.
   function aiSummary(days) {
@@ -2894,14 +3015,25 @@
     if (ageDays !== null) out.push("Age: " + formatAge(ageDays));
     out.push("");
 
+    var feedingOn = feedingOption(loadFeeding());
+    if (feedingOn && feedingOn.summary) out.push("Fed: " + feedingOn.summary);
+    out.push("");
+
     var today = new Date();
     today.setHours(0, 0, 0, 0);
-    var any = false;
+    var since = +today - (days - 1) * MS_DAY;
+    var counted = 0;
+    var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     for (var i = 0; i < days; i++) {
       var dayStart = +today - i * MS_DAY;
       var stats = aiDayStats(dayStart, analysis);
       if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
-      any = true;
+      counted++;
+      totals.feeds += stats.feeds;
+      totals.nappies += stats.nappies;
+      totals.wet += stats.wet;
+      totals.dirty += stats.dirty;
+      totals.sleepMs += stats.sleepMs;
       var parts = [stats.feeds + (stats.feeds === 1 ? " feed" : " feeds")];
       var nappies = stats.nappies + (stats.nappies === 1 ? " nappy" : " nappies");
       if (stats.wet || stats.dirty) nappies += " (" + stats.wet + " wet, " + stats.dirty + " dirty)";
@@ -2910,19 +3042,47 @@
       out.push(formatDateHeader(new Date(dayStart)) + (i === 0 ? " (so far today)" : "") +
         ": " + parts.join(", "));
     }
-    if (!any) out.push("Nothing logged in this period.");
-    out.push("");
+    if (!counted) {
+      out.push("Nothing logged in this period.");
+      return out.join("\n");
+    }
 
-    var feedGap = observedIntervalMs("feed");
-    var nappyGap = observedIntervalMs("diaper");
-    if (feedGap) out.push("Usual gap between feeds: " + formatDuration(feedGap));
-    if (nappyGap) out.push("Usual gap between nappies: " + formatDuration(nappyGap));
+    // Averaged over the days that have anything in them, not over the period
+    // asked for: three days of entries inside a fortnight is three days.
+    out.push("");
+    out.push("Across the " + counted + (counted === 1 ? " day" : " days") + " above" +
+      (counted > 1 ? ", today included and still in progress" : "") + ":");
+    out.push("Feeds: " + totals.feeds + " in total, " + perDay(totals.feeds, counted) + " a day");
+    out.push("Nappies: " + totals.nappies + " in total, " + perDay(totals.nappies, counted) +
+      " a day — " + totals.wet + " wet, " + totals.dirty + " dirty");
+    out.push("Sleep: " + formatDuration(Math.round(totals.sleepMs / counted)) + " a day on average");
+
+    var feedGaps = aiGaps("feed", since);
+    var nappyGaps = aiGaps("diaper", since);
+    var feedLine = aiGapLine("Gap between feeds", feedGaps);
+    var nappyLine = aiGapLine("Gap between nappies", nappyGaps);
+    if (feedLine) out.push(feedLine);
+    if (nappyLine) out.push(nappyLine);
+
+    var night = aiNightGap(feedGaps);
+    if (night) {
+      out.push("Longest gap between feeds overnight (one beginning between " +
+        AI_NIGHT_FROM + ":00 and 0" + AI_NIGHT_TO + ":00): " + formatDuration(night));
+    }
+    var longestSleep = aiLongestSleep(analysis, since);
+    if (longestSleep) out.push("Longest single sleep: " + formatDuration(longestSleep));
 
     var measures = aiMeasureLines();
     if (measures.length) {
       out.push("");
       measures.forEach(function (line) { out.push(line); });
     }
+
+    // Said plainly, because a model asked how long a feed lasts will otherwise
+    // assume the log simply forgot to mention it.
+    out.push("");
+    out.push("Each feed and nappy is logged as a moment, not a span: the app has no " +
+      "record of how long a feed took or how much was taken.");
 
     return out.join("\n");
   }
@@ -3162,6 +3322,7 @@
   checkForUpdate();
   pruneOnStartup();
   buildIntervalOptions();
+  buildFeedingOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
   renderSyncState();
   startSyncPolling();
