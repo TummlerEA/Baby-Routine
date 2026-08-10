@@ -13,6 +13,18 @@
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
+  // One source of truth for the version on screen. It is read from this
+  // script's own ?v= cache-busting query, so bumping the URL in index.html is
+  // the only edit needed and the number shown can never disagree with the file
+  // the browser actually loaded. Opened straight from disk there is no query,
+  // which is what the fallback is for — a test keeps it level with the HTML.
+  var APP_VERSION = (function () {
+    var fallback = "19";
+    var src = document.currentScript ? document.currentScript.src : "";
+    var m = /[?&]v=([^&#]+)/.exec(src);
+    return m ? decodeURIComponent(m[1]) : fallback;
+  })();
+
   var MS_MIN = 60 * 1000;
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
@@ -431,6 +443,8 @@
     exportJson: document.getElementById("exportJson"),
     importBtn: document.getElementById("importBtn"),
     importFile: document.getElementById("importFile"),
+    appVersion: document.getElementById("appVersion"),
+    settingsVersion: document.getElementById("settingsVersion"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction")
@@ -2651,6 +2665,23 @@
     renderName();
   });
 
+  // ---------- version ----------
+
+  function renderVersion() {
+    el.appVersion.textContent = "v" + APP_VERSION;
+    el.settingsVersion.textContent = APP_VERSION;
+  }
+
+  // A phone can sit on an old copy for days: the browser has the page cached
+  // and nothing on screen says so. Tapping the version asks for the document
+  // again under a URL it has never seen, which is the one thing that reliably
+  // defeats the cache. The query is not read by anything, and localStorage is
+  // scoped to the origin, so the log is untouched.
+  el.appVersion.addEventListener("click", function () {
+    var base = location.href.split("#")[0].split("?")[0];
+    location.replace(base + "?r=" + Date.now());
+  });
+
   // ---------- clock & render ----------
 
   function renderClock() {
@@ -2679,6 +2710,7 @@
     renderAll({ log: needLog });
   }
 
+  renderVersion();
   pruneOnStartup();
   buildIntervalOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";

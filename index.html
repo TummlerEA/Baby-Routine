@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -198,6 +198,10 @@
           <p class="settings-hint"><strong>Something else</strong> takes any reading you are given — a blood result, a bottle volume, anything with a number. Name it once and it is offered back to you next time. Nothing here is interpreted or checked against any range; it is recorded and shown, nothing more.</p>
           <p class="settings-hint">Growth is plotted on the centile charts in your red book — that is what your health visitor uses. These are just the numbers and how they have changed.</p>
         </div>
+      </section>
+
+      <section class="version-row">
+        <button class="app-version" id="appVersion" title="Tap to fetch the latest version" aria-label="App version. Tap to fetch the latest version.">v—</button>
       </section>
 
     </main>
@@ -492,7 +496,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 18 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version <span id="settingsVersion">—</span> · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -504,6 +508,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
