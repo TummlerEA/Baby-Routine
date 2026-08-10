@@ -32,6 +32,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, date of birth, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
 - **It tells you when it is out of date.** On opening, and when you come back to it (at most every 15 minutes), the app asks the server what version is deployed and offers a green **Update** if that is newer than what is running — so a phone sitting on a cached copy stops being a silent problem. Being offline is not treated as a fault, nothing is shown when the running copy is ahead, and "not now" holds until a later release turns up. Updating never touches the log.
 - **The version number, at the foot of the main screen** — so two phones can be compared at a glance when one of them is behaving differently. Tapping it asks for the app again under an address the browser has never seen, which is the reliable way past a cached copy; your log is untouched. The number comes from the cache-busting query on the script itself, so what is on screen is always the version actually loaded.
+- **Ask an AI, without one being built in.** An optional button hands a short summary of the log to Claude, ChatGPT or Perplexity — whichever the parent already pays for. There is no API key, no account and no bill attached to this app, and no model runs inside it. You get a question box with a few openers, you choose how much of the log to include, and you see the exact text before anything moves: it goes into the link where it fits and onto the clipboard where it does not. Off by default, and off again the moment you untick it. The prompt tells the assistant to be brief and to send you to a health visitor, GP or NHS 111 rather than guessing — a log of a newborn attracts medical questions, and a model will answer them confidently either way.
 - **A style for the name.** Settings offers eight ways to set your baby's name on the main screen, from a plain sans to a full greeting-card script with flourishes. Each option is previewed with the actual name, since that is the only preview worth having. They are typefaces your phone already has — nothing is downloaded, which is what keeps the app free of external requests — so only the ones your device can really render are offered, and the choice stays on that device rather than travelling with your entries.
 - Dark theme with large touch targets, for one-handed use in the middle of the night.
 - Live clock; the screen refreshes the moment you return to the app.
@@ -59,10 +60,13 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 - `baby-tracker-meta-updated` — when the name, date of birth or intervals last changed, so settings merge by recency too.
 - `baby-tracker-sync` — the private repository and access token, if sync is connected. Deliberately excluded from every export.
 - `baby-tracker-name-font` — which typeface the name is set in. A per-device preference, so it is not exported, shared or synced.
+- `baby-tracker-ai` — whether the Ask an AI button is shown and whether the summary may carry the baby's name. Per-device and never exported, shared or synced: whether a phone is willing to send anything outwards is that phone's own business, and it must not arrive switched on from elsewhere.
 
 Nothing about the version check is stored: it is a plain request for `version.json` on each open, and no identifier, log content or setting goes with it.
 
-Nothing leaves the browser. The flip side is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
+Nothing is uploaded to any server of ours, because there is not one, and nothing is measured or tracked. What can leave the browser leaves only when you send it: sync writes to a private repository you own, a share link travels inside a URL you pass on yourself, and Ask an AI hands a summary to a third party — the one place your data is governed by somebody else's terms — after showing you the exact text. All three are off until you turn them on.
+
+The flip side of a browser-only log is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
 
 ## A note on the guidance
 

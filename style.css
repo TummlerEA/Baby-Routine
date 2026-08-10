@@ -1111,7 +1111,7 @@ body {
   font-family: inherit;
   font-size: 14px;
   padding: 8px 12px;
-  min-height: 40px;
+  min-height: 38px;
   margin: 4px 4px 0 0;
   cursor: pointer;
 }
@@ -1279,3 +1279,86 @@ body {
 }
 
 .name-chip:active { opacity: 0.7; }
+
+/* ---------- ask an AI ---------- */
+
+.ai-row { margin-top: 8px; }
+
+/* Big enough to hit at 3am, plain enough not to look like the log buttons —
+   this one leaves the app, and it should not sit next to Feed by accident. */
+.ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ai-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+.ai-chip:active { opacity: 0.7; }
+
+.ai-question {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 12px;
+  resize: none;
+  width: 100%;
+}
+
+.ai-question:focus {
+  border-color: var(--accent-sleep);
+  outline: none;
+}
+
+/* Not decoration: when the prompt is too long for a link this box is what the
+   parent copies from, so it has to be readable and selectable. */
+.ai-preview {
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.ai-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ai-target {
+  border-color: var(--accent-sleep);
+  color: var(--accent-sleep);
+  font-weight: 600;
+}
+
+.settings-check {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.settings-check input {
+  accent-color: var(--accent-sleep);
+  flex: none;
+  height: 24px;
+  margin: 0;
+  width: 24px;
+}
+
+.settings-check .settings-label { font-size: 15px; }

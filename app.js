@@ -20,7 +20,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "21";
+    var fallback = "22";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -87,6 +87,35 @@
     { id: "hand",      label: "Handwritten", probe: ["Bradley Hand", "Noteworthy", "Segoe Script"] }
   ];
   var DEFAULT_NAME_FONT = "classic";
+
+  // Handing the log to an assistant the parent already pays for, rather than
+  // building one in. There is no key, no account and no bill attached to this
+  // app, and nothing is sent until they have read the exact text and tapped a
+  // service. `param` carries the question in the URL where it fits; anything
+  // longer goes via the clipboard, which is why the preview box is not
+  // decorative — it is the fallback when both of those fail.
+  var AI_TARGETS = [
+    { id: "claude",     label: "Claude",     url: "https://claude.ai/new",            param: "q" },
+    { id: "chatgpt",    label: "ChatGPT",    url: "https://chatgpt.com/",             param: "q" },
+    { id: "perplexity", label: "Perplexity", url: "https://www.perplexity.ai/search", param: "q" }
+  ];
+  // Browsers carry far longer URLs than this; the limit that matters is the
+  // receiving service quietly truncating one, which would hand the model half
+  // a summary and tell nobody. This sits well under anything they are known to
+  // baulk at, and a fortnight of entries still fits inside it.
+  var AI_URL_LIMIT = 4000;
+  var AI_KEY = "baby-tracker-ai";
+  var AI_DEFAULT_DAYS = 3;
+  var AI_MAX_QUESTION = 500;
+  var AI_MAX_FREEFORM = 8;
+  var AI_FALLBACK_QUESTION = "What stands out in this, and is there anything I should keep an eye on?";
+  // Openers worth a tap at 3am, when composing a question is the hard part.
+  var AI_SUGGESTIONS = [
+    "Is this normal for this age?",
+    "Is the baby feeding enough?",
+    "Why so many night wakings?",
+    "What changed this week?"
+  ];
   var NEXTUP_TIMEOUT = 20000;
   // Only flag the gap between plan and reality once it is worth mentioning.
   var DRIFT_TOLERANCE = 0.25;
@@ -270,6 +299,28 @@
     try {
       localStorage.setItem(META_STAMP_KEY, new Date().toISOString());
     } catch (e) { /* the write that mattered has already reported failure */ }
+  }
+
+  // Deliberately not carried by sync, backup or a share link: whether this
+  // phone is willing to send anything outwards is that phone's own business,
+  // and it should never arrive switched on from somewhere else.
+  function loadAiPrefs() {
+    try {
+      var raw = localStorage.getItem(AI_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== "object") return { on: false, name: false };
+      return { on: parsed.on === true, name: parsed.name === true };
+    } catch (e) {
+      return { on: false, name: false };
+    }
+  }
+
+  function saveAiPrefs(prefs) {
+    try {
+      localStorage.setItem(AI_KEY, JSON.stringify({ on: !!prefs.on, name: !!prefs.name }));
+    } catch (e) {
+      showError("Couldn't save that setting");
+    }
   }
 
   function loadSyncConfig() {
@@ -457,6 +508,19 @@
     shareBox: document.getElementById("shareBox"),
     screenMain: document.getElementById("screenMain"),
     screenSettings: document.getElementById("screenSettings"),
+    screenAi: document.getElementById("screenAi"),
+    aiRow: document.getElementById("aiRow"),
+    aiOpen: document.getElementById("aiOpen"),
+    aiBack: document.getElementById("aiBack"),
+    aiQuestion: document.getElementById("aiQuestion"),
+    aiChips: document.getElementById("aiChips"),
+    aiRange: document.getElementById("aiRange"),
+    aiPreview: document.getElementById("aiPreview"),
+    aiSize: document.getElementById("aiSize"),
+    aiTargets: document.getElementById("aiTargets"),
+    aiCopy: document.getElementById("aiCopy"),
+    aiEnabled: document.getElementById("aiEnabled"),
+    aiUseName: document.getElementById("aiUseName"),
     settingsOpenBtn: document.getElementById("settingsOpen"),
     settingsBack: document.getElementById("settingsBack"),
     babyNameDisplay: document.getElementById("babyNameDisplay"),
@@ -2131,6 +2195,7 @@
     el.screenMain.hidden = name !== "main";
     el.screenSettings.hidden = name !== "settings";
     el.screenInfo.hidden = name !== "info";
+    el.screenAi.hidden = name !== "ai";
     window.scrollTo(0, 0);
   }
 
@@ -2763,6 +2828,235 @@
     renderNameFonts();
   });
 
+  // ---------- ask an AI ----------
+
+  // Counts for one calendar day, in the same shape the day headings already
+  // use, so the summary agrees with what the parent can see in the log.
+  function aiDayStats(dayStart, analysis) {
+    var dayEnd = dayStart + MS_DAY;
+    var out = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    liveEvents().forEach(function (e) {
+      var t = +new Date(e.time);
+      if (t < dayStart || t >= dayEnd) return;
+      if (e.type === "feed") out.feeds++;
+      if (e.type !== "diaper") return;
+      out.nappies++;
+      var kind = nappyOf(e);
+      if (kind === "wet" || kind === "both") out.wet++;
+      if (kind === "dirty" || kind === "both") out.dirty++;
+    });
+    out.sleepMs = sleepMsInRange(analysis, dayStart, dayEnd, Date.now());
+    return out;
+  }
+
+  // The latest reading of each kind, with the one before it for direction.
+  // Growth belongs on a centile chart, so this states the numbers and leaves
+  // the reading of them alone.
+  function aiMeasureLines() {
+    var lines = [];
+    MEASURE_ORDER.forEach(function (type) {
+      if (MEASURES[type].freeform) return;
+      var list = measurementsOf(type);
+      if (!list.length) return;
+      var last = list[list.length - 1];
+      var line = MEASURES[type].label + ": " +
+        formatMeasure(type, measureValueOf(last)) + " on " + formatDateHeader(new Date(last.time));
+      if (list.length > 1) {
+        var prev = list[list.length - 2];
+        line += " (was " + formatMeasure(type, measureValueOf(prev)) +
+          " on " + formatDateHeader(new Date(prev.time)) + ")";
+      }
+      lines.push(line);
+    });
+    // Freeform readings are unbounded — a parent could name fifty of them —
+    // and a prompt is not the place to discover that.
+    knownMeasureLabels().slice(0, AI_MAX_FREEFORM).forEach(function (known) {
+      var list = measurementsOf("other", known.label);
+      if (!list.length) return;
+      var last = list[list.length - 1];
+      lines.push(known.label + ": " + formatMeasure("other", measureValueOf(last), known.unit) +
+        " on " + formatDateHeader(new Date(last.time)));
+    });
+    return lines;
+  }
+
+  // A digest, not the log itself: a fortnight of raw entries would neither fit
+  // in a link nor read any better once it got there.
+  function aiSummary(days) {
+    var prefs = loadAiPrefs();
+    var analysis = analyzeSleep();
+    var typed = loadName().trim();
+    var who = (prefs.name && typed) ? typed : "the baby";
+    var out = [];
+
+    out.push(who === "the baby" ? "Baby log" : who + " — log");
+    var ageDays = ageDaysAt(Date.now());
+    if (ageDays !== null) out.push("Age: " + formatAge(ageDays));
+    out.push("");
+
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var any = false;
+    for (var i = 0; i < days; i++) {
+      var dayStart = +today - i * MS_DAY;
+      var stats = aiDayStats(dayStart, analysis);
+      if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
+      any = true;
+      var parts = [stats.feeds + (stats.feeds === 1 ? " feed" : " feeds")];
+      var nappies = stats.nappies + (stats.nappies === 1 ? " nappy" : " nappies");
+      if (stats.wet || stats.dirty) nappies += " (" + stats.wet + " wet, " + stats.dirty + " dirty)";
+      parts.push(nappies);
+      parts.push(formatDuration(stats.sleepMs) + " sleep");
+      out.push(formatDateHeader(new Date(dayStart)) + (i === 0 ? " (so far today)" : "") +
+        ": " + parts.join(", "));
+    }
+    if (!any) out.push("Nothing logged in this period.");
+    out.push("");
+
+    var feedGap = observedIntervalMs("feed");
+    var nappyGap = observedIntervalMs("diaper");
+    if (feedGap) out.push("Usual gap between feeds: " + formatDuration(feedGap));
+    if (nappyGap) out.push("Usual gap between nappies: " + formatDuration(nappyGap));
+
+    var measures = aiMeasureLines();
+    if (measures.length) {
+      out.push("");
+      measures.forEach(function (line) { out.push(line); });
+    }
+
+    return out.join("\n");
+  }
+
+  // The question goes last so it is the freshest thing the model reads, and
+  // the framing goes first so it knows what the numbers are before it sees
+  // them. The line about not being a doctor is not decoration: this is a log
+  // of a newborn, and the questions asked of it will be medical-shaped.
+  function aiPrompt(days, question) {
+    var asked = cleanText(question, AI_MAX_QUESTION) || AI_FALLBACK_QUESTION;
+    return "I keep a log of my baby's feeds, nappies and sleep — here is a summary of it. " +
+      "Answer briefly and in plain language. You cannot examine my baby and you are not my " +
+      "doctor: if something here looks worth a professional's eye, say so and tell me to ring " +
+      "my health visitor, GP or NHS 111 rather than guessing at it.\n\n" +
+      "--- summary ---\n" + aiSummary(days) + "\n--- end of summary ---\n\n" +
+      "My question: " + asked;
+  }
+
+  function aiDays() {
+    var days = parseInt(el.aiRange.value, 10);
+    return isFinite(days) && days > 0 ? days : AI_DEFAULT_DAYS;
+  }
+
+  function aiCurrentPrompt() {
+    return aiPrompt(aiDays(), el.aiQuestion.value);
+  }
+
+  function aiUrlFor(target, text) {
+    var joiner = target.url.indexOf("?") >= 0 ? "&" : "?";
+    var full = target.url + joiner + target.param + "=" + encodeURIComponent(text);
+    return full.length <= AI_URL_LIMIT ? full : target.url;
+  }
+
+  function aiFitsInLink(text) {
+    for (var i = 0; i < AI_TARGETS.length; i++) {
+      if (aiUrlFor(AI_TARGETS[i], text) === AI_TARGETS[i].url) return false;
+    }
+    return true;
+  }
+
+  function renderAiPreview() {
+    var text = aiCurrentPrompt();
+    el.aiPreview.value = text;
+    el.aiSize.textContent = describeSize(text.length) + " · " + (aiFitsInLink(text)
+      ? "short enough to travel in the link itself"
+      : "too long for a link — it gets copied instead, and you paste it into the chat");
+  }
+
+  function renderAiChips() {
+    el.aiChips.innerHTML = "";
+    AI_SUGGESTIONS.forEach(function (question) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "ai-chip";
+      chip.textContent = question;
+      chip.addEventListener("click", function () {
+        el.aiQuestion.value = question;
+        renderAiPreview();
+      });
+      el.aiChips.appendChild(chip);
+    });
+  }
+
+  // Opened straight from the tap, before anything asynchronous: a window
+  // asked for later is a pop-up as far as Safari is concerned.
+  function askAi(target) {
+    var text = aiCurrentPrompt();
+    var url = aiUrlFor(target, text);
+    var prefilled = url !== target.url;
+    var opened = window.open(url, "_blank", "noopener");
+    if (!prefilled) {
+      copyText(text).then(function (ok) {
+        showToast(ok
+          ? "Too long for a link — it is copied, so paste it into " + target.label
+          : "Too long for a link — copy it from the box above");
+      });
+    }
+    if (!opened) {
+      showToast("Your browser blocked the new tab — open " + target.label + " yourself");
+    }
+  }
+
+  function renderAiTargets() {
+    el.aiTargets.innerHTML = "";
+    AI_TARGETS.forEach(function (target) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "data-btn ai-target";
+      btn.textContent = "Ask " + target.label + " →";
+      btn.addEventListener("click", function () { askAi(target); });
+      el.aiTargets.appendChild(btn);
+    });
+  }
+
+  function renderAiPrefs() {
+    var prefs = loadAiPrefs();
+    el.aiEnabled.checked = prefs.on;
+    el.aiUseName.checked = prefs.name;
+    el.aiRow.hidden = !prefs.on;
+  }
+
+  function openAi() {
+    // Nothing to summarise means nothing worth sending, and the same guard the
+    // exports use says so without opening a screen full of blanks.
+    if (guardEmpty()) return;
+    renderAiChips();
+    renderAiPreview();
+    showScreen("ai");
+  }
+
+  el.aiEnabled.addEventListener("change", function () {
+    var prefs = loadAiPrefs();
+    prefs.on = el.aiEnabled.checked;
+    saveAiPrefs(prefs);
+    renderAiPrefs();
+  });
+
+  el.aiUseName.addEventListener("change", function () {
+    var prefs = loadAiPrefs();
+    prefs.name = el.aiUseName.checked;
+    saveAiPrefs(prefs);
+  });
+
+  el.aiOpen.addEventListener("click", openAi);
+  el.aiBack.addEventListener("click", showMain);
+  el.aiQuestion.addEventListener("input", renderAiPreview);
+  el.aiRange.addEventListener("change", renderAiPreview);
+
+  el.aiCopy.addEventListener("click", function () {
+    copyText(aiCurrentPrompt()).then(function (ok) {
+      showToast(ok ? "Copied — paste it wherever you like" : "Couldn't copy — select it from the box above");
+    });
+  });
+
   // ---------- version ----------
 
   function renderVersion() {
@@ -2863,6 +3157,8 @@
 
   renderVersion();
   renderNameFonts();
+  renderAiPrefs();
+  renderAiTargets();
   checkForUpdate();
   pruneOnStartup();
   buildIntervalOptions();
