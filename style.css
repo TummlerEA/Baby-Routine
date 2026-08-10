@@ -868,6 +868,12 @@ body {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.nextup-chip.source-chip.selected {
+  background: var(--accent-feed);
+  border-color: var(--accent-feed);
+  color: #2a1608;
+}
+
 .nextup-chip.feed-chip.selected {
   background: var(--accent-feed);
   border-color: var(--accent-feed);
