@@ -861,6 +861,26 @@ body {
   color: var(--text-dim);
 }
 
+/* Six choices never fit one row on a phone, and a 5-then-1 wrap reads as an
+   accident. Two even rows of three is deliberate, and holds at any width. */
+.feed-chips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.nextup-chip.feed-chip.selected {
+  background: var(--accent-feed);
+  border-color: var(--accent-feed);
+  color: #2a1608;
+}
+
+/* Marked out, not chosen: the parent's own usual length, offered so the
+   common answer is the easy one. Nothing is recorded until they tap. */
+.nextup-chip.feed-chip.suggested {
+  border-color: var(--accent-feed);
+  color: var(--accent-feed);
+}
+
 .nextup-chip.nappy-chip.selected {
   background: var(--accent-feed);
   border-color: var(--accent-feed);
