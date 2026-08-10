@@ -9,6 +9,7 @@
   var DOB_KEY = "baby-tracker-dob";
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
+  var NAME_FONT_KEY = "baby-tracker-name-font";
   var SYNC_PATH = "baby-tracker-log.json";
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
@@ -19,7 +20,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "20";
+    var fallback = "21";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -70,6 +71,22 @@
     dry:   { label: "Dry",       chip: "Dry",     detail: "Dry" }
   };
   var NAPPY_ORDER = ["wet", "dirty", "both", "dry"];
+
+  // How the baby's name is set on the main screen. Only system typefaces: a
+  // web font would mean an external request, which this app does not make.
+  // `probe` names the faces worth having — an entry with none is always on
+  // offer, because its stack ends in a generic every device can satisfy.
+  var NAME_FONTS = [
+    { id: "classic",   label: "Classic",   probe: [] },
+    { id: "plain",     label: "Plain",     probe: [] },
+    { id: "storybook", label: "Storybook", probe: [] },
+    { id: "elegant",   label: "Elegant",   probe: ["Didot", "Bodoni 72", "Hoefler Text"] },
+    { id: "script",    label: "Script",    probe: ["Snell Roundhand", "Apple Chancery", "Segoe Script"] },
+    { id: "delicate",  label: "Delicate",  probe: ["Savoye LET", "Snell Roundhand"] },
+    { id: "flourish",  label: "Flourish",  probe: ["Zapfino"] },
+    { id: "hand",      label: "Handwritten", probe: ["Bradley Hand", "Noteworthy", "Segoe Script"] }
+  ];
+  var DEFAULT_NAME_FONT = "classic";
   var NEXTUP_TIMEOUT = 20000;
   // Only flag the gap between plan and reality once it is worth mentioning.
   var DRIFT_TOLERANCE = 0.25;
@@ -443,6 +460,7 @@
     settingsOpenBtn: document.getElementById("settingsOpen"),
     settingsBack: document.getElementById("settingsBack"),
     babyNameDisplay: document.getElementById("babyNameDisplay"),
+    nameFonts: document.getElementById("nameFonts"),
     exportCsv: document.getElementById("exportCsv"),
     exportMd: document.getElementById("exportMd"),
     exportJson: document.getElementById("exportJson"),
@@ -1952,6 +1970,7 @@
       saveName(String(parsed.name));
       el.babyName.value = String(parsed.name);
       renderName();
+      renderNameFonts();
     }
   }
 
@@ -2648,10 +2667,79 @@
 
   // ---------- name ----------
 
+  // A font the phone does not have fails silently: the browser drops to the
+  // next in the stack and two options end up looking identical. Measuring a
+  // string in the candidate against each generic says whether it is really
+  // there, so only styles that will actually look different get offered.
+  var fontProbeCtx = null;
+  function fontAvailable(family) {
+    if (!fontProbeCtx) {
+      var canvas = document.createElement("canvas");
+      fontProbeCtx = canvas.getContext && canvas.getContext("2d");
+    }
+    if (!fontProbeCtx) return false;
+    var sample = "WMmiiil1Laetitia";
+    var generics = ["monospace", "sans-serif", "serif"];
+    for (var i = 0; i < generics.length; i++) {
+      fontProbeCtx.font = "48px " + generics[i];
+      var plain = fontProbeCtx.measureText(sample).width;
+      fontProbeCtx.font = '48px "' + family + '", ' + generics[i];
+      if (fontProbeCtx.measureText(sample).width !== plain) return true;
+    }
+    return false;
+  }
+
+  function availableNameFonts() {
+    return NAME_FONTS.filter(function (font) {
+      if (!font.probe.length) return true;
+      return font.probe.some(fontAvailable);
+    });
+  }
+
+  function loadNameFont() {
+    var saved = localStorage.getItem(NAME_FONT_KEY);
+    var known = availableNameFonts().some(function (f) { return f.id === saved; });
+    return known ? saved : DEFAULT_NAME_FONT;
+  }
+
+  function saveNameFont(id) {
+    localStorage.setItem(NAME_FONT_KEY, id);
+  }
+
+  function applyNameFont(node, id) {
+    NAME_FONTS.forEach(function (font) {
+      node.classList.toggle("nf-" + font.id, font.id === id);
+    });
+  }
+
   function renderName() {
     var name = loadName().trim();
     el.babyNameDisplay.textContent = name || "Baby's name";
     el.babyNameDisplay.classList.toggle("is-empty", !name);
+    applyNameFont(el.babyNameDisplay, loadNameFont());
+  }
+
+  function renderNameFonts() {
+    var current = loadNameFont();
+    // The chip shows the real name, since that is the only preview that
+    // answers the question being asked.
+    var sample = loadName().trim() || "Baby";
+    el.nameFonts.innerHTML = "";
+    availableNameFonts().forEach(function (font) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "name-chip nf-" + font.id + (font.id === current ? " is-selected" : "");
+      chip.textContent = sample;
+      chip.title = font.label;
+      chip.setAttribute("aria-label", font.label);
+      chip.setAttribute("aria-pressed", font.id === current ? "true" : "false");
+      chip.addEventListener("click", function () {
+        saveNameFont(font.id);
+        renderNameFonts();
+        renderName();
+      });
+      el.nameFonts.appendChild(chip);
+    });
   }
 
   function renderDobEcho() {
@@ -2672,6 +2760,7 @@
   el.babyName.addEventListener("input", function () {
     saveName(el.babyName.value);
     renderName();
+    renderNameFonts();
   });
 
   // ---------- version ----------
@@ -2773,6 +2862,7 @@
   }
 
   renderVersion();
+  renderNameFonts();
   checkForUpdate();
   pruneOnStartup();
   buildIntervalOptions();
