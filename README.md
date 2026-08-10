@@ -30,6 +30,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **A getting-started card** for a brand new user, shown under the buttons while there is nothing logged and gone the moment there is.
 - **Guidance for new parents**, on the same Help screen: how to read your baby's sleep phases, how to check they're breathing without waking them, the red flags that mean calling 999, and safer sleep basics.
 - **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, date of birth, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
+- **It tells you when it is out of date.** On opening, and when you come back to it (at most every 15 minutes), the app asks the server what version is deployed and offers a green **Update** if that is newer than what is running — so a phone sitting on a cached copy stops being a silent problem. Being offline is not treated as a fault, nothing is shown when the running copy is ahead, and "not now" holds until a later release turns up. Updating never touches the log.
 - **The version number, at the foot of the main screen** — so two phones can be compared at a glance when one of them is behaving differently. Tapping it asks for the app again under an address the browser has never seen, which is the reliable way past a cached copy; your log is untouched. The number comes from the cache-busting query on the script itself, so what is on screen is always the version actually loaded.
 - Dark theme with large touch targets, for one-handed use in the middle of the night.
 - Live clock; the screen refreshes the moment you return to the app.
@@ -46,6 +47,8 @@ Open `index.html` in a browser. It works from `file://` exactly as it does when 
 
 Served as static files by GitHub Pages: Settings → Pages → Source: `main` branch, `/ (root)`.
 
+**Releasing.** Bump the `?v=` on both assets in `index.html`, the `version` in `version.json` and the `file://` fallback in `app.js` to the same number, in one commit. The `?v=` is what makes browsers fetch the new files; `version.json` is what makes an already-open copy notice. `test_update.js` and `test_version.js` fail if any of the three disagree, and the version shown on screen is read from the script's own `?v=`, so it can never claim to be something other than what loaded.
+
 ## How data is stored
 
 - `baby-tracker-events` — a JSON array of events: `{ id, type, time: ISO-8601, updatedAt, nextMin?, nappy?, value?, deleted? }`. `updatedAt` is when the entry last changed and decides which side wins on merge; `deleted: true` is a tombstone, kept so the deletion can propagate. CSV and Markdown exports omit tombstones; the JSON backup keeps them. `type` is one of `feed`, `diaper`, `sleep_start`, `sleep_end`, `weight`, `height`, `temp`. `nextMin` is the optional one-off gap in minutes until the next event of that type; `nappy` is `"wet"`, `"dirty"`, `"both"` or `"dry"`; `value` carries the reading for a measurement — grams for weight, cm for length and head circumference, °C for temperature; `label` and `unit` carry the name and unit of a free reading (`type: "other"`).
@@ -54,6 +57,8 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 - `baby-tracker-dob` — the date of birth as `YYYY-MM-DD`.
 - `baby-tracker-meta-updated` — when the name, date of birth or intervals last changed, so settings merge by recency too.
 - `baby-tracker-sync` — the private repository and access token, if sync is connected. Deliberately excluded from every export.
+
+Nothing about the version check is stored: it is a plain request for `version.json` on each open, and no identifier, log content or setting goes with it.
 
 Nothing leaves the browser. The flip side is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
 
