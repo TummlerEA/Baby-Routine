@@ -1100,3 +1100,18 @@ body {
   cursor: pointer;
   flex-shrink: 0;
 }
+
+.label-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  min-height: 40px;
+  margin: 4px 4px 0 0;
+  cursor: pointer;
+}
+
+.label-chip:active { opacity: 0.75; }
