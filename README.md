@@ -30,6 +30,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **A getting-started card** for a brand new user, shown under the buttons while there is nothing logged and gone the moment there is.
 - **Guidance for new parents**, on the same Help screen: how to read your baby's sleep phases, how to check they're breathing without waking them, the red flags that mean calling 999, and safer sleep basics.
 - **A separate Settings screen**, reached by the gear in the top bar, holding the baby's name, date of birth, the planned intervals and export/backup — so the main screen stays down to what you actually tap at 3am.
+- **The version number, at the foot of the main screen** — so two phones can be compared at a glance when one of them is behaving differently. Tapping it asks for the app again under an address the browser has never seen, which is the reliable way past a cached copy; your log is untouched. The number comes from the cache-busting query on the script itself, so what is on screen is always the version actually loaded.
 - Dark theme with large touch targets, for one-handed use in the middle of the night.
 - Live clock; the screen refreshes the moment you return to the app.
 

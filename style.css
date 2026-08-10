@@ -1115,3 +1115,22 @@ body {
 }
 
 .label-chip:active { opacity: 0.75; }
+
+.version-row {
+  display: flex;
+  justify-content: center;
+}
+
+.app-version {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 8px 16px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.app-version:active { opacity: 0.6; }
