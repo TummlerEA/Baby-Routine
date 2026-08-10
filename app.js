@@ -21,7 +21,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "23";
+    var fallback = "24";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -72,6 +72,14 @@
     dry:   { label: "Dry",       chip: "Dry",     detail: "Dry" }
   };
   var NAPPY_ORDER = ["wet", "dirty", "both", "dry"];
+
+  // How long a feed took, offered as one tap after the feed is already saved.
+  // Denser at the short end because that is where feeds actually land; a
+  // parent who needs 35 minutes exactly has the manual form. Absent means
+  // nobody answered, the same as the nappy detail, and never means zero.
+  var FEED_MINUTES = [10, 15, 20, 30, 45, 60];
+  // Only until the log can suggest the parent's own figure instead.
+  var FEED_MINUTES_DEFAULT = 20;
 
   // How the baby is fed. A standing fact about the baby rather than something
   // to answer at every feed, so it lives in Settings — but the first thing any
@@ -504,8 +512,12 @@
     nextUpTitle: document.getElementById("nextUpTitle"),
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
+    feedBlock: document.getElementById("feedBlock"),
+    feedChips: document.getElementById("feedChips"),
     nappyBlock: document.getElementById("nappyBlock"),
     nappyChips: document.getElementById("nappyChips"),
+    manualFedField: document.getElementById("manualFedField"),
+    manualFed: document.getElementById("manualFed"),
     manualNappyField: document.getElementById("manualNappyField"),
     manualNappy: document.getElementById("manualNappy"),
     nextUpClose: document.getElementById("nextUpClose"),
@@ -871,6 +883,30 @@
     return (event && NAPPY_TYPES[event.nappy]) ? event.nappy : null;
   }
 
+  function fedMinutesOf(event) {
+    if (!event || event.type !== "feed") return null;
+    var value = Number(event.fedMin);
+    return (value > 0 && value <= 24 * 60) ? Math.round(value) : null;
+  }
+
+  // The chip to suggest: the parent's own recent middle, once there is one.
+  // Rounded to whichever chip is nearest, so the suggestion is always a chip
+  // that exists rather than a seventh option nobody can tap.
+  function suggestedFeedMinutes() {
+    var recorded = [];
+    sortedByTimeDesc(liveEvents()).forEach(function (e) {
+      var mins = fedMinutesOf(e);
+      if (mins !== null && recorded.length < FORECAST_SAMPLE) recorded.push(mins);
+    });
+    if (!recorded.length) return FEED_MINUTES_DEFAULT;
+    var middle = median(recorded);
+    var best = FEED_MINUTES[0];
+    FEED_MINUTES.forEach(function (mins) {
+      if (Math.abs(mins - middle) < Math.abs(best - middle)) best = mins;
+    });
+    return best;
+  }
+
   function customMinutesOf(event) {
     var value = event && Number(event.nextMin);
     return (value > 0 && value <= 24 * 60) ? Math.round(value) : null;
@@ -1113,11 +1149,15 @@
 
   function daySummary(group, analysis) {
     var feeds = 0;
+    var fedMs = 0;
     var diapers = 0;
     var wet = 0;
     var dirty = 0;
     group.events.forEach(function (e) {
-      if (e.type === "feed") feeds++;
+      if (e.type === "feed") {
+        feeds++;
+        fedMs += (fedMinutesOf(e) || 0) * MS_MIN;
+      }
       if (e.type !== "diaper") return;
       diapers++;
       var kind = nappyOf(e);
@@ -1131,7 +1171,9 @@
     // once there is anything to show.
     var nappies = "🧷 " + diapers;
     if (wet || dirty) nappies += " (💧" + wet + " 💩" + dirty + ")";
-    return "🍼 " + feeds + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
+    var feedLabel = "🍼 " + feeds;
+    if (fedMs) feedLabel += " (" + formatDuration(fedMs) + ")";
+    return feedLabel + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
   }
 
   function isDayExpanded(key, index) {
@@ -1192,6 +1234,8 @@
               '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) + '</div>' +
               '<div class="l-time">' + formatClockTime(d) + '</div>' +
               (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
+              (fedMinutesOf(e) ? '<div class="l-duration">took ' +
+                formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
               (measureValueOf(e) !== null
                 ? '<div class="l-measure">' + escapeHtml(measureLine(e)) + '</div>' : '') +
@@ -1359,7 +1403,14 @@
 
   el.manualValue.addEventListener("input", renderValueEcho);
 
+  function syncManualFedField() {
+    var isFeed = el.manualType.value === "feed";
+    el.manualFedField.hidden = !isFeed;
+    if (!isFeed) el.manualFed.value = "";
+  }
+
   function syncManualFields() {
+    syncManualFedField();
     syncManualNappyField();
     syncManualValueField();
   }
@@ -1368,6 +1419,7 @@
 
   function resetManualForm() {
     editingId = null;
+    el.manualFed.value = "";
     el.manualNappy.value = "";
     el.manualValue.value = "";
     el.manualMeasureLabel.value = "";
@@ -1387,6 +1439,7 @@
     openManualPanel();
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
+    el.manualFed.value = fedMinutesOf(found) === null ? "" : String(fedMinutesOf(found));
     el.manualNappy.value = nappyOf(found) || "";
     el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
     el.manualMeasureLabel.value = measureLabelOf(found);
@@ -1469,6 +1522,9 @@
       }
     }
 
+    var fedMinutes = parseInt(el.manualFed.value, 10);
+    if (!isFinite(fedMinutes) || fedMinutes <= 0) fedMinutes = 0;
+
     hideManualNotice();
     var savedId;
 
@@ -1487,6 +1543,8 @@
       target.time = picked.toISOString();
       if (type === "diaper" && NAPPY_TYPES[el.manualNappy.value]) target.nappy = el.manualNappy.value;
       else delete target.nappy;
+      if (type === "feed" && fedMinutes) target.fedMin = fedMinutes;
+      else delete target.fedMin;
       if (measureMeta) target.value = measureValue;
       else delete target.value;
       if (measureLabel) target.label = measureLabel;
@@ -1502,7 +1560,7 @@
     } else {
       savedId = addEvent(type, picked.toISOString(),
         type === "diaper" ? el.manualNappy.value : "", measureValue,
-        measureLabel, measureUnit);
+        measureLabel, measureUnit, type === "feed" ? fedMinutes : 0);
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
@@ -1560,6 +1618,26 @@
     el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
       ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
 
+    var isFeed = nextUpKind === "feed";
+    el.feedBlock.hidden = !isFeed;
+    if (isFeed) {
+      var recorded = fedMinutesOf(event);
+      var suggestion = recorded === null ? suggestedFeedMinutes() : recorded;
+      el.feedChips.innerHTML = "";
+      FEED_MINUTES.forEach(function (mins) {
+        var chip = document.createElement("button");
+        // Nothing is selected until the parent answers — the suggestion is
+        // only marked out, so the card never looks as though it recorded a
+        // length on their behalf.
+        chip.className = "nextup-chip feed-chip" +
+          (mins === recorded ? " selected" : "") +
+          (recorded === null && mins === suggestion ? " suggested" : "");
+        chip.setAttribute("data-fed", String(mins));
+        chip.textContent = formatDuration(mins * MS_MIN);
+        el.feedChips.appendChild(chip);
+      });
+    }
+
     var isNappy = nextUpKind === "diaper";
     el.nappyBlock.hidden = !isNappy;
     if (isNappy) {
@@ -1594,6 +1672,25 @@
   }
 
   el.nextUpClose.addEventListener("click", hideNextUp);
+
+  el.feedChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".feed-chip");
+    if (!chip) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+
+    var mins = parseInt(chip.getAttribute("data-fed"), 10);
+    // Tapping the same answer again clears it, so a mis-tap is undoable.
+    if (fedMinutesOf(event) === mins) delete event.fedMin;
+    else event.fedMin = mins;
+    touch(event);
+
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
 
   el.nappyChips.addEventListener("click", function (ev) {
     var chip = ev.target.closest(".nappy-chip");
@@ -1672,9 +1769,10 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
+    if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
     if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
     if (label) event.label = label;
     if (unit) event.unit = unit;
@@ -1753,7 +1851,7 @@
         eventTypeLabel(e.type),
         formatDateTimeLocal(new Date(e.time)),
         e.time,
-        duration ? Math.round(duration / MS_MIN) : "",
+        duration ? Math.round(duration / MS_MIN) : (fedMinutesOf(e) || ""),
         customMinutesOf(e) || "",
         nappyOf(e) || "",
         measureValueOf(e) === null ? "" : e.value,
@@ -1785,7 +1883,8 @@
       out.push("| Time | Event | Duration |");
       out.push("| --- | --- | --- |");
       sortedByTimeAsc(group.events).forEach(function (e) {
-        var duration = analysis.durationById[e.id];
+        var duration = analysis.durationById[e.id] ||
+          (fedMinutesOf(e) ? fedMinutesOf(e) * MS_MIN : 0);
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
@@ -1909,7 +2008,8 @@
           customMinutesOf(e) || 0,
           isDeleted(e) ? 1 : 0,
           measureLabelOf(e),
-          measureUnitOf(e)
+          measureUnitOf(e),
+          fedMinutesOf(e) || 0
         ];
       })
     };
@@ -1937,6 +2037,8 @@
       if (row[7]) entry.deleted = true;
       if (row[8]) entry.label = cleanText(row[8], MAX_LABEL);
       if (row[9]) entry.unit = cleanText(row[9], MAX_UNIT);
+      // Appended after the fact: an older link simply has no tenth column.
+      if (row[10] && type === "feed") entry.fedMin = row[10];
       out.events.push(entry);
     });
     return out;
@@ -2118,6 +2220,10 @@
     var nextMin = Number(raw.nextMin);
     if (nextMin > 0 && nextMin <= 24 * 60) entry.nextMin = Math.round(nextMin);
     if (raw.type === "diaper" && NAPPY_TYPES[raw.nappy]) entry.nappy = raw.nappy;
+    if (raw.type === "feed") {
+      var fedMin = Number(raw.fedMin);
+      if (fedMin > 0 && fedMin <= 24 * 60) entry.fedMin = Math.round(fedMin);
+    }
     if (MEASURES[raw.type]) {
       var measured = Number(raw.value);
       if (!isFinite(measured) || measured <= 0) return null;
@@ -2869,6 +2975,17 @@
       : "Today: " + formatAge(days) + " old";
   }
 
+  // The same six the card offers, so the two never disagree about what a
+  // recordable feed length is.
+  function buildFedOptions() {
+    FEED_MINUTES.forEach(function (mins) {
+      var node = document.createElement("option");
+      node.value = String(mins);
+      node.textContent = formatDuration(mins * MS_MIN);
+      el.manualFed.appendChild(node);
+    });
+  }
+
   function buildFeedingOptions() {
     el.babyFeeding.innerHTML = "";
     FEEDING_OPTIONS.forEach(function (option) {
@@ -2904,11 +3021,18 @@
   // use, so the summary agrees with what the parent can see in the log.
   function aiDayStats(dayStart, analysis) {
     var dayEnd = dayStart + MS_DAY;
-    var out = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    var out = { feeds: 0, fedMs: 0, fedCount: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     liveEvents().forEach(function (e) {
       var t = +new Date(e.time);
       if (t < dayStart || t >= dayEnd) return;
-      if (e.type === "feed") out.feeds++;
+      if (e.type === "feed") {
+        out.feeds++;
+        var mins = fedMinutesOf(e);
+        if (mins !== null) {
+          out.fedMs += mins * MS_MIN;
+          out.fedCount++;
+        }
+      }
       if (e.type !== "diaper") return;
       out.nappies++;
       var kind = nappyOf(e);
@@ -3023,18 +3147,22 @@
     today.setHours(0, 0, 0, 0);
     var since = +today - (days - 1) * MS_DAY;
     var counted = 0;
-    var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    var totals = { feeds: 0, fedMs: 0, fedCount: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     for (var i = 0; i < days; i++) {
       var dayStart = +today - i * MS_DAY;
       var stats = aiDayStats(dayStart, analysis);
       if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
       counted++;
       totals.feeds += stats.feeds;
+      totals.fedMs += stats.fedMs;
+      totals.fedCount += stats.fedCount;
       totals.nappies += stats.nappies;
       totals.wet += stats.wet;
       totals.dirty += stats.dirty;
       totals.sleepMs += stats.sleepMs;
-      var parts = [stats.feeds + (stats.feeds === 1 ? " feed" : " feeds")];
+      var feedPart = stats.feeds + (stats.feeds === 1 ? " feed" : " feeds");
+      if (stats.fedMs) feedPart += " (" + formatDuration(stats.fedMs) + " feeding)";
+      var parts = [feedPart];
       var nappies = stats.nappies + (stats.nappies === 1 ? " nappy" : " nappies");
       if (stats.wet || stats.dirty) nappies += " (" + stats.wet + " wet, " + stats.dirty + " dirty)";
       parts.push(nappies);
@@ -3072,17 +3200,26 @@
     var longestSleep = aiLongestSleep(analysis, since);
     if (longestSleep) out.push("Longest single sleep: " + formatDuration(longestSleep));
 
+    out.push("");
+    if (totals.fedCount) {
+      out.push("Time feeding: " + formatDuration(Math.round(totals.fedMs / counted)) +
+        " a day on average, " +
+        formatDuration(Math.round(totals.fedMs / totals.fedCount)) + " a feed" +
+        (totals.fedCount < totals.feeds
+          ? " — recorded for " + totals.fedCount + " of the " + totals.feeds + " feeds"
+          : ""));
+    } else {
+      // Said plainly, because a model asked how long a feed lasts will
+      // otherwise assume the log simply forgot to mention it.
+      out.push("How long each feed took was not recorded.");
+    }
+    out.push("How much was taken is never recorded: this app counts feeds, not millilitres.");
+
     var measures = aiMeasureLines();
     if (measures.length) {
       out.push("");
       measures.forEach(function (line) { out.push(line); });
     }
-
-    // Said plainly, because a model asked how long a feed lasts will otherwise
-    // assume the log simply forgot to mention it.
-    out.push("");
-    out.push("Each feed and nappy is logged as a moment, not a span: the app has no " +
-      "record of how long a feed took or how much was taken.");
 
     return out.join("\n");
   }
@@ -3323,6 +3460,7 @@
   pruneOnStartup();
   buildIntervalOptions();
   buildFeedingOptions();
+  buildFedOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
   renderSyncState();
   startSyncPolling();

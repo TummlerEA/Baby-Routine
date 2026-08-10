@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -113,6 +113,10 @@
           <span class="nextup-title" id="nextUpTitle">Feed logged</span>
           <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
+        <div class="nextup-block" id="feedBlock" hidden>
+          <div class="nextup-sublabel">How long did it take?</div>
+          <div class="nextup-chips feed-chips" id="feedChips"></div>
+        </div>
         <div class="nextup-block" id="nappyBlock" hidden>
           <div class="nextup-sublabel">What was in it?</div>
           <div class="nextup-chips" id="nappyChips"></div>
@@ -162,6 +166,12 @@
             <span class="manual-label" id="manualValueLabel">Value</span>
             <input type="number" id="manualValue" class="manual-input" inputmode="decimal" step="any" min="0">
             <span class="manual-echo" id="manualValueEcho"></span>
+          </label>
+          <label class="manual-field" id="manualFedField" hidden>
+            <span class="manual-label">How long did it take?</span>
+            <select id="manualFed" class="manual-select">
+              <option value="">Not recorded</option>
+            </select>
           </label>
           <label class="manual-field" id="manualNappyField" hidden>
             <span class="manual-label">What was in it?</span>
@@ -599,6 +609,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>
