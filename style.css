@@ -83,9 +83,11 @@ body {
   background: transparent;
   border: none;
   color: var(--text);
-  font-size: 34px;
-  font-weight: 700;
-  font-family: Georgia, "Times New Roman", serif;
+  /* Scripts run far smaller and taller than a serif at the same px, so each
+     style tunes itself through these two rather than restating the size. */
+  --name-size: 34px;
+  font-size: calc(var(--name-size) * var(--name-scale, 1));
+  line-height: var(--name-leading, 1.2);
   padding: 4px 0;
   text-align: left;
   cursor: pointer;
@@ -391,7 +393,7 @@ body {
 
 @media (min-width: 400px) {
   .action-icon { font-size: 34px; }
-  .name-display { font-size: 38px; }
+  .name-display { --name-size: 38px; }
 }
 
 /* ---------- sleep banner warning ---------- */
@@ -1185,3 +1187,95 @@ body {
   flex-shrink: 0;
   cursor: pointer;
 }
+
+/* ---------- name styles ---------- */
+
+/* Every one of these is a typeface the phone already has. Nothing is fetched,
+   which rules out the pretty web fonts and rules in the ones Apple ships —
+   which happen to include some very good calligraphic faces. */
+
+.nf-plain {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.nf-classic {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+}
+
+.nf-storybook {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.nf-elegant {
+  font-family: Didot, "Bodoni 72", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  --name-scale: 1.05;
+}
+
+.nf-script {
+  font-family: "Snell Roundhand", "Apple Chancery", "Segoe Script", cursive;
+  font-weight: 700;
+  --name-scale: 1.25;
+  --name-leading: 1.35;
+}
+
+.nf-delicate {
+  font-family: "Savoye LET", "Snell Roundhand", cursive;
+  font-weight: 400;
+  --name-scale: 1.45;
+  --name-leading: 1.3;
+}
+
+/* Zapfino's swashes run well above and below the line; it needs the room or
+   the tops of the capitals are clipped. */
+.nf-flourish {
+  font-family: Zapfino, "Snell Roundhand", cursive;
+  font-weight: 400;
+  --name-scale: 0.72;
+  --name-leading: 2;
+}
+
+.nf-hand {
+  font-family: "Bradley Hand", Noteworthy, "Segoe Script", cursive;
+  font-weight: 600;
+  --name-scale: 1.05;
+}
+
+.name-fonts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The chip is the preview: it shows your baby's actual name in the style,
+   because a font name tells you nothing and a sample word tells you less. */
+.name-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+  --name-size: 20px;
+  font-size: calc(var(--name-size) * var(--name-scale, 1));
+  line-height: var(--name-leading, 1.2);
+  max-width: 100%;
+  min-height: 56px;
+  overflow: hidden;
+  padding: 6px 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name-chip.is-selected {
+  background: var(--bg-elevated);
+  border-color: var(--accent-sleep);
+  box-shadow: inset 0 0 0 1px var(--accent-sleep);
+}
+
+.name-chip:active { opacity: 0.7; }

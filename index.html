@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -421,6 +421,11 @@
             <input id="babyDob" class="manual-input" type="date">
             <span class="manual-echo" id="babyDobEcho"></span>
           </label>
+          <div class="manual-field">
+            <span class="manual-label">Name style</span>
+            <div class="name-fonts" id="nameFonts"></div>
+            <span class="manual-echo">Only the styles this phone already has are offered — nothing is downloaded, and the choice stays on this device.</span>
+          </div>
           <p class="settings-hint">Used to show your baby's age, to work out weight change since birth, and to pick the right temperature threshold — under 3 months it is lower.</p>
         </div>
       </section>
@@ -520,6 +525,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
