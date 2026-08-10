@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -70,6 +70,15 @@
           <span class="action-icon">🌙</span>
           <span class="action-label" id="sleepLabel">Sleep</span>
         </button>
+      </section>
+
+      <section class="shared-in" id="sharedIn" hidden>
+        <div class="gs-head">📥 Shared log received</div>
+        <p class="shared-line" id="sharedLine">—</p>
+        <div class="shared-actions">
+          <button class="manual-submit" id="sharedMerge">Merge into my log</button>
+          <button class="manual-cancel" id="sharedDiscard">Discard</button>
+        </div>
       </section>
 
       <section class="getting-started" id="gettingStarted" hidden>
@@ -233,6 +242,13 @@
           </article>
 
           <article class="info-card">
+            <h3>Sharing with your partner</h3>
+            <p><strong>Settings → Share with your partner</strong> makes a link holding your recent entries. Send it however you like; when they open it, their app asks before merging anything.</p>
+            <p>It works both ways — whatever each of you logged ends up in both logs, edits and deletions included, and the newer version of an entry always wins. Send a fresh link whenever you swap over.</p>
+            <p>The entries travel inside the link itself and are never uploaded, which also means anyone holding the link can read them. Keep the period short: a couple of days stays comfortably shareable, while whole months make a link long enough that messaging apps mangle it. For the full history, send the JSON backup instead.</p>
+          </article>
+
+          <article class="info-card">
             <h3>Putting it on your home screen</h3>
             <p>On iPhone, open the app in Safari, tap the share button, then <strong>Add to Home Screen</strong>. It then opens like an ordinary app, full screen, and keeps working without a signal.</p>
           </article>
@@ -372,6 +388,27 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">🤝</span> Share with your partner</h2>
+        <div class="data-panel">
+          <p class="settings-intro">Makes a link holding your recent entries. Send it over, and their app offers to merge it into theirs — entries you both added end up in both logs.</p>
+          <label class="settings-row">
+            <span class="settings-label">Include</span>
+            <select class="settings-select" id="shareRange">
+              <option value="1">Last 24 hours</option>
+              <option value="2" selected>Last 2 days</option>
+              <option value="7">Last week</option>
+              <option value="0">Everything</option>
+            </select>
+          </label>
+          <button class="data-btn data-btn-import" id="shareCreate">Create share link</button>
+          <button class="data-btn" id="shareSend" hidden>Send it…</button>
+          <p class="data-hint" id="shareStatus" hidden></p>
+          <textarea class="share-box" id="shareBox" readonly rows="3" hidden></textarea>
+          <p class="data-hint">The entries travel <strong>inside the link itself</strong> and are never uploaded anywhere — but that also means anyone holding the link can read them, so send it only to someone you trust with it. For the whole history, use the JSON backup below instead.</p>
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">💾</span> Export &amp; backup</h2>
         <div class="data-panel">
           <button class="data-btn" id="exportCsv">Download CSV — for spreadsheets</button>
@@ -383,7 +420,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 12 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 13 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -395,6 +432,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

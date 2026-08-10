@@ -279,6 +279,15 @@
     infoBack: document.getElementById("infoBack"),
     gettingStarted: document.getElementById("gettingStarted"),
     gsMore: document.getElementById("gsMore"),
+    sharedIn: document.getElementById("sharedIn"),
+    sharedLine: document.getElementById("sharedLine"),
+    sharedMerge: document.getElementById("sharedMerge"),
+    sharedDiscard: document.getElementById("sharedDiscard"),
+    shareRange: document.getElementById("shareRange"),
+    shareCreate: document.getElementById("shareCreate"),
+    shareSend: document.getElementById("shareSend"),
+    shareStatus: document.getElementById("shareStatus"),
+    shareBox: document.getElementById("shareBox"),
     screenMain: document.getElementById("screenMain"),
     screenSettings: document.getElementById("screenSettings"),
     settingsOpenBtn: document.getElementById("settingsOpen"),
@@ -1433,6 +1442,137 @@
     }
   });
 
+  // ---------- share links ----------
+
+  // The payload rides in the URL fragment, which browsers never send to the
+  // server — so GitHub Pages sees none of it. Order here is part of the wire
+  // format: appending is safe, reordering is not.
+  var SHARE_TYPES = ["feed", "diaper", "sleep_start", "sleep_end", "weight", "height", "temp"];
+  var SHARE_NAPPIES = ["", "wet", "dirty", "both", "dry"];
+  var SHARE_VERSION = 1;
+  // Past this, messaging apps start mangling links.
+  var SHARE_COMFORTABLE_CHARS = 8000;
+
+  function bytesToBase64Url(bytes) {
+    var binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function base64UrlToBytes(text) {
+    var b64 = text.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var binary = atob(b64);
+    var out = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+    return out;
+  }
+
+  function deflate(text) {
+    var bytes = new TextEncoder().encode(text);
+    if (typeof CompressionStream !== "function") return Promise.resolve({ bytes: bytes, packed: false });
+    return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw")))
+      .arrayBuffer()
+      .then(function (buf) { return { bytes: new Uint8Array(buf), packed: true }; })
+      .catch(function () { return { bytes: bytes, packed: false }; });
+  }
+
+  function inflate(bytes, packed) {
+    if (!packed) return Promise.resolve(new TextDecoder().decode(bytes));
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")))
+      .arrayBuffer()
+      .then(function (buf) { return new TextDecoder().decode(buf); });
+  }
+
+  function secondsOf(iso) {
+    return Math.round(new Date(iso).getTime() / 1000);
+  }
+
+  function eventsToShare(days) {
+    if (!days) return events.slice();
+    var cutoff = Date.now() - days * MS_DAY;
+    // An old entry deleted this morning has a recent updatedAt, and that
+    // deletion is exactly what the other phone needs.
+    return events.filter(function (e) {
+      return new Date(e.time) >= cutoff || new Date(updatedAtOf(e)) >= cutoff;
+    });
+  }
+
+  function buildSharePayload(days) {
+    var chosen = eventsToShare(days);
+    return {
+      v: SHARE_VERSION,
+      n: loadName(),
+      b: loadDob(),
+      i: [intervals.feed, intervals.diaper, intervals.sleep],
+      e: chosen.map(function (e) {
+        return [
+          e.id,
+          SHARE_TYPES.indexOf(e.type),
+          secondsOf(e.time),
+          secondsOf(updatedAtOf(e)),
+          SHARE_NAPPIES.indexOf(nappyOf(e) || ""),
+          measureValueOf(e) === null ? 0 : e.value,
+          customMinutesOf(e) || 0,
+          isDeleted(e) ? 1 : 0
+        ];
+      })
+    };
+  }
+
+  function readSharePayload(payload) {
+    if (!payload || payload.v !== SHARE_VERSION || !Array.isArray(payload.e)) return null;
+    var out = { name: payload.n || "", dob: payload.b || "", intervals: null, events: [] };
+    if (Array.isArray(payload.i) && payload.i.length === 3) {
+      out.intervals = { feed: payload.i[0], diaper: payload.i[1], sleep: payload.i[2] };
+    }
+    payload.e.forEach(function (row) {
+      if (!Array.isArray(row) || row.length < 8) return;
+      var type = SHARE_TYPES[row[1]];
+      if (!type) return;
+      var entry = {
+        id: row[0],
+        type: type,
+        time: new Date(row[2] * 1000).toISOString(),
+        updatedAt: new Date(row[3] * 1000).toISOString()
+      };
+      if (SHARE_NAPPIES[row[4]]) entry.nappy = SHARE_NAPPIES[row[4]];
+      if (row[5]) entry.value = row[5];
+      if (row[6]) entry.nextMin = row[6];
+      if (row[7]) entry.deleted = true;
+      out.events.push(entry);
+    });
+    return out;
+  }
+
+  function encodeShare(days) {
+    var payload = buildSharePayload(days);
+    return deflate(JSON.stringify(payload)).then(function (result) {
+      return {
+        count: payload.e.length,
+        text: (result.packed ? "1" : "0") + bytesToBase64Url(result.bytes)
+      };
+    });
+  }
+
+  function decodeShare(text) {
+    if (!text || text.length < 2) return Promise.resolve(null);
+    var packed = text.charAt(0) === "1";
+    var bytes;
+    try {
+      bytes = base64UrlToBytes(text.slice(1));
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+    return inflate(bytes, packed)
+      .then(function (json) { return readSharePayload(JSON.parse(json)); })
+      .catch(function () { return null; });
+  }
+
+  function shareUrlFor(text) {
+    return location.origin + location.pathname + "#s=" + text;
+  }
+
   // ---------- import ----------
 
   function parseCsvLine(line, delim) {
@@ -1510,15 +1650,8 @@
     }
   }
 
-  function applyBackupSettings(text) {
-    var parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (e) {
-      return;
-    }
-    if (!parsed || Array.isArray(parsed)) return;
-
+  function applyIncomingSettings(parsed) {
+    if (!parsed) return;
     if (parsed.intervals) {
       var changed = false;
       KINDS.forEach(function (kind) {
@@ -1533,8 +1666,8 @@
         buildIntervalOptions();
       }
     }
-    // Only fill in a name when there isn't one, so restoring a file never
-    // quietly renames a baby that already has one.
+    // Only fill in a name when there isn't one, so an incoming file or link
+    // never quietly renames a baby that already has one.
     if (parsed.dob && !loadDob()) {
       saveDob(String(parsed.dob));
       el.babyDob.value = loadDob();
@@ -1545,6 +1678,17 @@
       el.babyName.value = String(parsed.name);
       renderName();
     }
+  }
+
+  function applyBackupSettings(text) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    if (!parsed || Array.isArray(parsed)) return;
+    applyIncomingSettings(parsed);
   }
 
   // Turns one incoming record into the shape we store, or null if it is junk.
@@ -1700,6 +1844,109 @@
   el.infoBack.addEventListener("click", showMain);
   el.gsMore.addEventListener("click", function () { showScreen("info"); });
 
+  // ---------- sharing: sending ----------
+
+  function describeSize(chars) {
+    return (chars / 1024).toFixed(1) + " KB";
+  }
+
+  el.shareCreate.addEventListener("click", function () {
+    var days = parseInt(el.shareRange.value, 10) || 0;
+    el.shareCreate.disabled = true;
+    encodeShare(days).then(function (result) {
+      el.shareCreate.disabled = false;
+      if (!result.count) {
+        el.shareStatus.textContent = "Nothing to share in that period.";
+        el.shareStatus.hidden = false;
+        el.shareBox.hidden = true;
+        el.shareSend.hidden = true;
+        return;
+      }
+      var url = shareUrlFor(result.text);
+      el.shareBox.value = url;
+      el.shareBox.hidden = false;
+      el.shareSend.hidden = typeof navigator.share !== "function";
+      var note = result.count + (result.count === 1 ? " entry" : " entries") +
+        " · " + describeSize(url.length);
+      if (url.length > SHARE_COMFORTABLE_CHARS) {
+        note += " — long enough that some messaging apps may break it. Try a shorter period, or send the JSON backup instead.";
+      }
+      el.shareStatus.textContent = note;
+      el.shareStatus.hidden = false;
+    }).catch(function () {
+      el.shareCreate.disabled = false;
+      showError("Couldn't build the share link");
+    });
+  });
+
+  el.shareSend.addEventListener("click", function () {
+    if (typeof navigator.share !== "function" || !el.shareBox.value) return;
+    navigator.share({
+      title: "Baby Tracker",
+      text: "Recent entries from " + (loadName().trim() || "the baby") + "'s log",
+      url: el.shareBox.value
+    }).catch(function () { /* dismissed by the user */ });
+  });
+
+  // ---------- sharing: receiving ----------
+
+  var pendingShare = null;
+
+  function clearShareHash() {
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch (e) {
+      location.hash = "";
+    }
+  }
+
+  function hideSharedIn() {
+    pendingShare = null;
+    el.sharedIn.hidden = true;
+  }
+
+  function offerSharedLog(incoming) {
+    pendingShare = incoming;
+    var live = incoming.events.filter(function (e) { return !e.deleted; }).length;
+    var removed = incoming.events.length - live;
+    var line = "This link carries " + live + (live === 1 ? " entry" : " entries");
+    if (removed) line += " and " + removed + " deletion" + (removed === 1 ? "" : "s");
+    line += ". Merging keeps everything you already have — only newer versions of the same entry replace yours.";
+    el.sharedLine.textContent = line;
+    el.sharedIn.hidden = false;
+  }
+
+  el.sharedMerge.addEventListener("click", function () {
+    if (!pendingShare) return;
+    var incoming = pendingShare;
+    hideSharedIn();
+    applyIncomingSettings(incoming);
+    mergeImported(incoming.events);
+  });
+
+  el.sharedDiscard.addEventListener("click", function () {
+    hideSharedIn();
+    showToast("Shared log discarded");
+  });
+
+  // Opening a share link while the app is already on screen only changes the
+  // fragment, which does not reload anything — so listen for that too.
+  window.addEventListener("hashchange", function () { handleShareHash(); });
+
+  function handleShareHash() {
+    var match = /^#s=(.+)$/.exec(location.hash || "");
+    if (!match) return;
+    clearShareHash();
+    decodeShare(match[1]).then(function (incoming) {
+      if (!incoming || !incoming.events.length) {
+        showToast("That share link could not be read");
+        return;
+      }
+      showScreen("main");
+      offerSharedLog(incoming);
+    });
+  }
+
   // ---------- name ----------
 
   function renderName() {
@@ -1757,6 +2004,7 @@
   }
 
   buildIntervalOptions();
+  handleShareHash();
   syncManualFields();
   renderDobEcho();
   renderAll();

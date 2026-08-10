@@ -1004,3 +1004,41 @@ body {
 .data-version a {
   color: var(--accent-sleep);
 }
+
+/* ---------- sharing ---------- */
+
+.shared-in {
+  background: linear-gradient(135deg, #1b2c22, #172119);
+  border: 1px solid #35603f;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shared-line {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.shared-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-box {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 10px;
+  width: 100%;
+  resize: none;
+  word-break: break-all;
+}
