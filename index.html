@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -79,6 +79,7 @@
           <button class="manual-submit" id="sharedMerge">Merge into my log</button>
           <button class="manual-cancel" id="sharedDiscard">Discard</button>
         </div>
+        <p class="shared-tip" id="sharedTip" hidden>Opened from a chat app? Entries you keep here stay in <strong>this</strong> browser. Open the same link in Safari and add it to your Home Screen, or you may not find them again.</p>
       </section>
 
       <section class="getting-started" id="gettingStarted" hidden>
@@ -245,6 +246,8 @@
             <h3>Sharing with your partner</h3>
             <p><strong>Settings → Share with your partner</strong> makes a link holding your recent entries. Send it however you like; when they open it, their app asks before merging anything.</p>
             <p>It works both ways — whatever each of you logged ends up in both logs, edits and deletions included, and the newer version of an entry always wins. Send a fresh link whenever you swap over.</p>
+            <p>Setting them up the first time? Use <strong>Invite your partner</strong> in the same place. It sends the address of the app along with a short note explaining how the two of you will swap entries. Your baby's name, date of birth and planned intervals travel across with the first batch of entries, so they do not have to type any of it in.</p>
+            <p>Ask them to open it in <strong>Safari</strong> and add it to the Home Screen. A link opened inside a chat app runs in that app's own browser, and anything saved there can be hard to find again.</p>
             <p>The entries travel inside the link itself and are never uploaded, which also means anyone holding the link can read them. Keep the period short: a couple of days stays comfortably shareable, while whole months make a link long enough that messaging apps mangle it. For the full history, send the JSON backup instead.</p>
           </article>
 
@@ -390,7 +393,9 @@
       <section>
         <h2 class="section-title"><span class="section-icon">🤝</span> Share with your partner</h2>
         <div class="data-panel">
-          <p class="settings-intro">Makes a link holding your recent entries. Send it over, and their app offers to merge it into theirs — entries you both added end up in both logs.</p>
+          <p class="settings-intro">Sending them here for the first time? Start with an invitation — it explains what the app is and how the two of you will swap entries.</p>
+          <button class="data-btn" id="inviteCreate">💌 Invite your partner</button>
+          <p class="settings-intro settings-intro-spaced">Once they have it, send a link holding your recent entries. Their app offers to merge it into theirs — entries you both added end up in both logs.</p>
           <label class="settings-row">
             <span class="settings-label">Include</span>
             <select class="settings-select" id="shareRange">
@@ -420,7 +425,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 13 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 14 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -432,6 +437,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
