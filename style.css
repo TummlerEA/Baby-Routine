@@ -1032,6 +1032,8 @@ body {
 
 .share-box {
   background: var(--bg-elevated-2);
+  -webkit-user-select: text;
+  user-select: text;
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text-dim);
