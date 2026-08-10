@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 
@@ -271,6 +271,8 @@
             </ul>
             <p>After that it syncs when you open the app, when you come back to it, about once a minute while it is on screen, and shortly after anything you log. If both of you write at the same moment, nothing is lost: the newer version of each entry wins and the rest is merged.</p>
             <p>The token stays on the phone you typed it into. It is never put in a backup, a report or a share link. If a phone is lost, delete that token on GitHub and the phone loses access.</p>
+            <p><strong>About deleted entries.</strong> A deleted entry leaves a marker behind rather than vanishing, because a row that is simply missing looks the same as one the other phone has not seen yet — and would come back on the next sync. The marker keeps only the identity and the time, never the reading or the nappy detail, and it is thrown away by every phone once it is a month old. So a deletion always travels, and then tidies itself up.</p>
+            <p>One caveat worth knowing: a repository keeps its history, so earlier versions of the file remain in past commits even after the current one is cleaned. If you ever need something truly gone, delete the repository and connect a fresh one.</p>
           </article>
 
           <article class="info-card">
@@ -475,7 +477,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 16 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 17 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -487,6 +489,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

@@ -17,6 +17,13 @@
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
 
+  // How long a tombstone has to convince every device that an entry is gone.
+  // Long enough that a phone left alone for weeks still learns about it,
+  // short enough that the stored file does not carry deletions forever.
+  // Must stay below MS_DAY: declared earlier it would quietly evaluate to NaN,
+  // and every comparison against NaN is false, so nothing would ever expire.
+  var TOMBSTONE_TTL = 30 * MS_DAY;
+
   // Gaps shorter than this come from an accidental double tap, not from a
   // real second event. Averaging them in drags the forecast hours off.
   var MIN_VALID_INTERVAL = 10 * MS_MIN;
@@ -255,6 +262,7 @@
   }
 
   var events = loadEvents();
+  var prunedOnLoad = 0;
 
   // Two phones both writing means the log has to merge cleanly in any order.
   // Every record carries when it last changed, and deleting marks a record
@@ -270,6 +278,38 @@
     return !!(event && event.deleted);
   }
 
+  // A tombstone only has to say "this id is gone". Keeping the reading, the
+  // nappy detail or the one-off gap alongside it would store the contents of
+  // something the parent deliberately deleted, and sync it to the repository
+  // on top of that.
+  function stripToTombstone(event) {
+    var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin };
+    delete event.nappy;
+    delete event.value;
+    delete event.nextMin;
+    event.deleted = true;
+    return carried;
+  }
+
+  function restoreFromTombstone(event, carried) {
+    delete event.deleted;
+    if (carried.nappy !== undefined) event.nappy = carried.nappy;
+    if (carried.value !== undefined) event.value = carried.value;
+    if (carried.nextMin !== undefined) event.nextMin = carried.nextMin;
+  }
+
+  function tombstoneExpired(event) {
+    return isDeleted(event) && (Date.now() - new Date(updatedAtOf(event)) > TOMBSTONE_TTL);
+  }
+
+  // Every device applies the same rule to the same timestamps, so they all
+  // drop the same tombstones and nobody pushes them back at anyone.
+  function pruneTombstones() {
+    var before = events.length;
+    events = events.filter(function (e) { return !tombstoneExpired(e); });
+    return before - events.length;
+  }
+
   function updatedAtOf(event) {
     // Records written before this existed fall back to their own timestamp.
     return event.updatedAt || event.time;
@@ -279,6 +319,11 @@
   // tombstones.
   function liveEvents() {
     return events.filter(function (e) { return !isDeleted(e); });
+  }
+
+  function pruneOnStartup() {
+    prunedOnLoad = pruneTombstones();
+    if (prunedOnLoad) saveEvents(events);
   }
   var intervals = loadIntervals();
 
@@ -967,13 +1012,13 @@
   function deleteEvent(id) {
     var target = events.filter(function (e) { return e.id === id; })[0];
     if (!target || isDeleted(target)) return;
-    target.deleted = true;
+    var carried = stripToTombstone(target);
     touch(target);
     if (!saveEvents(events)) return;
     if (editingId === id) resetManualForm();
     renderAll();
     showToast("Entry deleted", function () {
-      delete target.deleted;
+      restoreFromTombstone(target, carried);
       touch(target);
       saveEvents(events);
       renderAll();
@@ -2257,6 +2302,7 @@
     (remoteEvents || []).forEach(function (raw) {
       var entry = normaliseImported(raw);
       if (!entry || !entry.id) return;
+      if (tombstoneExpired(entry)) return;
       var existing = byId[entry.id];
       if (!existing) {
         events.push(entry);
@@ -2350,7 +2396,13 @@
         }
         if (pulled || remoteMeta) renderAll();
 
-        var mustPush = !found.sha || remoteHasNothingOfOurs(remoteEvents) ||
+        // Drop what has aged out before comparing, so the cleaned-up log is
+        // what gets compared and sent.
+        var pruned = pruneTombstones();
+        if (pruned) saveEvents(events);
+
+        var remoteCarriesExpired = remoteEvents.some(tombstoneExpired);
+        var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
         if (!mustPush) return { pulled: pulled, pushed: 0 };
 
@@ -2490,6 +2542,7 @@
     renderAll({ log: needLog });
   }
 
+  pruneOnStartup();
   buildIntervalOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
   renderSyncState();
