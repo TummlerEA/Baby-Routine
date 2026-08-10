@@ -19,13 +19,18 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "19";
+    var fallback = "20";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
   })();
 
   var MS_MIN = 60 * 1000;
+  var VERSION_URL = "version.json";
+  // Often enough that a phone left open all day learns about a release, rare
+  // enough that returning to the app twenty times a night costs one request.
+  var VERSION_CHECK_GAP = 15 * 60 * 1000;
+
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
 
@@ -444,6 +449,10 @@
     importBtn: document.getElementById("importBtn"),
     importFile: document.getElementById("importFile"),
     appVersion: document.getElementById("appVersion"),
+    updateBanner: document.getElementById("updateBanner"),
+    updateVersion: document.getElementById("updateVersion"),
+    updateReload: document.getElementById("updateReload"),
+    updateDismiss: document.getElementById("updateDismiss"),
     settingsVersion: document.getElementById("settingsVersion"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
@@ -2673,13 +2682,66 @@
   }
 
   // A phone can sit on an old copy for days: the browser has the page cached
-  // and nothing on screen says so. Tapping the version asks for the document
-  // again under a URL it has never seen, which is the one thing that reliably
-  // defeats the cache. The query is not read by anything, and localStorage is
-  // scoped to the origin, so the log is untouched.
-  el.appVersion.addEventListener("click", function () {
+  // and nothing on screen says so. Asking for the document under a URL it has
+  // never seen is the one thing that reliably defeats the cache. The query is
+  // not read by anything, and localStorage is scoped to the origin, so the log
+  // is untouched.
+  function reloadFresh() {
     var base = location.href.split("#")[0].split("?")[0];
     location.replace(base + "?r=" + Date.now());
+  }
+
+  el.appVersion.addEventListener("click", reloadFresh);
+
+  // ---------- update check ----------
+
+  // Waiting for someone to notice the number at the bottom of the screen is no
+  // way to find out you are three versions behind. version.json is a couple of
+  // dozen bytes and says what is deployed; the running copy says what it is.
+  var lastVersionCheck = 0;
+  var updateSeen = null;     // the version being offered, once one is found
+  var updateDismissed = null; // ...and the one already waved away
+
+  function renderUpdateBanner() {
+    var show = !!updateSeen && updateSeen !== updateDismissed;
+    if (show) el.updateVersion.textContent = "v" + updateSeen;
+    el.updateBanner.hidden = !show;
+  }
+
+  function checkForUpdate() {
+    // Nothing to fetch from disk — a file:// page cannot read its own folder,
+    // and a copy opened that way is not one that updates.
+    if (location.protocol === "file:") return;
+    var now = Date.now();
+    if (lastVersionCheck && now - lastVersionCheck < VERSION_CHECK_GAP) return;
+    lastVersionCheck = now;
+    // no-store asks the browser not to serve this from its cache; the query
+    // defeats anything sitting in front of it. A cached answer to "is there a
+    // newer version" is the one reply with no value at all.
+    fetch(VERSION_URL + "?t=" + now, { cache: "no-store" })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var remote = parseInt(data.version, 10);
+        var local = parseInt(APP_VERSION, 10);
+        // Only ever offer to go forwards. A rollback, or a copy built from a
+        // branch, leaves the running version ahead — not something to nag about.
+        if (!isFinite(remote) || !isFinite(local) || remote <= local) return;
+        updateSeen = String(remote);
+        renderUpdateBanner();
+      })
+      .catch(function () {
+        // Being offline is the ordinary case here, not a fault worth a banner.
+      });
+  }
+
+  el.updateReload.addEventListener("click", reloadFresh);
+
+  // Three in the morning is nobody's moment to update. It comes back on its
+  // own if a later version turns up.
+  el.updateDismiss.addEventListener("click", function () {
+    updateDismissed = updateSeen;
+    renderUpdateBanner();
   });
 
   // ---------- clock & render ----------
@@ -2711,6 +2773,7 @@
   }
 
   renderVersion();
+  checkForUpdate();
   pruneOnStartup();
   buildIntervalOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
@@ -2729,6 +2792,7 @@
     if (document.hidden) return;
     renderAll();
     if (syncConfig) syncNow("resume");
+    checkForUpdate();
   });
   window.addEventListener("focus", function () { renderAll(); });
   window.addEventListener("pageshow", function () { renderAll(); });

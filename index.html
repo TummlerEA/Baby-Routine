@@ -14,8 +14,10 @@
 <meta name="apple-mobile-web-app-title" content="Baby">
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
-     app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=19">
+     app.js against a fresh index.html. Bump version.json to the same number
+     in the same commit — that is what tells an already-installed copy an
+     update exists. test_update.js fails if the two disagree. -->
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -42,6 +44,16 @@
 
       <section class="name-row">
         <button class="name-display" id="babyNameDisplay">Baby's name</button>
+      </section>
+
+      <section id="updateBanner" class="banner banner-update" hidden>
+        <span class="sleep-icon">⬆️</span>
+        <span class="sleep-banner-body">
+          <span><strong id="updateVersion">—</strong> is available</span>
+          <span class="update-note">Everything you have logged is kept.</span>
+        </span>
+        <button class="update-btn" id="updateReload">Update</button>
+        <button class="update-close" id="updateDismiss" aria-label="Not now">✕</button>
       </section>
 
       <section id="sleepBanner" class="banner banner-sleep" hidden>
@@ -508,6 +520,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
