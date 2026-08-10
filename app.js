@@ -62,9 +62,15 @@
   var MEASURES = {
     weight: { label: "Weight", icon: "⚖️", unit: "g",  step: "10",  max: 30000, decimals: 0 },
     height: { label: "Length", icon: "📏", unit: "cm", step: "0.5", max: 150,   decimals: 1 },
-    temp:   { label: "Temperature", icon: "🌡", unit: "°C", step: "0.1", max: 45, decimals: 1 }
+    temp:   { label: "Temperature", icon: "🌡", unit: "°C", step: "0.1", max: 45, decimals: 1 },
+    head:   { label: "Head circumference", icon: "🧢", unit: "cm", step: "0.1", max: 70, decimals: 1 },
+    // Anything a clinic hands you a number for. The parent supplies the name
+    // and the unit; the app records and shows it and interprets nothing.
+    other:  { label: "Something else", icon: "🔬", unit: "", step: "any", max: 1000000, decimals: 2, freeform: true }
   };
-  var MEASURE_ORDER = ["weight", "height", "temp"];
+  var MEASURE_ORDER = ["weight", "height", "head", "temp", "other"];
+  var MAX_LABEL = 40;
+  var MAX_UNIT = 12;
 
   // Mirrors the guidance already in the app, which follows NHS advice.
   var FEVER_UNDER_3M = 38;
@@ -79,7 +85,9 @@
     sleep_end: { label: "Woke up", icon: "☀️" },
     weight: { label: "Weight", icon: "⚖️" },
     height: { label: "Length", icon: "📏" },
-    temp: { label: "Temperature", icon: "🌡" }
+    temp: { label: "Temperature", icon: "🌡" },
+    head: { label: "Head circumference", icon: "🧢" },
+    other: { label: "Measurement", icon: "🔬" }
   };
 
   var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -283,10 +291,13 @@
   // something the parent deliberately deleted, and sync it to the repository
   // on top of that.
   function stripToTombstone(event) {
-    var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin };
+    var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
+      label: event.label, unit: event.unit };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
+    delete event.label;
+    delete event.unit;
     event.deleted = true;
     return carried;
   }
@@ -296,6 +307,8 @@
     if (carried.nappy !== undefined) event.nappy = carried.nappy;
     if (carried.value !== undefined) event.value = carried.value;
     if (carried.nextMin !== undefined) event.nextMin = carried.nextMin;
+    if (carried.label !== undefined) event.label = carried.label;
+    if (carried.unit !== undefined) event.unit = carried.unit;
   }
 
   function tombstoneExpired(event) {
@@ -350,6 +363,11 @@
     manualValueLabel: document.getElementById("manualValueLabel"),
     manualValue: document.getElementById("manualValue"),
     manualValueEcho: document.getElementById("manualValueEcho"),
+    manualLabelField: document.getElementById("manualLabelField"),
+    manualMeasureLabel: document.getElementById("manualMeasureLabel"),
+    manualLabelSuggest: document.getElementById("manualLabelSuggest"),
+    manualUnitField: document.getElementById("manualUnitField"),
+    manualMeasureUnit: document.getElementById("manualMeasureUnit"),
     babyDob: document.getElementById("babyDob"),
     babyDobEcho: document.getElementById("babyDobEcho"),
     btnFeed: document.getElementById("btnFeed"),
@@ -518,7 +536,11 @@
     return formatDateHeader(date);
   }
 
-  function formatMeasure(type, value) {
+  function formatMeasure(type, value, unit) {
+    if (type === "other") {
+      var shown = Number(value.toFixed(2));
+      return unit ? shown + " " + unit : String(shown);
+    }
     if (type === "weight") {
       // 3470 -> "3.47 kg", 3200 -> "3.2 kg", 3000 -> "3 kg"
       return String(Math.round(value) / 1000) + " kg";
@@ -540,15 +562,47 @@
     return pounds + " lb " + ounces + " oz";
   }
 
+  function cleanText(value, limit) {
+    return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, limit);
+  }
+
+  function measureLabelOf(event) {
+    return (event && MEASURES[event.type] && MEASURES[event.type].freeform)
+      ? cleanText(event.label, MAX_LABEL) : "";
+  }
+
+  function measureUnitOf(event) {
+    return (event && MEASURES[event.type] && MEASURES[event.type].freeform)
+      ? cleanText(event.unit, MAX_UNIT) : "";
+  }
+
+  // Labels the parent has already used, most recent first, offered back so a
+  // repeat reading takes one tap instead of retyping.
+  function knownMeasureLabels() {
+    var seen = {};
+    var out = [];
+    sortedByTimeDesc(liveEvents()).forEach(function (e) {
+      var label = measureLabelOf(e);
+      if (!label) return;
+      var key = label.toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({ label: label, unit: measureUnitOf(e) });
+    });
+    return out;
+  }
+
   function measureValueOf(event) {
     if (!event || !MEASURES[event.type]) return null;
     var value = Number(event.value);
     return (isFinite(value) && value > 0) ? value : null;
   }
 
-  function measurementsOf(type) {
+  function measurementsOf(type, label) {
     return sortedByTimeAsc(liveEvents().filter(function (e) {
-      return e.type === type && measureValueOf(e) !== null;
+      if (e.type !== type || measureValueOf(e) === null) return false;
+      if (label === undefined) return true;
+      return measureLabelOf(e).toLowerCase() === label.toLowerCase();
     }));
   }
 
@@ -770,71 +824,88 @@
   function measureLine(event) {
     var value = measureValueOf(event);
     if (value === null) return "";
-    var text = formatMeasure(event.type, value);
+    var text = formatMeasure(event.type, value, measureUnitOf(event));
     if (event.type === "weight") text += " · " + formatImperial(value);
-    return text;
+    var label = measureLabelOf(event);
+    return label ? label + " " + text : text;
   }
 
   function signed(delta, digits, unit) {
+    // Round to the precision that suits the measurement, then drop the
+    // padding: "+1.3 cm", not "+1.30 cm".
     var rounded = Number(delta.toFixed(digits));
     var sign = rounded > 0 ? "+" : "";
-    return sign + rounded.toFixed(digits) + unit;
+    return sign + String(rounded) + unit;
   }
 
   function renderMeasureCards() {
     el.measureCards.innerHTML = "";
     MEASURE_ORDER.forEach(function (type) {
-      var meta = MEASURES[type];
-      var list = measurementsOf(type);
-      var card = document.createElement("div");
-      card.className = "measure-card" + (list.length ? "" : " is-empty");
-
-      if (!list.length) {
-        card.innerHTML =
-          '<span class="m-icon">' + meta.icon + '</span>' +
-          '<div class="m-body">' +
-            '<div class="m-label">' + meta.label + '</div>' +
-            '<div class="m-value">Nothing recorded yet</div>' +
-          '</div>';
-        el.measureCards.appendChild(card);
+      if (MEASURES[type].freeform) {
+        // One card per thing the parent has named, rather than one for all.
+        knownMeasureLabels().forEach(function (known) {
+          renderMeasureCard(type, measurementsOf(type, known.label), known.label);
+        });
         return;
       }
+      renderMeasureCard(type, measurementsOf(type), "");
+    });
+  }
 
-      var latest = list[list.length - 1];
-      var value = measureValueOf(latest);
-      var when = new Date(latest.time);
-      var subParts = [];
+  function renderMeasureCard(type, list, freeLabel) {
+    var meta = MEASURES[type];
+    var heading = freeLabel || meta.label;
+    var card = document.createElement("div");
+    card.className = "measure-card" + (list.length ? "" : " is-empty");
 
-      var age = ageDaysAt(latest.time);
-      subParts.push(formatDateHeader(when) + (age !== null ? " · " + formatAge(age) : ""));
-
-      if (list.length > 1) {
-        var previous = measureValueOf(list[list.length - 2]);
-        var delta = value - previous;
-        var digits = type === "weight" ? 0 : 1;
-        var unit = type === "weight" ? " g" : " " + meta.unit;
-        var cls = delta >= 0 ? "m-up" : "m-down";
-        subParts.push('<span class="' + cls + '">' + escapeHtml(signed(delta, digits, unit)) + '</span> since last');
-      }
-
-      // Weight against birth weight is what gets watched in the first weeks.
-      if (type === "weight") {
-        var birth = measureValueOf(list[0]);
-        if (list.length > 1 && birth) {
-          var pct = ((value - birth) / birth) * 100;
-          subParts.push(signed(pct, 1, "%") + " of birth weight");
-        }
-      }
-
+    if (!list.length) {
       card.innerHTML =
         '<span class="m-icon">' + meta.icon + '</span>' +
         '<div class="m-body">' +
-          '<div class="m-label">' + meta.label + '</div>' +
-          '<div class="m-value">' + escapeHtml(measureLine(latest)) + '</div>' +
-          '<div class="m-sub">' + subParts.join(" · ") + '</div>' +
+          '<div class="m-label">' + escapeHtml(heading) + '</div>' +
+          '<div class="m-value">Nothing recorded yet</div>' +
         '</div>';
       el.measureCards.appendChild(card);
-    });
+      return;
+    }
+
+    var latest = list[list.length - 1];
+    var value = measureValueOf(latest);
+    var when = new Date(latest.time);
+    var subParts = [];
+
+    var age = ageDaysAt(latest.time);
+    subParts.push(formatDateHeader(when) + (age !== null ? " · " + formatAge(age) : ""));
+
+    if (list.length > 1) {
+      var previous = measureValueOf(list[list.length - 2]);
+      var delta = value - previous;
+      var digits = type === "weight" ? 0 : (meta.freeform ? 2 : 1);
+      var freeUnit = measureUnitOf(latest);
+      var unit = type === "weight" ? " g" : (freeUnit ? " " + freeUnit : (meta.unit ? " " + meta.unit : ""));
+      var cls = delta >= 0 ? "m-up" : "m-down";
+      subParts.push('<span class="' + cls + '">' + escapeHtml(signed(delta, digits, unit)) + '</span> since last');
+    }
+
+    // Weight against birth weight is what gets watched in the first weeks.
+    if (type === "weight") {
+      var birth = measureValueOf(list[0]);
+      if (list.length > 1 && birth) {
+        var pct = ((value - birth) / birth) * 100;
+        subParts.push(signed(pct, 1, "%") + " of birth weight");
+      }
+    }
+
+    card.innerHTML =
+      '<span class="m-icon">' + meta.icon + '</span>' +
+      '<div class="m-body">' +
+        '<div class="m-label">' + escapeHtml(heading) + '</div>' +
+        '<div class="m-value">' + escapeHtml(
+            freeLabel ? formatMeasure(type, value, measureUnitOf(latest)) : measureLine(latest)
+          ) + '</div>' +
+        '<div class="m-sub">' + subParts.join(" · ") + '</div>' +
+      '</div>';
+    el.measureCards.appendChild(card);
   }
 
   function renderMeasurements() {
@@ -1076,15 +1147,40 @@
     if (!isNappy) el.manualNappy.value = "";
   }
 
+  function renderLabelSuggestions() {
+    el.manualLabelSuggest.innerHTML = "";
+    knownMeasureLabels().slice(0, 6).forEach(function (known) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "label-chip";
+      chip.textContent = known.label;
+      chip.addEventListener("click", function () {
+        el.manualMeasureLabel.value = known.label;
+        if (known.unit) el.manualMeasureUnit.value = known.unit;
+      });
+      el.manualLabelSuggest.appendChild(chip);
+    });
+  }
+
   function syncManualValueField() {
     var meta = MEASURES[el.manualType.value];
+    var freeform = !!(meta && meta.freeform);
+    el.manualLabelField.hidden = !freeform;
+    el.manualUnitField.hidden = !freeform;
+    if (freeform) renderLabelSuggestions();
+    else {
+      el.manualMeasureLabel.value = "";
+      el.manualMeasureUnit.value = "";
+    }
     el.manualValueField.hidden = !meta;
     if (!meta) {
       el.manualValue.value = "";
       el.manualValueEcho.textContent = "";
       return;
     }
-    el.manualValueLabel.textContent = meta.label + " in " + meta.unit;
+    el.manualValueLabel.textContent = freeform
+      ? "Reading"
+      : meta.label + " in " + meta.unit;
     el.manualValue.setAttribute("step", meta.step);
     el.manualValue.setAttribute("max", String(meta.max));
     renderValueEcho();
@@ -1123,6 +1219,8 @@
     editingId = null;
     el.manualNappy.value = "";
     el.manualValue.value = "";
+    el.manualMeasureLabel.value = "";
+    el.manualMeasureUnit.value = "";
     syncManualFields();
     el.manualTitle.textContent = "New entry";
     el.manualSubmit.textContent = "Add entry";
@@ -1140,6 +1238,8 @@
     el.manualType.value = found.type;
     el.manualNappy.value = nappyOf(found) || "";
     el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
+    el.manualMeasureLabel.value = measureLabelOf(found);
+    el.manualMeasureUnit.value = measureUnitOf(found);
     syncManualFields();
     el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
     el.manualSubmit.textContent = "Save";
@@ -1194,6 +1294,16 @@
 
     var measureMeta = MEASURES[type];
     var measureValue = null;
+    var measureLabel = "";
+    var measureUnit = "";
+    if (measureMeta && measureMeta.freeform) {
+      measureLabel = cleanText(el.manualMeasureLabel.value, MAX_LABEL);
+      measureUnit = cleanText(el.manualMeasureUnit.value, MAX_UNIT);
+      if (!measureLabel) {
+        showManualNotice("Give it a name, so you can tell it apart later");
+        return;
+      }
+    }
     if (measureMeta) {
       measureValue = Number(el.manualValue.value);
       if (!el.manualValue.value || !isFinite(measureValue) || measureValue <= 0) {
@@ -1201,7 +1311,9 @@
         return;
       }
       if (measureValue > measureMeta.max) {
-        showManualNotice("That looks too high for a " + measureMeta.label.toLowerCase() + " in " + measureMeta.unit);
+        showManualNotice(measureMeta.freeform
+          ? "That number is larger than this app will store"
+          : "That looks too high for a " + measureMeta.label.toLowerCase() + " in " + measureMeta.unit);
         return;
       }
     }
@@ -1226,6 +1338,10 @@
       else delete target.nappy;
       if (measureMeta) target.value = measureValue;
       else delete target.value;
+      if (measureLabel) target.label = measureLabel;
+      else delete target.label;
+      if (measureUnit) target.unit = measureUnit;
+      else delete target.unit;
       touch(target);
       savedId = editingId;
       if (!saveEvents(events)) return;
@@ -1234,7 +1350,8 @@
       showToast("Entry updated");
     } else {
       savedId = addEvent(type, picked.toISOString(),
-        type === "diaper" ? el.manualNappy.value : "", measureValue);
+        type === "diaper" ? el.manualNappy.value : "", measureValue,
+        measureLabel, measureUnit);
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       var original = el.manualSubmit.textContent;
@@ -1404,10 +1521,12 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value) {
+  function addEvent(type, isoTime, nappy, value, label, unit) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
+    if (label) event.label = label;
+    if (unit) event.unit = unit;
     touch(event);
     events.push(event);
     if (!saveEvents(events)) return null;
@@ -1474,7 +1593,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value", "updated_iso"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "nappy", "value", "label", "unit", "updated_iso"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -1487,6 +1606,8 @@
         customMinutesOf(e) || "",
         nappyOf(e) || "",
         measureValueOf(e) === null ? "" : e.value,
+        measureLabelOf(e),
+        measureUnitOf(e),
         updatedAtOf(e)
       ]);
     });
@@ -1565,7 +1686,8 @@
   // The payload rides in the URL fragment, which browsers never send to the
   // server — so GitHub Pages sees none of it. Order here is part of the wire
   // format: appending is safe, reordering is not.
-  var SHARE_TYPES = ["feed", "diaper", "sleep_start", "sleep_end", "weight", "height", "temp"];
+  // Append only — the index is the wire format, so reordering breaks old links.
+  var SHARE_TYPES = ["feed", "diaper", "sleep_start", "sleep_end", "weight", "height", "temp", "head", "other"];
   var SHARE_NAPPIES = ["", "wet", "dirty", "both", "dry"];
   var SHARE_VERSION = 1;
   // Past this, messaging apps start mangling links.
@@ -1632,7 +1754,9 @@
           SHARE_NAPPIES.indexOf(nappyOf(e) || ""),
           measureValueOf(e) === null ? 0 : e.value,
           customMinutesOf(e) || 0,
-          isDeleted(e) ? 1 : 0
+          isDeleted(e) ? 1 : 0,
+          measureLabelOf(e),
+          measureUnitOf(e)
         ];
       })
     };
@@ -1658,6 +1782,8 @@
       if (row[5]) entry.value = row[5];
       if (row[6]) entry.nextMin = row[6];
       if (row[7]) entry.deleted = true;
+      if (row[8]) entry.label = cleanText(row[8], MAX_LABEL);
+      if (row[9]) entry.unit = cleanText(row[9], MAX_UNIT);
       out.events.push(entry);
     });
     return out;
@@ -1738,6 +1864,8 @@
     var iNappy = header.indexOf("nappy");
     var iValue = header.indexOf("value");
     var iUpdated = header.indexOf("updated_iso");
+    var iLabel = header.indexOf("label");
+    var iUnit = header.indexOf("unit");
     var timeCol = iIso >= 0 ? iIso : (iTime >= 0 ? iTime : iLocal);
     if (iType < 0 || timeCol < 0) return null;
 
@@ -1751,7 +1879,9 @@
         nextMin: iNext >= 0 ? cells[iNext] : "",
         nappy: iNappy >= 0 ? (cells[iNappy] || "").trim() : "",
         value: iValue >= 0 ? (cells[iValue] || "").trim() : "",
-        updatedAt: iUpdated >= 0 ? (cells[iUpdated] || "").trim() : ""
+        updatedAt: iUpdated >= 0 ? (cells[iUpdated] || "").trim() : "",
+        label: iLabel >= 0 ? cells[iLabel] : "",
+        unit: iUnit >= 0 ? cells[iUnit] : ""
       });
     }
     return out;
@@ -1833,6 +1963,13 @@
       var measured = Number(raw.value);
       if (!isFinite(measured) || measured <= 0) return null;
       entry.value = measured;
+      if (MEASURES[raw.type].freeform) {
+        var label = cleanText(raw.label, MAX_LABEL);
+        if (!label) return null;
+        entry.label = label;
+        var unit = cleanText(raw.unit, MAX_UNIT);
+        if (unit) entry.unit = unit;
+      }
     }
     if (raw.deleted) entry.deleted = true;
 

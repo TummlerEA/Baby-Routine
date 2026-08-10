@@ -15,7 +15,7 @@
 <!-- Bump ?v= on every change to style.css or app.js. GitHub Pages lets
      browsers cache assets, and without this Safari happily runs a stale
      app.js against a fresh index.html. -->
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -133,7 +133,18 @@
               <option value="weight">Weight</option>
               <option value="height">Length</option>
               <option value="temp">Temperature</option>
+              <option value="head">Head circumference</option>
+              <option value="other">Something else</option>
             </select>
+          </label>
+          <label class="manual-field" id="manualLabelField" hidden>
+            <span class="manual-label">What is it?</span>
+            <input type="text" id="manualMeasureLabel" class="manual-input" maxlength="40" placeholder="e.g. Bilirubin" autocomplete="off">
+            <span class="manual-echo" id="manualLabelSuggest"></span>
+          </label>
+          <label class="manual-field" id="manualUnitField" hidden>
+            <span class="manual-label">Unit</span>
+            <input type="text" id="manualMeasureUnit" class="manual-input" maxlength="12" placeholder="e.g. µmol/L" autocomplete="off">
           </label>
           <label class="manual-field" id="manualValueField" hidden>
             <span class="manual-label" id="manualValueLabel">Value</span>
@@ -181,7 +192,10 @@
             <button class="data-btn measure-add" data-measure="weight">⚖️ Add weight</button>
             <button class="data-btn measure-add" data-measure="height">📏 Add length</button>
             <button class="data-btn measure-add" data-measure="temp">🌡 Add temperature</button>
+            <button class="data-btn measure-add" data-measure="head">🧢 Add head circumference</button>
+            <button class="data-btn measure-add" data-measure="other">🔬 Add something else</button>
           </div>
+          <p class="settings-hint"><strong>Something else</strong> takes any reading you are given — a blood result, a bottle volume, anything with a number. Name it once and it is offered back to you next time. Nothing here is interpreted or checked against any range; it is recorded and shown, nothing more.</p>
           <p class="settings-hint">Growth is plotted on the centile charts in your red book — that is what your health visitor uses. These are just the numbers and how they have changed.</p>
         </div>
       </section>
@@ -236,7 +250,8 @@
           <article class="info-card">
             <h3>History and measurements</h3>
             <p><strong>History</strong> groups entries by day. Today and yesterday are open; older days are one tap away. Each day header totals that day's feeds, nappies — including wet and dirty counts — and sleep.</p>
-            <p><strong>Measurements</strong> holds weight, length and temperature. They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
+            <p><strong>Measurements</strong> holds weight, length, head circumference and temperature — the three growth measurements are the ones plotted in your red book. They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
+            <p><strong>Something else</strong> takes any other reading you are handed — a bilirubin result, a bottle volume, anything with a number. Name it and give it a unit once, and that name is offered back next time, so each thing builds its own little history. The app records and shows these and interprets nothing: unlike temperature, there is no general safe range for an arbitrary test, and reference ranges differ by laboratory and by age.</p>
           </article>
 
           <article class="info-card info-card-urgent">
@@ -477,7 +492,7 @@
         </div>
       </section>
 
-      <p class="data-version">Version 17 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
+      <p class="data-version">Version 18 · MIT licence · <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">source</a></p>
 
     </main>
   </div>
@@ -489,6 +504,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
