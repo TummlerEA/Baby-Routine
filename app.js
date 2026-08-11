@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "30";
+    var fallback = "31";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -884,15 +884,15 @@
         level: "high",
         headline: formatMeasure("temp", value) + " is a high temperature",
         advice: ageDaysAt(event.time) === null
-          ? "At 38°C or above in a baby under 3 months, call 999. Set the date of birth in Settings and this will use the right threshold for your baby's age."
-          : "Call 999 straight away for a baby this age. For anything less urgent, call NHS 111."
+          ? "At 38°C or above in a baby under 3 months, call an ambulance now — 999 in the UK, 112 across Europe. Set the date of birth in Settings and this will use the right threshold for your baby's age."
+          : "Call an ambulance straight away for a baby this age — 999 in the UK, 112 across Europe. For anything less urgent, NHS 111 in the UK, or your doctor."
       };
     }
     if (value < LOW_TEMP) {
       return {
         level: "low",
         headline: formatMeasure("temp", value) + " is low",
-        advice: "A temperature below 36°C in a baby needs checking — call NHS 111, or 999 if they are also floppy, pale or hard to wake."
+        advice: "A temperature below 36°C in a baby needs checking — ring your doctor, or NHS 111 in the UK. Call an ambulance (999, or 112 across Europe) if they are also floppy, pale or hard to wake."
       };
     }
     return null;
@@ -4055,7 +4055,7 @@
     return "I keep a log of my baby's feeds, nappies and sleep — here is a summary of it. " +
       "Answer briefly and in plain language. You cannot examine my baby and you are not my " +
       "doctor: if something here looks worth a professional's eye, say so and tell me to ring " +
-      "my health visitor, GP or NHS 111 rather than guessing at it.\n\n" +
+      "a midwife, health visitor or doctor rather than guessing at it.\n\n" +
       "--- summary ---\n" + aiSummary(days) + "\n--- end of summary ---\n\n" +
       "My question: " + asked;
   }
