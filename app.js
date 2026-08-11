@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "26";
+    var fallback = "27";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -670,6 +670,9 @@
     settingsBack: document.getElementById("settingsBack"),
     babyNameDisplay: document.getElementById("babyNameDisplay"),
     nameFonts: document.getElementById("nameFonts"),
+    nameFontsToggle: document.getElementById("nameFontsToggle"),
+    nameFontsPanel: document.getElementById("nameFontsPanel"),
+    nameFontsCurrent: document.getElementById("nameFontsCurrent"),
     exportCsv: document.getElementById("exportCsv"),
     exportMd: document.getElementById("exportMd"),
     exportJson: document.getElementById("exportJson"),
@@ -3180,8 +3183,25 @@
     applyNameFont(el.babyNameDisplay, loadNameFont());
   }
 
+  var nameFontsOpen = false;
+
+  function toggleNameFonts(open) {
+    nameFontsOpen = open;
+    el.nameFontsPanel.hidden = !open;
+    el.nameFontsToggle.classList.toggle("expanded", open);
+    el.nameFontsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
   function renderNameFonts() {
     var current = loadNameFont();
+    // Folded away by default: eight big previews is the tallest thing on the
+    // screen, and it is a choice made once. The name of the current style
+    // sits on the closed row so it still answers what is set.
+    var currentFont = null;
+    availableNameFonts().forEach(function (font) {
+      if (font.id === current) currentFont = font;
+    });
+    el.nameFontsCurrent.textContent = currentFont ? currentFont.label : "";
     // The chip shows the real name, since that is the only preview that
     // answers the question being asked.
     var sample = loadName().trim() || "Baby";
@@ -4126,6 +4146,8 @@
 
   renderVersion();
   renderNameFonts();
+  toggleNameFonts(false);
+  el.nameFontsToggle.addEventListener("click", function () { toggleNameFonts(!nameFontsOpen); });
   renderAiPrefs();
   renderAiTargets();
   renderPlanChips();
