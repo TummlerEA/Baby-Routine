@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "27";
+    var fallback = "28";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3800,28 +3800,56 @@
     if (feedingOn && feedingOn.summary) out.push("Fed: " + feedingOn.summary);
     out.push("");
 
+    var now = new Date();
     var today = new Date();
     today.setHours(0, 0, 0, 0);
+    var elapsedMs = +now - +today;
     var since = +today - (days - 1) * MS_DAY;
+
+    // The mistake this exists to prevent: an assistant reads "6 feeds" against
+    // a 24-hour guide and tells a frightened parent their newborn is
+    // underfed, when the day is half over. Said before the numbers, in the
+    // plainest words available.
+    out.push("It is now " + formatClockTime(now) + " on " + formatDateHeader(now) + ", so today " +
+      "is " + formatDuration(elapsedMs) + " old out of 24h and today's line below is a part " +
+      "day, not a whole one. Do not measure it against a whole-day figure and do not call it " +
+      "low because the day has not finished — compare it with the same stretch of an earlier " +
+      "day, or read the complete days instead.");
+    out.push("");
+
     var counted = 0;
-    var totals = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {}, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    // Two tallies, because they answer different questions. `totals` is only
+    // ever complete days, since a rate per day computed over a part day is
+    // simply wrong. `everything` is every day shown, for the figures that are
+    // per feed or a proportion, which a part day does not distort.
+    var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0, fedMs: 0 };
+    var everything = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {} };
+    var shown = 0;
     for (var i = 0; i < days; i++) {
       var dayStart = +today - i * MS_DAY;
       var stats = aiDayStats(dayStart, analysis);
       if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
-      counted++;
-      totals.feeds += stats.feeds;
-      totals.fedMs += stats.fedMs;
-      totals.fedCount += stats.fedCount;
+      shown++;
+      everything.feeds += stats.feeds;
+      everything.fedMs += stats.fedMs;
+      everything.fedCount += stats.fedCount;
       FEED_SOURCES.forEach(function (source) {
         if (stats.bySource[source.id]) {
-          totals.bySource[source.id] = (totals.bySource[source.id] || 0) + stats.bySource[source.id];
+          everything.bySource[source.id] =
+            (everything.bySource[source.id] || 0) + stats.bySource[source.id];
         }
       });
-      totals.nappies += stats.nappies;
-      totals.wet += stats.wet;
-      totals.dirty += stats.dirty;
-      totals.sleepMs += stats.sleepMs;
+      // Today is reported but never averaged. A part day in the mean drags
+      // every figure below what the parent is actually doing.
+      if (i > 0) {
+        counted++;
+        totals.feeds += stats.feeds;
+        totals.fedMs += stats.fedMs;
+        totals.nappies += stats.nappies;
+        totals.wet += stats.wet;
+        totals.dirty += stats.dirty;
+        totals.sleepMs += stats.sleepMs;
+      }
       var feedPart = stats.feeds + (stats.feeds === 1 ? " feed" : " feeds");
       if (stats.fedMs) feedPart += " (" + formatDuration(stats.fedMs) + " feeding)";
       var parts = [feedPart];
@@ -3829,23 +3857,29 @@
       if (stats.wet || stats.dirty) nappies += " (" + stats.wet + " wet, " + stats.dirty + " dirty)";
       parts.push(nappies);
       parts.push(formatDuration(stats.sleepMs) + " sleep");
-      out.push(formatDateHeader(new Date(dayStart)) + (i === 0 ? " (so far today)" : "") +
+      out.push((i === 0
+        ? "PART DAY — today, " + formatDuration(elapsedMs) + " in of 24h"
+        : formatDateHeader(new Date(dayStart)) + " (complete day)") +
         ": " + parts.join(", "));
     }
-    if (!counted) {
+    if (!shown) {
       out.push("Nothing logged in this period.");
       return out.join("\n");
     }
-
-    // Averaged over the days that have anything in them, not over the period
-    // asked for: three days of entries inside a fortnight is three days.
     out.push("");
-    out.push("Across the " + counted + (counted === 1 ? " day" : " days") + " above" +
-      (counted > 1 ? ", today included and still in progress" : "") + ":");
-    out.push("Feeds: " + totals.feeds + " in total, " + perDay(totals.feeds, counted) + " a day");
-    out.push("Nappies: " + totals.nappies + " in total, " + perDay(totals.nappies, counted) +
-      " a day — " + totals.wet + " wet, " + totals.dirty + " dirty");
-    out.push("Sleep: " + formatDuration(Math.round(totals.sleepMs / counted)) + " a day on average");
+    if (!counted) {
+      out.push("No complete day to average yet — everything above is today, and today is not " +
+        "over. Nothing here can be read as a daily rate.");
+    } else {
+      // Averaged over the complete days that have anything in them, not over
+      // the period asked for: three days inside a fortnight is three days.
+      out.push("Across the " + counted + " complete " + (counted === 1 ? "day" : "days") +
+        " above, today excluded:");
+      out.push("Feeds: " + totals.feeds + " in total, " + perDay(totals.feeds, counted) + " a day");
+      out.push("Nappies: " + totals.nappies + " in total, " + perDay(totals.nappies, counted) +
+        " a day — " + totals.wet + " wet, " + totals.dirty + " dirty");
+      out.push("Sleep: " + formatDuration(Math.round(totals.sleepMs / counted)) + " a day on average");
+    }
 
     var feedGaps = aiGaps("feed", since);
     var nappyGaps = aiGaps("diaper", since);
@@ -3866,20 +3900,25 @@
     // breastfed baby has already said so on the "Fed:" line above.
     var sourceParts = [];
     FEED_SOURCES.forEach(function (source) {
-      if (totals.bySource[source.id]) {
-        sourceParts.push(totals.bySource[source.id] + " " + source.label.toLowerCase());
+      if (everything.bySource[source.id]) {
+        sourceParts.push(everything.bySource[source.id] + " " + source.label.toLowerCase());
       }
     });
     if (sourceParts.length > 1) out.push("Feeds by source: " + sourceParts.join(", "));
 
     out.push("");
-    if (totals.fedCount) {
-      out.push("Time feeding: " + formatDuration(Math.round(totals.fedMs / counted)) +
-        " a day on average, " +
-        formatDuration(Math.round(totals.fedMs / totals.fedCount)) + " a feed" +
-        (totals.fedCount < totals.feeds
-          ? " — recorded for " + totals.fedCount + " of the " + totals.feeds + " feeds"
-          : ""));
+    if (everything.fedCount) {
+      var feedingLine = "Time feeding: " +
+        formatDuration(Math.round(everything.fedMs / everything.fedCount)) + " a feed";
+      if (counted) {
+        feedingLine += ", " + formatDuration(Math.round(totals.fedMs / counted)) +
+          " a day over the complete days";
+      }
+      if (everything.fedCount < everything.feeds) {
+        feedingLine += " — recorded for " + everything.fedCount + " of the " +
+          everything.feeds + " feeds";
+      }
+      out.push(feedingLine);
     } else {
       // Said plainly, because a model asked how long a feed lasts will
       // otherwise assume the log simply forgot to mention it.

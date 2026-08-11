@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=27">
+<link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
 
@@ -524,7 +524,8 @@
           <label class="settings-row">
             <span class="settings-label">Summarise</span>
             <select class="settings-select" id="aiRange">
-              <option value="1">Last 24 hours</option>
+              <option value="1">Today so far</option>
+              <option value="2">Yesterday and today</option>
               <option value="3" selected>Last 3 days</option>
               <option value="7">Last week</option>
               <option value="14">Last fortnight</option>
@@ -700,6 +701,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>
