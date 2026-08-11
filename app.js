@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "28";
+    var fallback = "29";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -173,6 +173,8 @@
   // Far enough ahead to plan a week around, near enough to stay relevant.
   var AI_PLAN_HORIZON = 28 * MS_DAY;
   var AI_MAX_PLANS = 6;
+  // Three is enough to show the rhythm and where the night falls.
+  var AI_EXPECTED_AHEAD = 3;
   var AI_FALLBACK_QUESTION = "What stands out in this, and is there anything I should keep an eye on?";
   // Openers worth a tap at 3am, when composing a question is the hard part.
   var AI_SUGGESTIONS = [
@@ -3782,6 +3784,41 @@
     return best;
   }
 
+  // Where the plan says the next few will fall, and what that would make of
+  // today. Without this an assistant reads six feeds at teatime as a finished
+  // day; with it, the same six plus three still to come is plainly a normal
+  // day in progress. Clearly labelled as the plan rather than as data — it is
+  // arithmetic on an interval the parent set, not a prediction of the baby.
+  function aiExpectedLine(kind, label) {
+    var forecast = computeForecast(kind);
+    if (!forecast.hasData) return null;
+    var gapMs = forecast.plannedMin * MS_MIN;
+    if (gapMs <= 0) return null;
+
+    var now = Date.now();
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    var endOfDay = +midnight + MS_DAY;
+
+    // A plan left far behind — nothing logged since yesterday — would otherwise
+    // print times in the past. Stepped forward by arithmetic rather than by a
+    // loop: a 10-minute interval and a log a year stale is half a million
+    // iterations on somebody's phone.
+    var at = +forecast.nextTime;
+    if (at < now) at += Math.ceil((now - at) / gapMs) * gapMs;
+
+    var times = [];
+    for (var i = 0; i < AI_EXPECTED_AHEAD; i++) {
+      var cursor = at + i * gapMs;
+      times.push(formatClockTime(new Date(cursor)) + (cursor >= endOfDay ? " tomorrow" : ""));
+    }
+    // Counted, not listed: three shown is enough to read the rhythm, but a
+    // long evening holds more than three and the total has to say so.
+    var beforeMidnight = at >= endOfDay ? 0 : Math.ceil((endOfDay - at) / gapMs);
+
+    return { label: label, times: times, stillToCome: beforeMidnight, everyMs: gapMs };
+  }
+
   // A digest, not the log itself: a fortnight of raw entries would neither fit
   // in a link nor read any better once it got there.
   function aiSummary(days) {
@@ -3825,11 +3862,13 @@
     var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0, fedMs: 0 };
     var everything = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {} };
     var shown = 0;
+    var todayStats = { feeds: 0, nappies: 0 };
     for (var i = 0; i < days; i++) {
       var dayStart = +today - i * MS_DAY;
       var stats = aiDayStats(dayStart, analysis);
       if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
       shown++;
+      if (i === 0) todayStats = stats;
       everything.feeds += stats.feeds;
       everything.fedMs += stats.fedMs;
       everything.fedCount += stats.fedCount;
@@ -3866,6 +3905,28 @@
       out.push("Nothing logged in this period.");
       return out.join("\n");
     }
+    // Said straight after the day lines, where the part-day number is still in
+    // view and the wrong conclusion is still available to draw.
+    var expected = [];
+    [["feed", "feeds", todayStats.feeds], ["diaper", "nappies", todayStats.nappies]]
+      .forEach(function (pair) {
+        var line = aiExpectedLine(pair[0], pair[1]);
+        if (!line) return;
+        var text = "Next " + pair[1] + " due on the plan (every " +
+          formatDuration(line.everyMs) + "): " + line.times.join(", ") + ".";
+        if (line.stillToCome) {
+          text += " That is " + line.stillToCome + " more before midnight, which would make " +
+            "about " + (pair[2] + line.stillToCome) + " " + pair[1] + " for the whole of today.";
+        } else {
+          text += " None before midnight.";
+        }
+        expected.push(text);
+      });
+    if (expected.length) {
+      out.push("");
+      expected.forEach(function (line) { out.push(line); });
+    }
+
     out.push("");
     if (!counted) {
       out.push("No complete day to average yet — everything above is today, and today is not " +
