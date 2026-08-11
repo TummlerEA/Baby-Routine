@@ -1388,3 +1388,146 @@ body {
 }
 
 .settings-check .settings-label { font-size: 15px; }
+
+/* ---------- what's coming up ---------- */
+
+/* The whole feature's presence on the main screen: one line, and only when
+   something is today or tomorrow. Anything further off has no business in
+   front of somebody holding a baby at 3am. */
+.plan-soon { margin-top: 8px; }
+
+.plan-soon-btn {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 14px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.plan-soon-btn:active { opacity: 0.75; }
+.plan-soon-icon { font-size: 18px; }
+.plan-soon-text { flex: 1; }
+
+.manual-optional {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.plan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.plan-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+.plan-chip:active { opacity: 0.7; }
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.plan-heading {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+.plan-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.plan-when {
+  color: var(--accent-sleep);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plan-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.plan-detail {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.plan-note {
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.plan-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.plan-ics,
+.plan-edit {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+.plan-ics {
+  border-color: var(--accent-sleep);
+  color: var(--accent-sleep);
+  flex: 1;
+  text-align: center;
+}
+
+.plan-delete {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 16px;
+  min-height: 40px;
+  min-width: 40px;
+}
+
+.plan-ics:active,
+.plan-edit:active,
+.plan-delete:active { opacity: 0.7; }

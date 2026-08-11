@@ -10,6 +10,7 @@
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
+  var PLANS_KEY = "baby-tracker-plans";
   var NAME_FONT_KEY = "baby-tracker-name-font";
   var SYNC_PATH = "baby-tracker-log.json";
   var SYNC_DEBOUNCE = 8000;
@@ -21,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "25";
+    var fallback = "26";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -83,6 +84,29 @@
   // Index 0 is "not recorded", so a share link that predates this column
   // reads as absent rather than as breast.
   var FEED_SOURCE_IDS = ["", "breast", "formula", "expressed"];
+
+  // What is coming up. Kept in its own list rather than among the entries: the
+  // log is a record of what happened, and teaching the forecast, the day
+  // summaries, the history and every export to filter out the future would
+  // touch far more than it is worth.
+  var PLAN_TITLES = [
+    "Midwife", "Health visitor", "GP", "Immunisations", "Weigh-in", "Scan", "Nursery"
+  ];
+  var MAX_PLAN_TITLE = 60;
+  var MAX_PLAN_PLACE = 60;
+  var MAX_PLAN_NOTE = 200;
+  // A past appointment stops being useful long before it stops being true.
+  var PLAN_PAST_SHOWN = 30 * MS_DAY;
+
+  // The routine NHS schedule for a baby's first year, in weeks from birth.
+  // Offered as a starting point to edit, never as a substitute for the letter
+  // that actually arrives — the app says so on the button.
+  var IMMUNISATION_WEEKS = [
+    { weeks: 8,  label: "Immunisations — 8 weeks" },
+    { weeks: 12, label: "Immunisations — 12 weeks" },
+    { weeks: 16, label: "Immunisations — 16 weeks" },
+    { weeks: 52, label: "Immunisations — 1 year" }
+  ];
 
   // How the baby is fed. A standing fact about the baby rather than something
   // to answer at every feed, so it lives in Settings — but the first thing any
@@ -146,6 +170,9 @@
   // What counts as overnight, in local hours: from 19:00 to 05:00.
   var AI_NIGHT_FROM = 19;
   var AI_NIGHT_TO = 5;
+  // Far enough ahead to plan a week around, near enough to stay relevant.
+  var AI_PLAN_HORIZON = 28 * MS_DAY;
+  var AI_MAX_PLANS = 6;
   var AI_FALLBACK_QUESTION = "What stands out in this, and is there anything I should keep an eye on?";
   // Openers worth a tap at 3am, when composing a question is the hard part.
   var AI_SUGGESTIONS = [
@@ -272,6 +299,29 @@
       return localStorage.getItem(DOB_KEY) || "";
     } catch (e) {
       return "";
+    }
+  }
+
+  function loadPlans() {
+    try {
+      var raw = localStorage.getItem(PLANS_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read your saved appointments");
+      return [];
+    }
+  }
+
+  function savePlans(list) {
+    try {
+      localStorage.setItem(PLANS_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
     }
   }
 
@@ -439,12 +489,14 @@
   // on top of that.
   function stripToTombstone(event) {
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
-      label: event.label, unit: event.unit };
+      label: event.label, unit: event.unit, fedMin: event.fedMin, fedWith: event.fedWith };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
     delete event.label;
     delete event.unit;
+    delete event.fedMin;
+    delete event.fedWith;
     event.deleted = true;
     return carried;
   }
@@ -456,6 +508,8 @@
     if (carried.nextMin !== undefined) event.nextMin = carried.nextMin;
     if (carried.label !== undefined) event.label = carried.label;
     if (carried.unit !== undefined) event.unit = carried.unit;
+    if (carried.fedMin !== undefined) event.fedMin = carried.fedMin;
+    if (carried.fedWith !== undefined) event.fedWith = carried.fedWith;
   }
 
   function tombstoneExpired(event) {
@@ -580,6 +634,26 @@
     screenMain: document.getElementById("screenMain"),
     screenSettings: document.getElementById("screenSettings"),
     screenAi: document.getElementById("screenAi"),
+    screenPlan: document.getElementById("screenPlan"),
+    planOpenBtn: document.getElementById("planOpen"),
+    planBack: document.getElementById("planBack"),
+    planSoon: document.getElementById("planSoon"),
+    planSoonBtn: document.getElementById("planSoonBtn"),
+    planSoonText: document.getElementById("planSoonText"),
+    planAddToggle: document.getElementById("planAddToggle"),
+    planAddToggleText: document.getElementById("planAddToggleText"),
+    planForm: document.getElementById("planForm"),
+    planChips: document.getElementById("planChips"),
+    planTitle: document.getElementById("planTitle"),
+    planDate: document.getElementById("planDate"),
+    planTime: document.getElementById("planTime"),
+    planPlace: document.getElementById("planPlace"),
+    planNote: document.getElementById("planNote"),
+    planError: document.getElementById("planError"),
+    planSubmit: document.getElementById("planSubmit"),
+    planCancel: document.getElementById("planCancel"),
+    planList: document.getElementById("planList"),
+    planJabs: document.getElementById("planJabs"),
     aiRow: document.getElementById("aiRow"),
     aiOpen: document.getElementById("aiOpen"),
     aiBack: document.getElementById("aiBack"),
@@ -2017,6 +2091,7 @@
       dob: loadDob(),
       feeding: loadFeeding(),
       intervals: intervals,
+      plans: plans,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
@@ -2301,6 +2376,31 @@
       name: parsed.name, dob: parsed.dob, feeding: parsed.feeding, intervals: parsed.intervals,
       takeIntervals: true, overwrite: false
     });
+    if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
+      savePlans(plans);
+      renderPlans();
+    }
+  }
+
+  // Anything arriving from another phone or a file, made safe to store.
+  function normalisePlan(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var date = String(raw.date || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    var plan = { id: id, title: cleanText(raw.title, MAX_PLAN_TITLE), date: date };
+    if (/^\d{2}:\d{2}$/.test(String(raw.time || ""))) plan.time = String(raw.time);
+    var place = cleanText(raw.place, MAX_PLAN_PLACE);
+    if (place) plan.place = place;
+    var note = cleanText(raw.note, MAX_PLAN_NOTE);
+    if (note) plan.note = note;
+    if (raw.deleted) plan.deleted = true;
+    // A live appointment with no name is junk; a tombstone has none by design.
+    if (!plan.title && !plan.deleted) return null;
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    plan.updatedAt = isNaN(stamped.getTime()) ? new Date().toISOString() : stamped.toISOString();
+    return plan;
   }
 
   // Turns one incoming record into the shape we store, or null if it is junk.
@@ -2450,6 +2550,7 @@
     el.screenSettings.hidden = name !== "settings";
     el.screenInfo.hidden = name !== "info";
     el.screenAi.hidden = name !== "ai";
+    el.screenPlan.hidden = name !== "plan";
     window.scrollTo(0, 0);
   }
 
@@ -2789,8 +2890,31 @@
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         updatedAt: metaStamp()
       },
-      events: events
+      events: events,
+      plans: plans
     };
+  }
+
+  function mergePlans(remotePlans) {
+    var byId = {};
+    plans.forEach(function (p) { byId[p.id] = p; });
+    var changed = 0;
+    (remotePlans || []).forEach(function (raw) {
+      var plan = normalisePlan(raw);
+      if (!plan || !plan.id) return;
+      if (tombstoneExpired(plan)) return;
+      var existing = byId[plan.id];
+      if (!existing) {
+        plans.push(plan);
+        byId[plan.id] = plan;
+        changed++;
+      } else if (plan.updatedAt > updatedAtOf(existing)) {
+        plans[plans.indexOf(existing)] = plan;
+        byId[plan.id] = plan;
+        changed++;
+      }
+    });
+    return changed;
   }
 
   // Same rule as an imported file: newer wins per entry, ties keep what is here.
@@ -2822,6 +2946,15 @@
     return events.some(function (e) {
       var mirror = remoteById[e.id];
       return !mirror || updatedAtOf(e) > (mirror.updatedAt || mirror.time);
+    });
+  }
+
+  function remoteMissesOurPlans(remotePlans) {
+    var remoteById = {};
+    (remotePlans || []).forEach(function (p) { if (p && p.id) remoteById[p.id] = p; });
+    return plans.some(function (p) {
+      var mirror = remoteById[p.id];
+      return !mirror || updatedAtOf(p) > (mirror.updatedAt || "");
     });
   }
 
@@ -2865,6 +2998,9 @@
         var remoteDoc = found.doc || {};
         var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
         var pulled = mergeIntoLocal(remoteEvents);
+        var remotePlans = Array.isArray(remoteDoc.plans) ? remoteDoc.plans : [];
+        var pulledPlans = mergePlans(remotePlans);
+        if (pulledPlans) savePlans(plans);
 
         var remoteMeta = remoteDoc.meta;
         applyingRemote = true;
@@ -2894,15 +3030,19 @@
         } finally {
           applyingRemote = false;
         }
+        if (pulledPlans) renderPlans();
         if (pulled || remoteMeta) renderAll();
 
         // Drop what has aged out before comparing, so the cleaned-up log is
         // what gets compared and sent.
         var pruned = pruneTombstones();
         if (pruned) saveEvents(events);
+        if (prunePlanTombstones()) savePlans(plans);
 
-        var remoteCarriesExpired = remoteEvents.some(tombstoneExpired);
+        var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
+          remotePlans.some(tombstoneExpired);
         var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
+          remoteMissesOurPlans(remotePlans) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
         if (!mustPush) return { pulled: pulled, pushed: 0 };
 
@@ -3113,6 +3253,401 @@
     saveName(el.babyName.value);
     renderName();
     renderNameFonts();
+  });
+
+  // ---------- what's coming up ----------
+
+  var plans = loadPlans();
+  var planFormOpen = false;
+  var editingPlanId = null;
+
+  function livePlans() {
+    return plans.filter(function (p) { return !isDeleted(p); });
+  }
+
+  function prunePlanTombstones() {
+    var before = plans.length;
+    plans = plans.filter(function (p) { return !tombstoneExpired(p); });
+    return before - plans.length;
+  }
+
+  // Local midnight, so an appointment belongs to the day it is written on
+  // rather than to whatever UTC makes of it.
+  function planStart(plan) {
+    var parts = String(plan.date || "").split("-");
+    if (parts.length !== 3) return NaN;
+    var hours = 0;
+    var minutes = 0;
+    var time = String(plan.time || "").split(":");
+    if (time.length === 2) {
+      hours = parseInt(time[0], 10) || 0;
+      minutes = parseInt(time[1], 10) || 0;
+    }
+    return +new Date(+parts[0], parts[1] - 1, +parts[2], hours, minutes, 0, 0);
+  }
+
+  function sortedPlans() {
+    return livePlans().slice().sort(function (a, b) { return planStart(a) - planStart(b); });
+  }
+
+  function planWhen(plan) {
+    var at = new Date(planStart(plan));
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    var days = Math.round((+new Date(at.getFullYear(), at.getMonth(), at.getDate()) - +midnight) / MS_DAY);
+    var day = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days === -1 ? "Yesterday"
+      : formatDateHeader(at);
+    return plan.time ? day + " at " + formatClockTime(at) : day;
+  }
+
+  // Three headings, because a parent asks "is it today", "is it this week" or
+  // "is it later" and never anything finer than that.
+  function planBucket(plan, nowMs) {
+    var start = planStart(plan);
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    if (start < +midnight) return "past";
+    if (start < +midnight + MS_DAY) return "today";
+    if (start < +midnight + 7 * MS_DAY) return "week";
+    return "later";
+  }
+
+  // The one that earns a line on the main screen: the next thing today or
+  // tomorrow, and nothing else. Anything further off is not urgent enough to
+  // put in front of somebody holding a baby.
+  function nextPlanSoon() {
+    var nowMidnight = new Date();
+    nowMidnight.setHours(0, 0, 0, 0);
+    var cutoff = +nowMidnight + 2 * MS_DAY;
+    var found = null;
+    sortedPlans().forEach(function (plan) {
+      var start = planStart(plan);
+      if (!isFinite(start) || start < +nowMidnight || start >= cutoff) return;
+      if (!found) found = plan;
+    });
+    return found;
+  }
+
+  function renderPlanSoon() {
+    var plan = nextPlanSoon();
+    el.planSoon.hidden = !plan;
+    if (plan) el.planSoonText.textContent = planWhen(plan) + " — " + plan.title;
+  }
+
+  function planRow(plan) {
+    var row = document.createElement("div");
+    row.className = "plan-item";
+    row.innerHTML =
+      '<div class="plan-body">' +
+        '<div class="plan-when">' + escapeHtml(planWhen(plan)) + '</div>' +
+        '<div class="plan-title">' + escapeHtml(plan.title) + '</div>' +
+        (plan.place ? '<div class="plan-detail">' + escapeHtml(plan.place) + '</div>' : '') +
+        (plan.note ? '<div class="plan-note">' + escapeHtml(plan.note) + '</div>' : '') +
+      '</div>' +
+      '<div class="plan-actions">' +
+        '<button class="plan-ics" data-ics="' + escapeHtml(plan.id) + '">Add to phone calendar</button>' +
+        '<button class="plan-edit" data-edit="' + escapeHtml(plan.id) + '">Edit</button>' +
+        '<button class="plan-delete" data-plan="' + escapeHtml(plan.id) + '" aria-label="Delete">✕</button>' +
+      '</div>';
+    return row;
+  }
+
+  function renderPlanList() {
+    el.planList.innerHTML = "";
+    var all = sortedPlans();
+    if (!all.length) {
+      var empty = document.createElement("div");
+      empty.className = "log-empty";
+      empty.textContent = "Nothing in the diary yet";
+      el.planList.appendChild(empty);
+      return;
+    }
+
+    var now = Date.now();
+    var buckets = { today: [], week: [], later: [], past: [] };
+    all.forEach(function (plan) { buckets[planBucket(plan, now)].push(plan); });
+    // Most recent first among the ones already gone, and only the recent past:
+    // last spring's midwife appointment is not something anybody scrolls to.
+    buckets.past = buckets.past.filter(function (plan) {
+      return now - planStart(plan) < PLAN_PAST_SHOWN;
+    }).reverse();
+
+    [["today", "Today"], ["week", "This week"], ["later", "Later"], ["past", "Just gone"]]
+      .forEach(function (pair) {
+        var list = buckets[pair[0]];
+        if (!list.length) return;
+        var heading = document.createElement("div");
+        heading.className = "plan-heading";
+        heading.textContent = pair[1];
+        el.planList.appendChild(heading);
+        list.forEach(function (plan) { el.planList.appendChild(planRow(plan)); });
+      });
+  }
+
+  function renderPlans() {
+    renderPlanList();
+    renderPlanSoon();
+  }
+
+  function renderPlanChips() {
+    el.planChips.innerHTML = "";
+    PLAN_TITLES.forEach(function (title) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "plan-chip";
+      chip.textContent = title;
+      chip.addEventListener("click", function () {
+        el.planTitle.value = title;
+        el.planDate.focus();
+      });
+      el.planChips.appendChild(chip);
+    });
+  }
+
+  function showPlanError(msg) {
+    el.planError.textContent = msg;
+    el.planError.hidden = false;
+  }
+
+  function resetPlanForm() {
+    editingPlanId = null;
+    el.planTitle.value = "";
+    el.planDate.value = "";
+    el.planTime.value = "";
+    el.planPlace.value = "";
+    el.planNote.value = "";
+    el.planError.hidden = true;
+    el.planSubmit.textContent = "Add it";
+    el.planCancel.hidden = true;
+  }
+
+  function openPlanForm(open) {
+    planFormOpen = open;
+    el.planForm.hidden = !open;
+    el.planAddToggleText.textContent = open ? "Hide the form" : "Add an appointment";
+    if (!open) resetPlanForm();
+  }
+
+  function startPlanEdit(id) {
+    var found = livePlans().filter(function (p) { return p.id === id; })[0];
+    if (!found) return;
+    editingPlanId = id;
+    openPlanForm(true);
+    el.planTitle.value = found.title;
+    el.planDate.value = found.date;
+    el.planTime.value = found.time || "";
+    el.planPlace.value = found.place || "";
+    el.planNote.value = found.note || "";
+    el.planError.hidden = true;
+    el.planSubmit.textContent = "Save";
+    el.planCancel.hidden = false;
+    el.planForm.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function addPlan(fields) {
+    var plan = {
+      id: uuid(),
+      title: fields.title,
+      date: fields.date
+    };
+    if (fields.time) plan.time = fields.time;
+    if (fields.place) plan.place = fields.place;
+    if (fields.note) plan.note = fields.note;
+    touch(plan);
+    plans.push(plan);
+    return plan;
+  }
+
+  el.planAddToggle.addEventListener("click", function () { openPlanForm(!planFormOpen); });
+  el.planCancel.addEventListener("click", function () { openPlanForm(false); });
+
+  el.planSubmit.addEventListener("click", function () {
+    var title = cleanText(el.planTitle.value, MAX_PLAN_TITLE);
+    var date = el.planDate.value;
+    if (!title) {
+      showPlanError("Give it a name, so you know what it is");
+      return;
+    }
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      showPlanError("Pick a date");
+      return;
+    }
+    var fields = {
+      title: title,
+      date: date,
+      time: /^\d{2}:\d{2}$/.test(el.planTime.value) ? el.planTime.value : "",
+      place: cleanText(el.planPlace.value, MAX_PLAN_PLACE),
+      note: cleanText(el.planNote.value, MAX_PLAN_NOTE)
+    };
+
+    if (editingPlanId) {
+      var target = plans.filter(function (p) { return p.id === editingPlanId; })[0];
+      if (!target) {
+        openPlanForm(false);
+        return;
+      }
+      target.title = fields.title;
+      target.date = fields.date;
+      if (fields.time) target.time = fields.time; else delete target.time;
+      if (fields.place) target.place = fields.place; else delete target.place;
+      if (fields.note) target.note = fields.note; else delete target.note;
+      touch(target);
+      if (!savePlans(plans)) return;
+      openPlanForm(false);
+      renderPlans();
+      showToast("Appointment updated");
+      return;
+    }
+
+    addPlan(fields);
+    if (!savePlans(plans)) return;
+    openPlanForm(false);
+    renderPlans();
+    showToast("Added to the diary");
+  });
+
+  el.planList.addEventListener("click", function (ev) {
+    var remove = ev.target.closest("[data-plan]");
+    if (remove) {
+      deletePlan(remove.getAttribute("data-plan"));
+      return;
+    }
+    var edit = ev.target.closest("[data-edit]");
+    if (edit) {
+      startPlanEdit(edit.getAttribute("data-edit"));
+      return;
+    }
+    var ics = ev.target.closest("[data-ics]");
+    if (ics) downloadIcs(ics.getAttribute("data-ics"));
+  });
+
+  function deletePlan(id) {
+    var target = plans.filter(function (p) { return p.id === id; })[0];
+    if (!target) return;
+    // A tombstone, for the same reason entries get one: the other phone has
+    // to be told it went, and carrying the detail would defeat deleting it.
+    var carried = { title: target.title, date: target.date, time: target.time,
+      place: target.place, note: target.note };
+    delete target.time;
+    delete target.place;
+    delete target.note;
+    target.title = "";
+    target.deleted = true;
+    touch(target);
+    if (!savePlans(plans)) return;
+    renderPlans();
+    showToast("Appointment deleted", function () {
+      delete target.deleted;
+      target.title = carried.title;
+      target.date = carried.date;
+      if (carried.time) target.time = carried.time;
+      if (carried.place) target.place = carried.place;
+      if (carried.note) target.note = carried.note;
+      touch(target);
+      if (!savePlans(plans)) return;
+      renderPlans();
+    });
+  }
+
+  // ---------- handing an appointment to the phone's own calendar ----------
+
+  function icsStamp(ms) {
+    var d = new Date(ms);
+    function pad(n) { return String(n).padStart ? String(n).padStart(2, "0") : pad2(n); }
+    return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) + "T" +
+      pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + "00Z";
+  }
+
+  function icsDate(date) {
+    return String(date).replace(/-/g, "");
+  }
+
+  // Long lines have to be folded and commas escaped, or half the calendar
+  // apps on earth quietly drop the event.
+  function icsEscape(text) {
+    return String(text || "").replace(/\\/g, "\\\\").replace(/[,;]/g, function (m) {
+      return "\\" + m;
+    }).replace(/\r?\n/g, "\\n");
+  }
+
+  function buildIcs(plan) {
+    var lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Baby Tracker//EN",
+      "BEGIN:VEVENT",
+      "UID:" + plan.id + "@baby-tracker",
+      "DTSTAMP:" + icsStamp(Date.now())
+    ];
+    if (plan.time) {
+      var start = planStart(plan);
+      lines.push("DTSTART:" + icsStamp(start));
+      lines.push("DTEND:" + icsStamp(start + MS_HOUR));
+    } else {
+      // No time given means the whole day, which is what a date-only VEVENT
+      // is for — better than inventing 9am and reminding them at the wrong
+      // moment.
+      var next = new Date(planStart(plan) + MS_DAY);
+      lines.push("DTSTART;VALUE=DATE:" + icsDate(plan.date));
+      lines.push("DTEND;VALUE=DATE:" + icsDate(
+        next.getFullYear() + "-" + pad2(next.getMonth() + 1) + "-" + pad2(next.getDate())));
+    }
+    lines.push("SUMMARY:" + icsEscape(plan.title));
+    if (plan.place) lines.push("LOCATION:" + icsEscape(plan.place));
+    if (plan.note) lines.push("DESCRIPTION:" + icsEscape(plan.note));
+    lines.push("END:VEVENT");
+    lines.push("END:VCALENDAR");
+    return lines.join("\r\n");
+  }
+
+  function downloadIcs(id) {
+    var plan = livePlans().filter(function (p) { return p.id === id; })[0];
+    if (!plan) return;
+    var safe = plan.title.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+    if (downloadFile((safe || "appointment") + ".ics", buildIcs(plan), "text/calendar;charset=utf-8")) {
+      showToast("Open it to add it to your calendar");
+    }
+  }
+
+  // ---------- the routine schedule ----------
+
+  el.planJabs.addEventListener("click", function () {
+    var dob = dobDate();
+    if (!dob) {
+      showToast("Set the date of birth in Settings first");
+      return;
+    }
+    var existing = {};
+    livePlans().forEach(function (plan) { existing[plan.title + "|" + plan.date] = true; });
+    var added = 0;
+    IMMUNISATION_WEEKS.forEach(function (jab) {
+      // Counted in calendar days, not in milliseconds: adding 112 days' worth
+      // of ms across the October clock change lands an hour short and reports
+      // the day before.
+      var at = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate() + jab.weeks * 7);
+      var date = at.getFullYear() + "-" + pad2(at.getMonth() + 1) + "-" + pad2(at.getDate());
+      if (existing[jab.label + "|" + date]) return;
+      addPlan({ title: jab.label, date: date, time: "", place: "",
+        note: "Routine date — your letter decides it" });
+      added++;
+    });
+    if (!added) {
+      showToast("They are already in the diary");
+      return;
+    }
+    if (!savePlans(plans)) return;
+    renderPlans();
+    showToast(added + (added === 1 ? " date added" : " dates added") + " — edit them when the letter comes");
+  });
+
+  el.planOpenBtn.addEventListener("click", function () {
+    renderPlans();
+    showScreen("plan");
+  });
+  el.planBack.addEventListener("click", showMain);
+  el.planSoonBtn.addEventListener("click", function () {
+    renderPlans();
+    showScreen("plan");
   });
 
   // ---------- ask an AI ----------
@@ -3338,6 +3873,25 @@
       measures.forEach(function (line) { out.push(line); });
     }
 
+    // What is coming, so "what should I ask on Thursday" has something to
+    // work with. Only the near future: a jab due in eight months is not what
+    // the question is about.
+    var upcoming = [];
+    var horizon = Date.now() + AI_PLAN_HORIZON;
+    sortedPlans().forEach(function (plan) {
+      var start = planStart(plan);
+      if (start < Date.now() - MS_DAY || start > horizon) return;
+      if (upcoming.length >= AI_MAX_PLANS) return;
+      upcoming.push(planWhen(plan) + " — " + plan.title +
+        (plan.place ? ", " + plan.place : "") +
+        (plan.note ? " (" + plan.note + ")" : ""));
+    });
+    if (upcoming.length) {
+      out.push("");
+      out.push("Coming up:");
+      upcoming.forEach(function (line) { out.push(line); });
+    }
+
     return out.join("\n");
   }
 
@@ -3559,6 +4113,7 @@
     renderGettingStarted();
     renderTempBanner();
     renderMeasurements();
+    renderPlanSoon();
     if (withLog) renderLog();
   }
 
@@ -3573,6 +4128,8 @@
   renderNameFonts();
   renderAiPrefs();
   renderAiTargets();
+  renderPlanChips();
+  renderPlans();
   checkForUpdate();
   pruneOnStartup();
   buildIntervalOptions();

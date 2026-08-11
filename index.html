@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
@@ -35,6 +35,7 @@
       <div class="topbar-date" id="topDate">—</div>
       <div class="topbar-right">
         <span class="topbar-clock" id="topClock">--:--</span>
+        <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
         <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
       </div>
@@ -54,6 +55,13 @@
         </span>
         <button class="update-btn" id="updateReload">Update</button>
         <button class="update-close" id="updateDismiss" aria-label="Not now">✕</button>
+      </section>
+
+      <section class="plan-soon" id="planSoon" hidden>
+        <button class="plan-soon-btn" id="planSoonBtn">
+          <span class="plan-soon-icon">📅</span>
+          <span class="plan-soon-text" id="planSoonText">—</span>
+        </button>
       </section>
 
       <section id="sleepBanner" class="banner banner-sleep" hidden>
@@ -429,6 +437,70 @@
     </main>
   </div>
 
+  <!-- ============ what's coming up screen ============ -->
+  <div class="screen" id="screenPlan" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="planBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Coming up</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <button class="log-toggle" id="planAddToggle">
+          <span class="log-icon">➕</span>
+          <span id="planAddToggleText">Add an appointment</span>
+        </button>
+
+        <div class="data-panel" id="planForm" hidden>
+          <div class="manual-field">
+            <span class="manual-label">What is it?</span>
+            <div class="plan-chips" id="planChips"></div>
+            <input id="planTitle" class="manual-input" type="text" maxlength="60" placeholder="Midwife, jabs, anything" autocomplete="off">
+          </div>
+          <label class="manual-field">
+            <span class="manual-label">When</span>
+            <input id="planDate" class="manual-input" type="date">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Time <span class="manual-optional">— leave blank if you don't know yet</span></span>
+            <input id="planTime" class="manual-input" type="time">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Where <span class="manual-optional">— optional</span></span>
+            <input id="planPlace" class="manual-input" type="text" maxlength="60" placeholder="Clinic, surgery, home" autocomplete="off">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Note <span class="manual-optional">— optional</span></span>
+            <input id="planNote" class="manual-input" type="text" maxlength="200" placeholder="What to bring, what to ask" autocomplete="off">
+          </label>
+          <p class="manual-error" id="planError" hidden></p>
+          <button class="data-btn data-btn-import" id="planSubmit">Add it</button>
+          <button class="data-btn" id="planCancel" hidden>Cancel</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="plan-list" id="planList"></div>
+      </section>
+
+      <section>
+        <div class="data-panel">
+          <button class="data-btn" id="planJabs">💉 Add the routine immunisation dates</button>
+          <p class="data-hint">Works out the usual NHS appointments from your baby's date of birth — 8, 12 and 16 weeks, then a year — so they are in the diary before the letter arrives. They are yours to edit or delete, and <strong>the letter or your red book is what actually decides the date</strong>, not this.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="data-panel">
+          <p class="data-hint">Nothing here can send you a notification — a page in a browser cannot do that on a phone. Use <strong>Add to phone calendar</strong> on an appointment and your own calendar will remind you properly. The file is built on this phone and goes nowhere.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ ask an AI screen ============ -->
   <div class="screen" id="screenAi" hidden>
 
@@ -622,6 +694,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
