@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "29";
+    var fallback = "30";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -686,6 +686,7 @@
     updateReload: document.getElementById("updateReload"),
     updateDismiss: document.getElementById("updateDismiss"),
     settingsVersion: document.getElementById("settingsVersion"),
+    settingsZone: document.getElementById("settingsZone"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction")
@@ -3225,6 +3226,35 @@
     });
   }
 
+  // Every time in the app is stored in UTC and shown through the browser's own
+  // local methods, so the zone is whatever the phone is set to. Printing it
+  // makes that checkable: a log an hour out is a phone an hour out, and this
+  // is where you find that.
+  function localZoneName() {
+    try {
+      var zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (zone) return zone;
+    } catch (e) { /* older browsers simply have no name to give */ }
+    return "";
+  }
+
+  function localZoneOffset() {
+    var mins = -new Date().getTimezoneOffset();
+    var sign = mins < 0 ? "-" : "+";
+    var abs = Math.abs(mins);
+    return "UTC" + sign + pad2(Math.floor(abs / 60)) + ":" + pad2(abs % 60);
+  }
+
+  function describeZone() {
+    var name = localZoneName();
+    return name ? name + " (" + localZoneOffset() + ")" : localZoneOffset();
+  }
+
+  function renderZone() {
+    el.settingsZone.textContent = "Times shown in " + describeZone() +
+      ", taken from this phone. Change it in the phone's own settings.";
+  }
+
   function renderDobEcho() {
     var days = ageDaysAt(new Date());
     el.babyDobEcho.textContent = days === null
@@ -3847,7 +3877,8 @@
     // a 24-hour guide and tells a frightened parent their newborn is
     // underfed, when the day is half over. Said before the numbers, in the
     // plainest words available.
-    out.push("It is now " + formatClockTime(now) + " on " + formatDateHeader(now) + ", so today " +
+    out.push("It is now " + formatClockTime(now) + " on " + formatDateHeader(now) +
+      " (" + describeZone() + "), so today " +
       "is " + formatDuration(elapsedMs) + " old out of 24h and today's line below is a part " +
       "day, not a whole one. Do not measure it against a whole-day figure and do not call it " +
       "low because the day has not finished — compare it with the same stretch of an earlier " +
@@ -4246,6 +4277,7 @@
 
   renderVersion();
   renderNameFonts();
+  renderZone();
   toggleNameFonts(false);
   el.nameFontsToggle.addEventListener("click", function () { toggleNameFonts(!nameFontsOpen); });
   renderAiPrefs();

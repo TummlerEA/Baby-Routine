@@ -60,6 +60,16 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 **Releasing.** Bump the `?v=` on both assets in `index.html`, the `version` in `version.json` and the `file://` fallback in `app.js` to the same number, in one commit. The `?v=` is what makes browsers fetch the new files; `version.json` is what makes an already-open copy notice. `test_update.js` and `test_version.js` fail if any of the three disagree, and the version shown on screen is read from the script's own `?v=`, so it can never claim to be something other than what loaded.
 
+## Time and time zones
+
+Every entry is stored as a UTC instant and rendered through the browser's own local methods, so the zone the app works in is whatever the phone is set to — there is nothing to configure and nothing to keep in step. Move the phone to another country and the same instant is simply read on the new clock, which is what you want: the log follows you.
+
+Two phones in different zones therefore group days differently, and both are right. Each parent sees their own day.
+
+Settings prints the zone it is using and its current offset, so a log that looks an hour out can be traced to the phone that is an hour out, and the AI summary carries it too rather than leaving an assistant to guess which clock the times are on.
+
+There is deliberately no in-app zone override. `<input type="datetime-local">`, `type="date"` and `type="time"` are rendered and parsed by the browser in the phone's zone and cannot be told to use another, so an override would make the entry form and the log disagree about what "9pm" meant — a worse problem than the one it solved.
+
 ## How data is stored
 
 - `baby-tracker-events` — a JSON array of events: `{ id, type, time: ISO-8601, updatedAt, nextMin?, nappy?, fedMin?, fedWith?, value?, deleted? }`. `updatedAt` is when the entry last changed and decides which side wins on merge; `deleted: true` is a tombstone, kept so the deletion can propagate. CSV and Markdown exports omit tombstones; the JSON backup keeps them. `type` is one of `feed`, `diaper`, `sleep_start`, `sleep_end`, `weight`, `height`, `temp`. `nextMin` is the optional one-off gap in minutes until the next event of that type; `nappy` is `"wet"`, `"dirty"`, `"both"` or `"dry"`; `fedMin` is how long a feed took in minutes, absent when nobody answered — never zero; `fedWith` is `"breast"`, `"formula"` or `"expressed"`, stamped from the Settings default as the feed is logged and overridable per feed; `value` carries the reading for a measurement — grams for weight, cm for length and head circumference, °C for temperature; `label` and `unit` carry the name and unit of a free reading (`type: "other"`).
