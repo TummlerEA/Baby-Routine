@@ -89,6 +89,16 @@ Nothing is uploaded to any server of ours, because there is not one, and nothing
 
 The flip side of a browser-only log is that there is only ever one copy: clearing site data or changing phone will destroy it. The "Export & backup" section is there so you can keep a copy and restore from it.
 
+## Using it outside the UK
+
+Time, dates and units need nothing: the zone comes from the phone, and weights are metric with pounds and ounces alongside.
+
+The guidance does need care, because it follows NHS advice and some of it is British. Wherever the app names an emergency number it now names the country too — **999** in the UK, **112** across Europe including Switzerland — and tells anyone elsewhere to look their own up before they need it, not during. NHS 111 is labelled as the UK line. The prompt sent to an assistant names roles rather than a national number, since it has no way of knowing where the parent is.
+
+The immunisation button says **UK** on it, because that is the schedule it computes; other countries vaccinate to their own timetable and should add theirs by hand. The red book is explained rather than assumed.
+
+There is deliberately no country setting. Emergency numbers are not something to get wrong from a dropdown nobody checked, and a national vaccination table this project cannot verify has no business being shipped in an app for newborns.
+
 ## A note on the guidance
 
 The information in the "For new parents" section follows general NHS and Lullaby Trust advice. It is not medical advice. If you are worried about your baby, contact your midwife, health visitor or GP, call NHS 111, or call 999 in an emergency.

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
 
@@ -239,7 +239,7 @@
             <button class="data-btn measure-add" data-measure="other">🔬 Add something else</button>
           </div>
           <p class="settings-hint"><strong>Something else</strong> takes any reading you are given — a blood result, a bottle volume, anything with a number. Name it once and it is offered back to you next time. Nothing here is interpreted or checked against any range; it is recorded and shown, nothing more.</p>
-          <p class="settings-hint">Growth is plotted on the centile charts in your red book — that is what your health visitor uses. These are just the numbers and how they have changed.</p>
+          <p class="settings-hint">Growth is plotted on centile charts in your baby's own health record — the red book, in the UK — and that is what a health visitor or paediatrician reads. These are just the numbers and how they have changed.</p>
         </div>
       </section>
 
@@ -304,7 +304,7 @@
           <article class="info-card">
             <h3>History and measurements</h3>
             <p><strong>History</strong> groups entries by day. Today and yesterday are open; older days are one tap away. Each day header totals that day's feeds, nappies — including wet and dirty counts — and sleep.</p>
-            <p><strong>Measurements</strong> holds weight, length, head circumference and temperature — the three growth measurements are the ones plotted in your red book. They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
+            <p><strong>Measurements</strong> holds weight, length, head circumference and temperature — the three growth measurements are the ones plotted on centile charts in your baby's health record (the red book, in the UK). They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
             <p><strong>Something else</strong> takes any other reading you are handed — a bilirubin result, a bottle volume, anything with a number. Name it and give it a unit once, and that name is offered back next time, so each thing builds its own little history. The app records and shows these and interprets nothing: unlike temperature, there is no general safe range for an arbitrary test, and reference ranges differ by laboratory and by age.</p>
           </article>
 
@@ -395,7 +395,7 @@
           </article>
 
           <article class="info-card info-card-urgent">
-            <h3>⚠ When to call 999 straight away</h3>
+            <h3>⚠ When to call an ambulance straight away</h3>
             <ul>
               <li>A pause in breathing longer than 20 seconds, or any pause where they go pale, blue, grey or floppy</li>
               <li>Blue or grey lips, tongue or face</li>
@@ -403,7 +403,8 @@
               <li>Limp, unresponsive, or very difficult to wake</li>
               <li>A temperature of 38°C or higher in a baby under 3 months</li>
             </ul>
-            <p>For anything that worries you but isn't an emergency, call <strong>NHS 111</strong>, or speak to your midwife, health visitor or GP. You know your baby — if something feels wrong, get it checked.</p>
+            <p><strong>999</strong> in the UK. <strong>112</strong> reaches an ambulance across Europe, including Switzerland. Anywhere else, look up your own number now and keep it where you will find it in the dark — not while this is happening.</p>
+            <p>For anything that worries you but isn't an emergency, call <strong>NHS 111</strong> if you are in the UK, or speak to your midwife, health visitor, doctor or paediatrician. You know your baby — if something feels wrong, get it checked.</p>
           </article>
 
           <article class="info-card">
@@ -487,8 +488,8 @@
 
       <section>
         <div class="data-panel">
-          <button class="data-btn" id="planJabs">💉 Add the routine immunisation dates</button>
-          <p class="data-hint">Works out the usual NHS appointments from your baby's date of birth — 8, 12 and 16 weeks, then a year — so they are in the diary before the letter arrives. They are yours to edit or delete, and <strong>the letter or your red book is what actually decides the date</strong>, not this.</p>
+          <button class="data-btn" id="planJabs">💉 Add the UK routine immunisation dates</button>
+          <p class="data-hint">Works out the <strong>UK</strong> schedule from your baby's date of birth — 8, 12 and 16 weeks, then a year — so the dates are in the diary before the letter arrives. Other countries vaccinate to their own timetable, so outside the UK add yours by hand instead. Either way they are yours to edit or delete, and <strong>the letter from your clinic is what actually decides the date</strong>, not this.</p>
         </div>
       </section>
 
@@ -540,7 +541,7 @@
           <button class="data-btn" id="aiCopy">📋 Copy it — I will paste it myself</button>
 
           <p class="data-hint"><strong>This is the one part of the app that is not private.</strong> Whatever you send goes to that company and is handled under their terms, not ours. Nothing else about your log is uploaded anywhere.</p>
-          <p class="data-hint"><strong>It is not medical advice.</strong> A model will sound confident about a baby it has never seen. Anything that worries you goes to your health visitor, GP or NHS 111.</p>
+          <p class="data-hint"><strong>It is not medical advice.</strong> A model will sound confident about a baby it has never seen. Anything that worries you goes to a midwife, health visitor or doctor.</p>
         </div>
       </section>
 
@@ -702,6 +703,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=30"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
