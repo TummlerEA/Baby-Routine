@@ -1531,3 +1531,42 @@ body {
 .plan-ics:active,
 .plan-edit:active,
 .plan-delete:active { opacity: 0.7; }
+
+/* A settings row that folds a block away. The current value stays on the
+   closed row, so collapsing it does not also hide the answer. */
+.field-toggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.field-toggle .manual-label { margin: 0; }
+
+.field-current {
+  color: var(--text-faint);
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-chevron {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+
+.field-toggle.expanded .field-chevron { transform: rotate(90deg); }
+
+.field-toggle:active { opacity: 0.7; }
