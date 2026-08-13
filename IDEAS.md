@@ -101,12 +101,9 @@ one-handed.
 Lowest urgency of the ideas here. It is the most fun to build and the least
 likely to change what anyone does.
 
-## A shopping list, and jobs for each other
+## A shopping list
 
-Two features, one shape. A shopping list — the carer adds nappies size 2, a
-parent buys them and ticks them off — and a list of jobs to pass to each other,
-such as ironing or a wash, are the same record with a different label. Building
-one and labelling it twice costs very little more than building one.
+The carer adds nappies size 2, a parent buys them and ticks them off.
 
 Structurally this is the diary again: a list of items with an id, a title, an
 `updatedAt` and a tombstone, merged by the same last-write-wins rule and
@@ -120,30 +117,53 @@ the tap. Resist fields: no quantities, no categories, no due dates. "Nappies
 size 2, two packs" typed into one box beats three inputs, and this is a
 household list, not a project tracker.
 
-**Two things to be honest about before starting.**
+**Nobody is notified.** There is no server, so there is no push. An item added
+at eight is seen when the other person next opens the app, which might be the
+evening. Show when each item was added, and by whom if the phone has a name, so
+a list nobody has looked at reads as one nobody has looked at.
 
-*Nobody is notified.* There is no server, so there is no push. A job added at
-eight is seen when the other person next opens the app, which might be the
-evening. That is a shared list, not a message — and if the expectation is "I
-tell the carer to do something and they see it", the expectation is wrong and
-the feature will disappoint. Say so in the interface: show when an item was
-added and by whom, so a stale list reads as stale.
+## When the carer is here
 
-*Roles cannot be enforced.* Every phone holds a complete copy of one JSON file
-in a repository it can write to. Anything called a role — the carer sees jobs
-but not the medical notes, a parent can edit and a carer cannot — is a
-convenience in the interface and nothing more; the data is all there on the
-device, and the token grants write access to all of it. That is fine for a
-family who trust each other, which is the case here, and it must not be
-described as anything stronger. Real restriction needs a server and accounts,
-which is the thing this whole app is built to avoid. If restriction ever
-genuinely matters, the answer is a second repository, not a role field.
+Which days the carer works and roughly how long — Monday to Thursday, six hours
+or eight. The point is a parent knowing where the week stands at a glance. The
+detail is settled between the carer and the other parent directly, so the app
+should show the shape of the arrangement and stay out of the arrangement
+itself.
 
-What roles do buy is legibility: "who is this phone" as a single setting, shown
-next to entries and jobs, so three people can tell who logged the 3am feed and
-who a job is meant for. That is worth having and costs one text box.
+Start with a weekly pattern: seven days, each either off or a number of hours,
+with a start time if it is known. One record, synced with the settings, and a
+two-week strip to show what that comes to. That is very likely the whole
+feature — "Mon-Thu, 8h" is the answer to the question being asked.
 
-**Order.** The handover first — it reuses what exists and is used daily. Then
-the shopping and jobs list, which is a copy of the diary. Charts last. Roles
-only when the answer to "what would we actually restrict" is more than a
-shrug — and by then the name-on-the-phone setting may be all that was wanted.
+**Do not build a recurrence engine.** Repeating events with exceptions is where
+calendars stop being small: rules, end dates, and a list of the days the rule
+does not apply to. If the pattern turns out to need exceptions — a Thursday
+off, an extra Friday — add a sparse list of overrides keyed by date that the
+strip reads on top of the pattern, and add it only once the pattern has proved
+insufficient in use. Not before.
+
+What it buys beyond the picture: a quiet line on the main screen saying the
+carer is here until five, an honest total of hours in the week, and a better
+handover. The handover screen above has to guess its window; with a rota it
+does not have to guess at all, because "since the shift started" is a real
+moment rather than an arbitrary number of hours back.
+
+**Deliberately not a timesheet.** No clocking in, no recording who actually
+turned up when, no pay. That is a different product, it changes what the app is
+between people who see each other every day, and it is not what was asked for.
+
+One trap, already met once: work out when today's shift ends from calendar
+local time rather than by adding milliseconds. Adding hours across a clock
+change is how the immunisation dates came out a day early.
+
+**Order.** The handover first — it reuses what already exists and would be used
+daily. Then the shopping list, which is a copy of the diary. Then the rota,
+which is small and makes the handover better. Charts last: the most enjoyable
+to build and the least likely to change what anybody does.
+
+Naming the phones — one setting, "whose phone is this" — is worth doing
+alongside whichever comes first. With three people logging, knowing who
+recorded the three o'clock feed is useful on its own, and it costs a text box.
+It is legibility, not permission: every phone holds the whole file and a token
+that can write it, so nothing here restricts anybody, and it should never be
+described as though it does.
