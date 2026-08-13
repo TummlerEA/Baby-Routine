@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "32";
+    var fallback = "33";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -184,6 +184,13 @@
     "What changed this week?"
   ];
   var NEXTUP_TIMEOUT = 20000;
+  // How long the button says what it just did. Long enough to be read by
+  // somebody who tapped and looked away, short enough to be gone before the
+  // next feed.
+  var LOGGED_NOTE = 5000;
+  // Two of the same thing this close together is more likely a second tap
+  // than a second feed, so the card says so rather than deciding for anyone.
+  var RAPID_WINDOW = 3 * 60 * 1000;
   // Only flag the gap between plan and reality once it is worth mentioning.
   var DRIFT_TOLERANCE = 0.25;
 
@@ -577,6 +584,11 @@
     btnFeed: document.getElementById("btnFeed"),
     btnDiaper: document.getElementById("btnDiaper"),
     btnSleep: document.getElementById("btnSleep"),
+    feedNote: document.getElementById("feedNote"),
+    diaperNote: document.getElementById("diaperNote"),
+    sleepNote: document.getElementById("sleepNote"),
+    nextUpUndo: document.getElementById("nextUpUndo"),
+    nextUpRepeat: document.getElementById("nextUpRepeat"),
     sleepLabel: document.getElementById("sleepLabel"),
     forecastList: document.getElementById("forecastList"),
     nextUp: document.getElementById("nextUp"),
@@ -1692,11 +1704,18 @@
         type === "feed" ? el.manualSource.value : "");
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
+      // The form is the one place where the entry vanishes from view the
+      // moment it is saved — the fields reset and nothing on screen says it
+      // worked. Naming the time it went in answers the question the button
+      // press asked, and the short disable stops the impatient second tap
+      // that produced two identical entries.
       var original = el.manualSubmit.textContent;
-      el.manualSubmit.textContent = "Added ✓";
+      el.manualSubmit.textContent = "Added ✓ at " + formatClockTime(picked);
+      el.manualSubmit.disabled = true;
+      setTimeout(function () { el.manualSubmit.disabled = false; }, 1200);
       setTimeout(function () {
         if (!editingId) el.manualSubmit.textContent = original;
-      }, 900);
+      }, 3000);
     }
 
     // Backfilling history one record at a time easily produces a "fell
@@ -1744,6 +1763,7 @@
 
     el.nextUpTitle.textContent =
       KIND_META[nextUpKind].logged + " at " + formatClockTime(new Date(event.time));
+    renderRepeatWarning(event);
     el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
       ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
 
@@ -1814,7 +1834,43 @@
     nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
   }
 
+  // Nobody feeds a baby twice in three minutes, so a second entry that close
+  // together is almost certainly a second tap by somebody who could not tell
+  // the first had worked. Said plainly, with the way out next to it — never
+  // blocked, because "almost certainly" is not certainly and this app does not
+  // overrule the person holding the baby.
+  function renderRepeatWarning(event) {
+    var until = +new Date(event.time);
+    var recent = events.filter(function (e) {
+      if (isDeleted(e) || e.type !== event.type) return false;
+      var at = +new Date(e.time);
+      return at <= until && until - at <= RAPID_WINDOW;
+    }).length;
+    if (recent < 2) {
+      el.nextUpRepeat.hidden = true;
+      return;
+    }
+    el.nextUpRepeat.textContent = "That is the " + ordinal(recent) + " " +
+      KIND_META[nextUpKind].label.toLowerCase() + " in three minutes. Tap Undo if it was a slip.";
+    el.nextUpRepeat.hidden = false;
+  }
+
+  function ordinal(n) {
+    var rest = n % 100;
+    if (rest >= 11 && rest <= 13) return n + "th";
+    var suffix = { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th";
+    return n + suffix;
+  }
+
   el.nextUpClose.addEventListener("click", hideNextUp);
+
+  // The entry it removes is the one this card is about, so there is no doubt
+  // about which of four identical taps goes.
+  el.nextUpUndo.addEventListener("click", function () {
+    var id = nextUpEventId;
+    hideNextUp();
+    if (id) deleteEvent(id);
+  });
 
   el.sourceChips.addEventListener("click", function (ev) {
     var chip = ev.target.closest(".source-chip");
@@ -1960,23 +2016,46 @@
     }, 250);
   }
 
+  // The card below the buttons already says what was logged, but the eye is on
+  // the button that was just pressed, and a quarter-second flash is easy to
+  // miss in the dark with a baby in the other arm. Saying it on the button
+  // itself, with the time, is what stops the same feed being tapped in four
+  // times: the second tap now visibly disagrees with the first.
+  var noteTimers = {};
+
+  function confirmOnButton(btn, note, key, at) {
+    note.textContent = "Logged " + formatClockTime(at);
+    btn.classList.add("just-logged");
+    clearTimeout(noteTimers[key]);
+    noteTimers[key] = setTimeout(function () {
+      note.textContent = "";
+      btn.classList.remove("just-logged");
+    }, LOGGED_NOTE);
+  }
+
+  function quickLog(type, btn, note, key) {
+    flashButton(btn);
+    var id = addEvent(type);
+    if (!id) return null;
+    var saved = events.filter(function (e) { return e.id === id; })[0];
+    confirmOnButton(btn, note, key, new Date(saved ? saved.time : Date.now()));
+    return id;
+  }
+
   el.btnFeed.addEventListener("click", function () {
-    flashButton(el.btnFeed);
-    var id = addEvent("feed");
+    var id = quickLog("feed", el.btnFeed, el.feedNote, "feed");
     if (id) showNextUp("feed", id);
   });
 
   el.btnDiaper.addEventListener("click", function () {
-    flashButton(el.btnDiaper);
-    var id = addEvent("diaper");
+    var id = quickLog("diaper", el.btnDiaper, el.diaperNote, "diaper");
     if (id) showNextUp("diaper", id);
   });
 
   el.btnSleep.addEventListener("click", function () {
-    flashButton(el.btnSleep);
     // Waking up does not start a new gap, so there is nothing to plan there.
     var sleeping = isSleepingNow();
-    var id = addEvent(sleeping ? "sleep_end" : "sleep_start");
+    var id = quickLog(sleeping ? "sleep_end" : "sleep_start", el.btnSleep, el.sleepNote, "sleep");
     if (id && !sleeping) showNextUp("sleep", id);
   });
 

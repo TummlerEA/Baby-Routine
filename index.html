@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
 
@@ -84,14 +84,17 @@
         <button class="action-btn" id="btnFeed" data-type="feed">
           <span class="action-icon">🍼</span>
           <span class="action-label">Feed</span>
+          <span class="action-note" id="feedNote" aria-live="polite"></span>
         </button>
         <button class="action-btn" id="btnDiaper" data-type="diaper">
           <span class="action-icon">🧷</span>
           <span class="action-label">Nappy</span>
+          <span class="action-note" id="diaperNote" aria-live="polite"></span>
         </button>
         <button class="action-btn" id="btnSleep" data-type="sleep">
           <span class="action-icon">🌙</span>
           <span class="action-label" id="sleepLabel">Sleep</span>
+          <span class="action-note" id="sleepNote" aria-live="polite"></span>
         </button>
       </section>
 
@@ -119,8 +122,10 @@
       <section class="nextup" id="nextUp" hidden>
         <div class="nextup-head">
           <span class="nextup-title" id="nextUpTitle">Feed logged</span>
+          <button class="nextup-undo" id="nextUpUndo">Undo</button>
           <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
+        <p class="nextup-repeat" id="nextUpRepeat" hidden></p>
         <div class="nextup-block" id="sourceBlock" hidden>
           <div class="nextup-sublabel">What was it?</div>
           <div class="nextup-chips feed-chips" id="sourceChips"></div>
@@ -274,6 +279,7 @@
           <article class="info-card">
             <h3>The three buttons</h3>
             <p>Tap <strong>Feed</strong>, <strong>Nappy</strong> or <strong>Sleep</strong> at the moment it happens. One tap is the whole job — the entry is saved straight away, and you can put the phone down.</p>
+            <p>The button tells you it worked: for a few seconds it reads <strong>Logged</strong> with the time it went in. If you are not sure whether a tap registered, look at the button rather than tapping again.</p>
             <p><strong>Sleep</strong> is a toggle. Tap it when your baby goes down, and it changes to <strong>Wake up</strong>; tap it again when they wake, and the app works out how long they slept.</p>
           </article>
 
@@ -282,6 +288,7 @@
             <ul>
               <li>It shows when the next one is due, with a row of alternatives. Tapping one changes <strong>only that gap</strong> — useful for a long night stretch — and leaves your everyday plan alone.</li>
               <li>After a nappy it also asks what was in it: wee, poo, both or dry. Answering is optional. Tap the same answer twice to clear it if you mis-tap.</li>
+              <li>If you log the same thing twice within three minutes it says so — "that is the 2nd feed in three minutes" — and offers <strong>Undo</strong>, which removes that entry and leaves everything else alone. It never refuses the entry: two feeds close together is unusual, not impossible.</li>
               <li>It disappears on its own after twenty seconds, or with the ✕.</li>
             </ul>
           </article>
@@ -704,6 +711,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>
