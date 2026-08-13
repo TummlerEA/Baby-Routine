@@ -56,60 +56,33 @@ is cheap and can happen long before any of this — a domain that simply
 redirects to `github.io` changes no origins and breaks nothing, and it stops
 somebody else taking the name in the meantime.
 
-## A handover for whoever takes over
+## Seven days, as movement
 
-Not charts — the thing that gets used at the door. Somebody arriving at nine
-wants the last few hours in sentences: when the last feed was and how long it
-took, how many nappies and of what kind, whether the baby has slept and for how
-long, what is due next on the plan, and anything out of the ordinary such as a
-temperature. Today that means scrolling the log and doing the arithmetic in
-your head.
+The other half of this was the 24-hour strip, and that is built: it sits at the
+top of the handover screen from v34, hand-drawn as inline SVG. Its code is the
+template for anything else drawn here.
 
-Most of this is already written. The Ask an AI screen builds exactly this text
-already — part-day handling, gaps, projections, the lot — and then hands it to
-somebody else. A handover screen is that same builder rendered on the phone
-instead of packed into a URL, with the assistant framing dropped and the window
-shortened from days to hours. It is the cheapest of the ideas here by a wide
-margin, and it should be built before the charts.
+What is left is the longer view. Feeds a day, total sleep a day, the longest
+overnight stretch, the gap between feeds — one bar or line per day, so the eye
+catches a change faster than it would in a table. Seven days is the right span:
+long enough to show a direction, short enough that a newborn's pattern has not
+changed underneath it.
 
-Two decisions to make. **What the window is**: since the last handover, or a
-fixed number of hours, or since the carer arrived — the third needs the app to
-know who is holding the phone, which it does not, so start with hours. **Where
-it lives**: its own screen reached from the top bar, never the main screen,
-which stays four buttons.
-
-## Charts, at two scales
-
-Two views, and they are not the same drawing at different zoom levels.
-
-**The last 24 hours, in detail.** A strip with time running across it and the
-feeds, nappies and sleep marked on it where they fell. This is the one that
-shows what a column of numbers cannot: the night gap, the evening cluster of
-feeds, the long stretch that made up for it. Read it as a rolling 24 hours from
-now rather than as "today" — a day that started six hours ago is a part day, and
-comparing it against anything is the mistake the AI summary already had to be
-taught not to make.
-
-It also belongs at the top of the handover screen. That screen describes a
-window in sentences; this is the same window as a picture, and somebody
-arriving takes it in faster than they read.
-
-**The last seven days, as movement.** Feeds a day, total sleep a day, the
-longest overnight stretch, the gap between feeds — one bar or line per day, so
-the eye catches a change faster than it would in a table. Seven days is the
-right span: long enough to show a direction, short enough that a newborn's
-pattern has not changed underneath it.
-
-Both drawn by hand as inline SVG. That is not a hardship — a week of bars is a
-loop and a few dozen elements — and a charting library would be an external
-dependency, which is the one thing this project does not do. Watch the dark
-theme: thin lines and mid greys disappear on a phone at night, and colour must
-not be the only thing carrying meaning.
+Watch the dark theme: thin lines and mid greys disappear on a phone at night,
+and colour must not be the only thing carrying meaning. The strip solves this
+by labelling each rail with the same icon as its button; do the same rather
+than relying on a legend.
 
 Be strict about what earns a place. A newborn has no weekly rhythm, so
 day-of-week breakdowns say nothing, and a pie chart of nappy types answers a
 question nobody asks. Everything beyond the four figures above is decoration on
 a screen meant to be read one-handed.
+
+One trap the handover sidestepped and this one cannot: it reads a rolling
+window, so there is no part day in it at all. Here the day *is* the unit being
+compared, and today drawn as a bar beside six complete ones is the same mistake
+the AI summary had to be taught out of. Either leave today off the chart, or
+mark it plainly as unfinished.
 
 ## A shopping list
 
@@ -154,9 +127,10 @@ insufficient in use. Not before.
 
 What it buys beyond the picture: a quiet line on the main screen saying the
 carer is here until five, an honest total of hours in the week, and a better
-handover. The handover screen above has to guess its window; with a rota it
-does not have to guess at all, because "since the shift started" is a real
-moment rather than an arbitrary number of hours back.
+handover. The handover screen offers a choice of 6, 12 or 24 hours because it
+has nothing better to go on; with a rota it would not have to guess at all,
+since "since the shift started" is a real moment rather than a round number of
+hours back.
 
 **Deliberately not a timesheet.** No clocking in, no recording who actually
 turned up when, no pay. That is a different product, it changes what the app is
@@ -166,11 +140,11 @@ One trap, already met once: work out when today's shift ends from calendar
 local time rather than by adding milliseconds. Adding hours across a clock
 change is how the immunisation dates came out a day early.
 
-**Order.** The handover first — it reuses what already exists and would be used
-daily, and the 24-hour strip goes on the top of it. Then the shopping list,
-which is a copy of the diary. Then the rota, which is small and makes the
-handover better. The seven-day charts last: the most enjoyable to build and the
-least likely to change what anybody does.
+**Order.** The handover and its 24-hour strip are built, in v34. Next the
+shopping list, which is a copy of the diary. Then the rota, which is small and
+makes the handover better by replacing the window it currently has to guess.
+The seven-day charts last: the most enjoyable to build and the least likely to
+change what anybody does.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who

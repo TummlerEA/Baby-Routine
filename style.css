@@ -58,6 +58,12 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
+  /* Never two lines: the buttons beside it keep their full size and the date
+     gives way instead, on the narrowest phone there is. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .topbar-clock {
@@ -850,6 +856,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .topbar-settings {
@@ -1611,3 +1618,117 @@ body {
 .field-toggle.expanded .field-chevron { transform: rotate(90deg); }
 
 .field-toggle:active { opacity: 0.7; }
+
+/* ---------- handover ---------- */
+
+.ho-head {
+  margin-top: 4px;
+}
+.ho-who {
+  font-size: 20px;
+  font-weight: 700;
+}
+.ho-when {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.ho-window {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.ho-window-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.ho-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ho-chip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 15px;
+  min-height: 44px;
+  padding: 0 14px;
+}
+.ho-chip.on {
+  background: var(--bg-elevated);
+  border-color: var(--accent-sleep);
+  box-shadow: inset 0 0 0 1px var(--accent-sleep);
+  color: var(--text);
+}
+.ho-chip:active { opacity: 0.7; }
+
+.ho-strip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-top: 12px;
+  padding: 10px 8px 6px;
+}
+.ho-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* Night behind the marks. Kept faint on purpose: it is context, and a band
+   strong enough to notice first would be the loudest thing on the screen. */
+.ho-svg .ho-night { fill: #ffffff; opacity: 0.05; }
+.ho-svg .ho-grid { stroke: var(--border); stroke-width: 1; }
+.ho-svg .ho-rail { stroke: var(--border); stroke-width: 2; }
+.ho-svg .ho-tick { fill: var(--text-faint); font-size: 8px; }
+.ho-svg .ho-lane-icon { font-size: 11px; }
+.ho-svg .m-feed { fill: var(--accent-feed); }
+.ho-svg .m-diaper { fill: var(--accent-diaper); }
+.ho-svg .m-sleep { fill: var(--accent-sleep); }
+
+.ho-empty {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 10px 0 0;
+}
+
+.ho-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ho-row {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.ho-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.ho-body {
+  flex: 1;
+  min-width: 0;
+}
+.ho-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.ho-detail {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
