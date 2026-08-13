@@ -78,28 +78,38 @@ know who is holding the phone, which it does not, so start with hours. **Where
 it lives**: its own screen reached from the top bar, never the main screen,
 which stays four buttons.
 
-## Charts
+## Charts, at two scales
 
-Feeds, nappies and sleep per day, over a fortnight. No new data — everything
-needed is already in the log, so this is presentation only.
+Two views, and they are not the same drawing at different zoom levels.
 
-Drawn by hand as inline SVG. That is not a hardship: a bar chart of fourteen
-days is a loop and a few dozen elements, and a charting library would be an
-external dependency, which is the one thing this project does not do. Watch the
-dark theme — thin lines and mid greys vanish on a phone at night — and do not
-let colour be the only thing carrying meaning.
+**The last 24 hours, in detail.** A strip with time running across it and the
+feeds, nappies and sleep marked on it where they fell. This is the one that
+shows what a column of numbers cannot: the night gap, the evening cluster of
+feeds, the long stretch that made up for it. Read it as a rolling 24 hours from
+now rather than as "today" — a day that started six hours ago is a part day, and
+comparing it against anything is the mistake the AI summary already had to be
+taught not to make.
+
+It also belongs at the top of the handover screen. That screen describes a
+window in sentences; this is the same window as a picture, and somebody
+arriving takes it in faster than they read.
+
+**The last seven days, as movement.** Feeds a day, total sleep a day, the
+longest overnight stretch, the gap between feeds — one bar or line per day, so
+the eye catches a change faster than it would in a table. Seven days is the
+right span: long enough to show a direction, short enough that a newborn's
+pattern has not changed underneath it.
+
+Both drawn by hand as inline SVG. That is not a hardship — a week of bars is a
+loop and a few dozen elements — and a charting library would be an external
+dependency, which is the one thing this project does not do. Watch the dark
+theme: thin lines and mid greys disappear on a phone at night, and colour must
+not be the only thing carrying meaning.
 
 Be strict about what earns a place. A newborn has no weekly rhythm, so
-day-of-week breakdowns say nothing; a pie chart of nappy types answers a
-question nobody asks. What is worth plotting is what a parent or a health
-visitor actually looks for: feeds a day, total sleep a day, the longest
-overnight stretch, and the gap between feeds — all of them trends, all of them
-useful precisely because the eye catches a change in a line faster than in a
-column of numbers. Everything else is decoration on a screen meant to be read
-one-handed.
-
-Lowest urgency of the ideas here. It is the most fun to build and the least
-likely to change what anyone does.
+day-of-week breakdowns say nothing, and a pie chart of nappy types answers a
+question nobody asks. Everything beyond the four figures above is decoration on
+a screen meant to be read one-handed.
 
 ## A shopping list
 
@@ -157,9 +167,10 @@ local time rather than by adding milliseconds. Adding hours across a clock
 change is how the immunisation dates came out a day early.
 
 **Order.** The handover first — it reuses what already exists and would be used
-daily. Then the shopping list, which is a copy of the diary. Then the rota,
-which is small and makes the handover better. Charts last: the most enjoyable
-to build and the least likely to change what anybody does.
+daily, and the 24-hour strip goes on the top of it. Then the shopping list,
+which is a copy of the diary. Then the rota, which is small and makes the
+handover better. The seven-day charts last: the most enjoyable to build and the
+least likely to change what anybody does.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
