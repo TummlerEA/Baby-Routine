@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
 
@@ -319,7 +319,7 @@
             <h3>Sharing with your partner</h3>
             <p><strong>Settings → Share with your partner</strong> makes a link holding your recent entries. Send it however you like; when they open it, their app asks before merging anything.</p>
             <p>It works both ways — whatever each of you logged ends up in both logs, edits and deletions included, and the newer version of an entry always wins. Send a fresh link whenever you swap over.</p>
-            <p>Setting them up the first time? Use <strong>Invite your partner</strong> in the same place. It sends the address of the app along with a short note explaining how the two of you will swap entries. Your baby's name, date of birth and planned intervals travel across with the first batch of entries, so they do not have to type any of it in.</p>
+            <p>Setting them up the first time? Use <strong>Invite your partner</strong> in the same place. It sends the address of the app along with a short note explaining how the two of you will swap entries. Your baby's name and its style, the date of birth, how your baby is fed and the planned intervals travel across with the first batch of entries, so they do not have to type any of it in.</p>
             <p><strong>An iPhone quirk worth knowing.</strong> A web app added to the Home Screen keeps its data entirely separately from Safari, and iOS always opens a tapped link in Safari — never in the Home Screen app. So a link tapped from a chat lands in Safari, and its entries stay there.</p>
             <p>Pick one and stay with it:</p>
             <ul>
@@ -339,6 +339,7 @@
               <li>Paste the repository as <code>owner/name</code> and the token into Settings, and press Connect.</li>
             </ul>
             <p>After that it syncs when you open the app, when you come back to it, about once a minute while it is on screen, and shortly after anything you log. If both of you write at the same moment, nothing is lost: the newer version of each entry wins and the rest is merged.</p>
+            <p>The settings travel too — the baby's name and its style, the date of birth, how your baby is fed, and the planned intervals. A phone connecting for the first time takes them from the log it is joining, even if somebody had already typed a name into it, so a new phone never renames the baby on everybody else's. After that the most recent change wins, whichever phone made it.</p>
             <p>The token stays on the phone you typed it into. It is never put in a backup, a report or a share link. If a phone is lost, delete that token on GitHub and the phone loses access.</p>
             <p><strong>About deleted entries.</strong> A deleted entry leaves a marker behind rather than vanishing, because a row that is simply missing looks the same as one the other phone has not seen yet — and would come back on the next sync. The marker keeps only the identity and the time, never the reading or the nappy detail, and it is thrown away by every phone once it is a month old. So a deletion always travels, and then tidies itself up.</p>
             <p>One caveat worth knowing: a repository keeps its history, so earlier versions of the file remain in past commits even after the current one is cleaned. If you ever need something truly gone, delete the repository and connect a fresh one.</p>
@@ -583,7 +584,7 @@
             </button>
             <div id="nameFontsPanel" hidden>
               <div class="name-fonts" id="nameFonts"></div>
-              <span class="manual-echo">Only the styles this phone already has are offered — nothing is downloaded, and the choice stays on this device.</span>
+              <span class="manual-echo">Only the styles this phone already has are offered — nothing is downloaded. The style travels with the name, so the other phones will show it too.</span>
             </div>
           </div>
           <p class="settings-hint">Used to show your baby's age, to work out weight change since birth, and to pick the right temperature threshold — under 3 months it is lower.</p>
@@ -703,6 +704,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

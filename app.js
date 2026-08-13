@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "31";
+    var fallback = "32";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2094,6 +2094,7 @@
     if (guardEmpty()) return;
     var payload = JSON.stringify({
       name: loadName(),
+      nameFont: storedNameFont(),
       dob: loadDob(),
       feeding: loadFeeding(),
       intervals: intervals,
@@ -2167,6 +2168,7 @@
     return {
       v: SHARE_VERSION,
       n: loadName(),
+      s: storedNameFont(),
       b: loadDob(),
       f: loadFeeding(),
       i: [intervals.feed, intervals.diaper, intervals.sleep],
@@ -2191,7 +2193,9 @@
 
   function readSharePayload(payload) {
     if (!payload || payload.v !== SHARE_VERSION || !Array.isArray(payload.e)) return null;
-    var out = { name: payload.n || "", dob: payload.b || "", feeding: payload.f || "", intervals: null, events: [] };
+    // `s` was appended later, so a link made before it simply has no style.
+    var out = { name: payload.n || "", nameFont: payload.s || "", dob: payload.b || "",
+      feeding: payload.f || "", intervals: null, events: [] };
     if (Array.isArray(payload.i) && payload.i.length === 3) {
       out.intervals = { feed: payload.i[0], diaper: payload.i[1], sleep: payload.i[2] };
     }
@@ -2366,6 +2370,15 @@
       saveFeeding(String(parsed.feeding));
       el.babyFeeding.value = loadFeeding();
     }
+    // A style this phone has no font for is still worth storing: it is the
+    // other phone's choice, it displays as the default here, and it survives
+    // to be handed on rather than being quietly dropped.
+    if (parsed.nameFont && knownNameFont(String(parsed.nameFont)) &&
+        (parsed.overwrite || !storedNameFont())) {
+      saveNameFont(String(parsed.nameFont));
+      renderName();
+      renderNameFonts();
+    }
   }
 
   function applyBackupSettings(text) {
@@ -2379,8 +2392,8 @@
     // A restore is deliberate, so take the intervals it carries; the name and
     // date of birth still only fill blanks, so a file never renames a baby.
     applyIncomingSettings({
-      name: parsed.name, dob: parsed.dob, feeding: parsed.feeding, intervals: parsed.intervals,
-      takeIntervals: true, overwrite: false
+      name: parsed.name, nameFont: parsed.nameFont, dob: parsed.dob, feeding: parsed.feeding,
+      intervals: parsed.intervals, takeIntervals: true, overwrite: false
     });
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
@@ -2731,7 +2744,8 @@
     var incoming = pendingShare;
     hideSharedIn();
     applyIncomingSettings({
-      name: incoming.name, dob: incoming.dob, feeding: incoming.feeding, intervals: incoming.intervals,
+      name: incoming.name, nameFont: incoming.nameFont, dob: incoming.dob,
+      feeding: incoming.feeding, intervals: incoming.intervals,
       takeIntervals: true, overwrite: false
     });
     mergeImported(incoming.events);
@@ -2891,6 +2905,7 @@
       version: 1,
       meta: {
         name: loadName(),
+        nameFont: storedNameFont(),
         dob: loadDob(),
         feeding: loadFeeding(),
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
@@ -2989,7 +3004,7 @@
     node.textContent = (syncState.text || "Connected to " + syncConfig.repo) + when;
   }
 
-  function syncNow(reason) {
+  function syncNow(reason, joining) {
     if (!syncConfig) return Promise.resolve(false);
     if (syncInFlight) {
       syncQueued = true;
@@ -3013,13 +3028,18 @@
         try {
           if (remoteMeta) {
             var stampBefore = metaStamp();
-            // Genuinely newer settings replace ours. Otherwise we still take
-            // what we are missing, which is how a phone joining an existing
-            // log gets set up — and how logs written before settings carried
-            // a timestamp still fill in a blank phone.
-            var remoteNewer = (remoteMeta.updatedAt || "") > metaStamp();
+            // Three cases, in order. Connecting is a decision to join the log
+            // that is already there, so on a first connection its settings win
+            // outright however old they are — without that, a phone with a
+            // name typed into it keeps that name and pushes it over everybody
+            // else's on its first commit. After that, genuinely newer settings
+            // replace ours. Failing both we still take what we are missing,
+            // which is how a log written before settings carried a timestamp
+            // still fills in a blank phone.
+            var remoteNewer = joining || (remoteMeta.updatedAt || "") > metaStamp();
             applyIncomingSettings({
               name: remoteMeta.name,
+              nameFont: remoteMeta.nameFont,
               dob: remoteMeta.dob,
               feeding: remoteMeta.feeding,
               intervals: remoteMeta.intervals,
@@ -3111,11 +3131,15 @@
       setSyncState("bad", "Paste the access token as well.");
       return;
     }
+    // Only a first connection is a join. The same button says "Save changes"
+    // once connected, and correcting a token there must not throw away a
+    // setting changed a minute earlier.
+    var joining = !syncConfig;
     syncConfig = { repo: repo, token: token, sha: null };
     if (!saveSyncConfig(syncConfig)) return;
     renderSyncState();
     startSyncPolling();
-    syncNow("manual").then(function (ok) {
+    syncNow("manual", joining).then(function (ok) {
       if (ok) showToast("Connected. Both phones will keep themselves in step.");
     });
   });
@@ -3169,8 +3193,30 @@
     return known ? saved : DEFAULT_NAME_FONT;
   }
 
+  // Stored raw, so "nothing chosen yet" stays distinguishable from "chose the
+  // default": one is a blank an incoming setting may fill, the other is not.
+  function storedNameFont() {
+    try {
+      return localStorage.getItem(NAME_FONT_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function knownNameFont(id) {
+    return NAME_FONTS.some(function (font) { return font.id === id; });
+  }
+
   function saveNameFont(id) {
-    localStorage.setItem(NAME_FONT_KEY, id);
+    try {
+      localStorage.setItem(NAME_FONT_KEY, id);
+      // The style belongs to the baby's name, not to the handset, so it
+      // travels with the other settings and dates itself the same way.
+      touchMeta();
+      scheduleSync();
+    } catch (e) {
+      showError("Couldn't save the name style");
+    }
   }
 
   function applyNameFont(node, id) {
