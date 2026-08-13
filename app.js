@@ -22,7 +22,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "33";
+    var fallback = "34";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -183,6 +183,18 @@
     "Why so many night wakings?",
     "What changed this week?"
   ];
+  // The handover screen. Six hours covers a shift that has just started,
+  // twelve covers the night somebody else had, and a full day is there for
+  // the appointment where all of it gets asked about at once.
+  var HANDOVER_HOURS = [6, 12, 24];
+  var HANDOVER_DEFAULT_HOURS = 12;
+  // Whoever is taking over needs today and tomorrow, not the term ahead.
+  var HANDOVER_PLAN_HORIZON = 2 * MS_DAY;
+  var HANDOVER_MAX_PLANS = 3;
+  var HANDOVER_SPREAD_WORTH_SAYING = 20 * MS_MIN;
+  // Below this, "due" and "now" are the same word.
+  var HANDOVER_DUE_NOW = 2 * MS_MIN;
+
   var NEXTUP_TIMEOUT = 20000;
   // How long the button says what it just did. Long enough to be read by
   // somebody who tapped and looked away, short enough to be gone before the
@@ -649,6 +661,15 @@
     screenSettings: document.getElementById("screenSettings"),
     screenAi: document.getElementById("screenAi"),
     screenPlan: document.getElementById("screenPlan"),
+    screenHandover: document.getElementById("screenHandover"),
+    handoverOpenBtn: document.getElementById("handoverOpen"),
+    handoverBack: document.getElementById("handoverBack"),
+    handoverWho: document.getElementById("handoverWho"),
+    handoverWhen: document.getElementById("handoverWhen"),
+    handoverHours: document.getElementById("handoverHours"),
+    handoverStrip: document.getElementById("handoverStrip"),
+    handoverEmpty: document.getElementById("handoverEmpty"),
+    handoverLines: document.getElementById("handoverLines"),
     planOpenBtn: document.getElementById("planOpen"),
     planBack: document.getElementById("planBack"),
     planSoon: document.getElementById("planSoon"),
@@ -785,6 +806,14 @@
 
   function dayKeyOf(date) {
     return date.getFullYear() + "-" + pad2(date.getMonth() + 1) + "-" + pad2(date.getDate());
+  }
+
+  // The top bar has to hold a date, a clock and four buttons on a phone held
+  // in one hand. Spelling out "Wednesday" wraps it onto two lines, and the
+  // three letters say the same thing.
+  function formatDateShort(date) {
+    return WEEKDAYS[date.getDay()].slice(0, 3) + ", " + date.getDate() + " " +
+      MONTHS[date.getMonth()].slice(0, 3);
   }
 
   function formatDateHeader(date) {
@@ -2649,6 +2678,7 @@
     el.screenInfo.hidden = name !== "info";
     el.screenAi.hidden = name !== "ai";
     el.screenPlan.hidden = name !== "plan";
+    el.screenHandover.hidden = name !== "handover";
     window.scrollTo(0, 0);
   }
 
@@ -3827,6 +3857,448 @@
     showScreen("plan");
   });
 
+  // ---------- handover ----------
+
+  // What somebody arriving at the door asks for, in the order they ask for it.
+  // Deliberately a rolling window ending now rather than "today": at nine in
+  // the morning today is three hours old, and a handover measured that way
+  // says nothing at all about the night the other person just had.
+  var handoverHours = HANDOVER_DEFAULT_HOURS;
+
+  function handoverWindow() {
+    var toMs = Date.now();
+    return { fromMs: toMs - handoverHours * MS_HOUR, toMs: toMs, hours: handoverHours };
+  }
+
+  function inHandoverWindow(list, w) {
+    return list.filter(function (e) {
+      var t = +new Date(e.time);
+      return t >= w.fromMs && t <= w.toMs;
+    });
+  }
+
+  // "at 07:20" while it is still today, and the day named the moment it is
+  // not: a handover window crosses midnight more often than it does not.
+  function handoverAt(date) {
+    var now = new Date();
+    var key = dayKeyOf(date);
+    var time = formatClockTime(date);
+    if (key === dayKeyOf(now)) return "at " + time;
+    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "at " + time + " yesterday";
+    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "at " + time + " tomorrow";
+    return "at " + time + " on " + formatDateHeader(date);
+  }
+
+  function handoverAgo(date) {
+    return handoverAt(date) + ", " + formatDuration(Date.now() - +date) + " ago";
+  }
+
+  // Three numbers rather than one: the middle says what to expect, the spread
+  // says whether it is worth expecting anything.
+  function handoverSpacing(gaps) {
+    if (gaps.length < 2) return "";
+    var lengths = gaps.map(function (g) { return g.ms; });
+    var shortest = Math.min.apply(null, lengths);
+    var longest = Math.max.apply(null, lengths);
+    var line = "About " + formatDuration(median(lengths)) + " apart";
+    // "anything from 3h 24m to 3h 36m" is not a spread, it is the same number
+    // said three times. Only a gap wide enough to change what somebody expects
+    // earns the extra clause.
+    if (longest - shortest >= HANDOVER_SPREAD_WORTH_SAYING) {
+      line += " — anything from " + formatDuration(shortest) + " to " + formatDuration(longest);
+    }
+    return line + ".";
+  }
+
+  function handoverStateRow(analysis) {
+    var now = Date.now();
+    var row = { icon: "👶", title: "", details: [] };
+    if (analysis.active) {
+      var down = new Date(analysis.active.time);
+      row.title = "Asleep for " + formatDuration(now - +down);
+      row.details.push("Went down " + handoverAt(down) + ".");
+      if (now - +down > SUSPICIOUS_SLEEP) {
+        row.details.push("That is a long stretch — the wake-up may never have been logged.");
+      }
+    } else {
+      row.title = "Awake";
+      var woke = sortedByTimeDesc(liveEvents().filter(function (e) {
+        return e.type === "sleep_end";
+      }))[0];
+      if (woke) row.details.push("Woke " + handoverAgo(new Date(woke.time)) + ".");
+    }
+    return row;
+  }
+
+  function handoverFeedRow(w, live) {
+    var all = live.filter(function (e) { return e.type === "feed"; });
+    var feeds = inHandoverWindow(all, w);
+    var row = {
+      icon: KIND_META.feed.icon,
+      title: feeds.length ? feeds.length + (feeds.length === 1 ? " feed" : " feeds") : "No feeds",
+      details: []
+    };
+    var last = sortedByTimeDesc(all)[0];
+    if (last) {
+      var extras = [];
+      var mins = fedMinutesOf(last);
+      if (mins !== null) extras.push(formatDuration(mins * MS_MIN) + " on it");
+      var source = feedSource(fedWithOf(last));
+      if (source) extras.push(source.label.toLowerCase());
+      row.details.push("Last " + handoverAgo(new Date(last.time)) +
+        (extras.length ? " — " + extras.join(", ") : "") + ".");
+    } else {
+      row.details.push("Nothing has been logged yet.");
+    }
+    var spacing = handoverSpacing(aiGaps("feed", w.fromMs));
+    if (spacing) row.details.push(spacing);
+
+    // Only ever the feeds somebody actually timed, and it says how many those
+    // were — a total over three of eight feeds is not a total.
+    var fedMs = 0;
+    var timed = 0;
+    feeds.forEach(function (e) {
+      var m = fedMinutesOf(e);
+      if (m === null) return;
+      fedMs += m * MS_MIN;
+      timed++;
+    });
+    if (timed) {
+      row.details.push(formatDuration(fedMs) + " spent feeding" +
+        (timed < feeds.length
+          ? ", though only " + timed + " of the " + feeds.length +
+            (timed === 1 ? " was timed." : " were timed.")
+          : "."));
+    }
+    return row;
+  }
+
+  function handoverNappyRow(w, live) {
+    var all = live.filter(function (e) { return e.type === "diaper"; });
+    var nappies = inHandoverWindow(all, w);
+    var wet = 0, dirty = 0, dry = 0, unsaid = 0;
+    nappies.forEach(function (e) {
+      var kind = nappyOf(e);
+      if (!kind) { unsaid++; return; }
+      if (kind === "wet" || kind === "both") wet++;
+      if (kind === "dirty" || kind === "both") dirty++;
+      if (kind === "dry") dry++;
+    });
+    var row = {
+      icon: KIND_META.diaper.icon,
+      title: nappies.length
+        ? nappies.length + (nappies.length === 1 ? " nappy" : " nappies")
+        : "No nappies",
+      details: []
+    };
+    var made = [];
+    if (wet) made.push(wet + " wet");
+    if (dirty) made.push(dirty + " dirty");
+    if (dry) made.push(dry + " dry");
+    if (unsaid) made.push(unsaid + " not recorded");
+    if (made.length) row.details.push(made.join(", ") + ".");
+    var last = sortedByTimeDesc(all)[0];
+    if (last) row.details.push("Last " + handoverAgo(new Date(last.time)) + ".");
+
+    // How long since a dirty one is the question a stranger is likeliest to be
+    // asked, so it is answered rather than left to be counted off the log.
+    if (!dirty) {
+      var lastDirty = sortedByTimeDesc(all.filter(function (e) {
+        var kind = nappyOf(e);
+        return kind === "dirty" || kind === "both";
+      }))[0];
+      if (lastDirty) {
+        row.details.push("Nothing dirty in this stretch — the last was " +
+          handoverAgo(new Date(lastDirty.time)) + ".");
+      }
+    }
+    return row;
+  }
+
+  function handoverSleepRow(w, analysis) {
+    var now = Date.now();
+    var stretches = 0;
+    var longest = 0;
+    var clipped = false;
+    var count = function (startMs, endMs) {
+      var overlap = Math.min(endMs, w.toMs) - Math.max(startMs, w.fromMs);
+      if (overlap <= 0) return;
+      stretches++;
+      longest = Math.max(longest, overlap);
+      if (startMs < w.fromMs) clipped = true;
+    };
+    analysis.sessions.forEach(function (s) { count(s.startMs, s.endMs); });
+    if (analysis.active) count(+new Date(analysis.active.time), now);
+
+    var total = sleepMsInRange(analysis, w.fromMs, w.toMs, now);
+    var row = {
+      icon: KIND_META.sleep.icon,
+      title: total ? formatDuration(total) + " asleep" : "No sleep logged",
+      details: []
+    };
+    if (stretches) {
+      row.details.push("In " + stretches + (stretches === 1 ? " stretch" : " stretches") +
+        (stretches > 1 ? ", the longest " + formatDuration(longest) : "") + ".");
+      // Only said when it happened. A sleep that began before the window is
+      // counted from where the window starts, and the figure above would
+      // otherwise look like the length of the whole sleep.
+      if (clipped) {
+        row.details.push("One of those began before this stretch and is counted " +
+          "only from where it starts.");
+      }
+    }
+    return row;
+  }
+
+  function handoverDueRow(analysis) {
+    var now = Date.now();
+    var row = { icon: "⏭", title: "Due next", details: [] };
+    KINDS.forEach(function (kind) {
+      if (kind === "sleep" && analysis.active) {
+        row.details.push(KIND_META.sleep.icon + " " + KIND_META.sleep.label + " — asleep right now.");
+        return;
+      }
+      var forecast = computeForecast(kind);
+      if (!forecast.hasData) return;
+      var diff = +forecast.nextTime - now;
+      var due = Math.abs(diff) < HANDOVER_DUE_NOW ? "due about now"
+        : diff < 0 ? "was due " + formatDuration(-diff) + " ago"
+        : "in " + formatDuration(diff);
+      row.details.push(KIND_META[kind].icon + " " + KIND_META[kind].label + " " + due +
+        ", " + handoverAt(forecast.nextTime) + ".");
+    });
+    if (!row.details.length) return null;
+    // Said plainly, because a time on a screen looks like knowledge and this
+    // is arithmetic on an interval somebody typed into Settings.
+    row.details.push("These come off the plan in Settings, not off the baby.");
+    return row;
+  }
+
+  function handoverReadingRow(w, live) {
+    var readings = inHandoverWindow(live.filter(function (e) {
+      return MEASURES[e.type] && measureValueOf(e) !== null;
+    }), w);
+    if (!readings.length) return null;
+    var row = { icon: "🌡", title: "Readings taken", details: [] };
+    sortedByTimeDesc(readings).forEach(function (e) {
+      var named = MEASURES[e.type].freeform ? "" : MEASURES[e.type].label + " ";
+      row.details.push(named + measureLine(e) + " " + handoverAt(new Date(e.time)) + ".");
+      var concern = temperatureConcern(e);
+      if (concern) row.details.push(concern.headline + ". " + concern.advice);
+    });
+    return row;
+  }
+
+  function handoverPlanRow(w) {
+    var now = Date.now();
+    var horizon = now + HANDOVER_PLAN_HORIZON;
+    var lines = [];
+    sortedPlans().forEach(function (plan) {
+      var start = planStart(plan);
+      if (start < w.fromMs || start > horizon) return;
+      if (lines.length >= HANDOVER_MAX_PLANS) return;
+      lines.push(planWhen(plan) + " — " + plan.title + (plan.place ? ", " + plan.place : "") + ".");
+    });
+    return lines.length ? { icon: "📅", title: "Coming up", details: lines } : null;
+  }
+
+  function handoverRows(w) {
+    var live = liveEvents();
+    var analysis = analyzeSleep();
+    var rows = [
+      handoverStateRow(analysis),
+      handoverFeedRow(w, live),
+      handoverNappyRow(w, live),
+      handoverSleepRow(w, analysis),
+      handoverDueRow(analysis),
+      handoverReadingRow(w, live),
+      handoverPlanRow(w)
+    ];
+    return rows.filter(function (row) { return !!row; });
+  }
+
+  function renderHandoverLines(rows) {
+    el.handoverLines.innerHTML = "";
+    rows.forEach(function (row) {
+      var wrap = document.createElement("div");
+      wrap.className = "ho-row";
+      var icon = document.createElement("span");
+      icon.className = "ho-icon";
+      icon.textContent = row.icon;
+      var body = document.createElement("div");
+      body.className = "ho-body";
+      var title = document.createElement("div");
+      title.className = "ho-title";
+      title.textContent = row.title;
+      body.appendChild(title);
+      row.details.forEach(function (text) {
+        var line = document.createElement("div");
+        line.className = "ho-detail";
+        line.textContent = text;
+        body.appendChild(line);
+      });
+      wrap.appendChild(icon);
+      wrap.appendChild(body);
+      el.handoverLines.appendChild(wrap);
+    });
+  }
+
+  // Drawn by hand as inline SVG, because the alternative is a charting library
+  // and this app fetches nothing. Time runs left to right and ends at now;
+  // the three rails are the three buttons on the main screen, in that order.
+  // Colour never carries meaning on its own — each rail is labelled with the
+  // same icon as its button, and every mark on it is written out underneath.
+  function handoverStripSvg(w) {
+    var WIDTH = 320, LEFT = 22, RIGHT = 4, TOP = 4, LANE = 20, GAP = 6, AXIS = 15;
+    var lanes = [
+      { kind: "feed", cls: "m-feed" },
+      { kind: "diaper", cls: "m-diaper" },
+      { kind: "sleep", cls: "m-sleep" }
+    ];
+    var plotW = WIDTH - LEFT - RIGHT;
+    var band = lanes.length * (LANE + GAP) - GAP;
+    var height = TOP + band + AXIS;
+    var span = w.toMs - w.fromMs;
+    var live = liveEvents();
+    var analysis = analyzeSleep();
+
+    function x(ms) {
+      var at = LEFT + (Math.max(w.fromMs, Math.min(w.toMs, ms)) - w.fromMs) / span * plotW;
+      return Math.round(at * 10) / 10;
+    }
+    function laneTop(i) { return TOP + i * (LANE + GAP); }
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height + '" role="img" ' +
+      'aria-label="The last ' + w.hours + ' hours drawn as a strip. Everything marked on it ' +
+      'is written out in words underneath.">'];
+
+    // Night shaded behind everything, walked hour by hour on the local clock
+    // rather than by adding milliseconds, so a clock change cannot slide the
+    // band sideways.
+    var seg = w.fromMs;
+    while (seg < w.toMs) {
+      var startsAt = new Date(seg);
+      var next = new Date(seg);
+      next.setMinutes(0, 0, 0);
+      next.setHours(next.getHours() + 1);
+      var end = Math.min(+next, w.toMs);
+      if (end <= seg) break;
+      var hour = startsAt.getHours();
+      if (hour >= AI_NIGHT_FROM || hour < AI_NIGHT_TO) {
+        out.push('<rect class="ho-night" x="' + x(seg) + '" y="' + TOP +
+          '" width="' + (x(end) - x(seg)) + '" height="' + band + '"/>');
+      }
+      seg = end;
+    }
+
+    // Enough hours named to place a mark, few enough that the numbers do not
+    // collide on a phone held in one hand.
+    var step = w.hours <= 6 ? 1 : (w.hours <= 12 ? 3 : 6);
+    var tick = new Date(w.fromMs);
+    tick.setMinutes(0, 0, 0);
+    tick.setHours(tick.getHours() + 1);
+    while (+tick < w.toMs) {
+      if (tick.getHours() % step === 0) {
+        var tx = x(+tick);
+        if (tx > LEFT + 9 && tx < LEFT + plotW - 9) {
+          out.push('<line class="ho-grid" x1="' + tx + '" y1="' + TOP + '" x2="' + tx +
+            '" y2="' + (TOP + band) + '"/>');
+          out.push('<text class="ho-tick" x="' + tx + '" y="' + (height - 3) +
+            '" text-anchor="middle">' + pad2(tick.getHours()) + ':00</text>');
+        }
+      }
+      tick.setHours(tick.getHours() + 1);
+    }
+
+    lanes.forEach(function (lane, i) {
+      var cy = laneTop(i) + LANE / 2;
+      out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + cy + '" x2="' +
+        (LEFT + plotW) + '" y2="' + cy + '"/>');
+      out.push('<text class="ho-lane-icon" x="0" y="' + (cy + 4) + '">' +
+        KIND_META[lane.kind].icon + '</text>');
+
+      if (lane.kind === "sleep") {
+        var bars = analysis.sessions.slice();
+        if (analysis.active) {
+          bars.push({ startMs: +new Date(analysis.active.time), endMs: w.toMs });
+        }
+        bars.forEach(function (s) {
+          if (s.endMs < w.fromMs || s.startMs > w.toMs) return;
+          var wide = Math.max(3, x(s.endMs) - x(s.startMs));
+          out.push('<rect class="' + lane.cls + '" x="' +
+            Math.min(x(s.startMs), LEFT + plotW - wide) + '" y="' + (cy - 6) +
+            '" width="' + (Math.round(wide * 10) / 10) + '" height="12" rx="3"/>');
+        });
+        return;
+      }
+
+      inHandoverWindow(live.filter(function (e) { return e.type === lane.kind; }), w)
+        .forEach(function (e) {
+          var at = x(+new Date(e.time));
+          // A timed feed is drawn as long as it took, so a forty-minute feed
+          // does not look the same as a five-minute one.
+          var mins = lane.kind === "feed" ? fedMinutesOf(e) : null;
+          var wide = Math.max(3, mins ? (mins * MS_MIN) / span * plotW : 3);
+          // Something logged this minute sits exactly on the right-hand edge,
+          // where a mark of any width would be drawn outside the strip. It is
+          // the one thing on here nobody can afford to miss, so it is nudged
+          // back inside rather than clipped away.
+          out.push('<rect class="' + lane.cls + '" x="' +
+            Math.min(at, LEFT + plotW - wide) + '" y="' + (cy - 7) +
+            '" width="' + (Math.round(wide * 10) / 10) + '" height="14" rx="1.5"/>');
+        });
+    });
+
+    out.push('</svg>');
+    return out.join("");
+  }
+
+  function buildHandoverHours() {
+    HANDOVER_HOURS.forEach(function (hours) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.textContent = hours + " hours";
+      btn.addEventListener("click", function () {
+        handoverHours = hours;
+        renderHandover();
+      });
+      el.handoverHours.appendChild(btn);
+    });
+  }
+
+  function markHandoverHours() {
+    Array.prototype.forEach.call(el.handoverHours.children, function (btn, i) {
+      var on = HANDOVER_HOURS[i] === handoverHours;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function renderHandover() {
+    var w = handoverWindow();
+    var now = new Date();
+    var typed = loadName().trim();
+    var ageDays = ageDaysAt(Date.now());
+
+    el.handoverWho.textContent = (typed || "The baby") +
+      (ageDays === null ? "" : ", " + formatAge(ageDays));
+    el.handoverWhen.textContent = "It is " + formatClockTime(now) + " on " +
+      formatDateHeader(now) + ". Everything below covers the last " +
+      w.hours + " hours, up to this minute.";
+
+    markHandoverHours();
+    el.handoverStrip.innerHTML = handoverStripSvg(w);
+    el.handoverEmpty.hidden = inHandoverWindow(liveEvents(), w).length > 0;
+    renderHandoverLines(handoverRows(w));
+  }
+
+  el.handoverOpenBtn.addEventListener("click", function () {
+    showScreen("handover");
+    renderHandover();
+  });
+  el.handoverBack.addEventListener("click", showMain);
+
   // ---------- ask an AI ----------
 
   // Counts for one calendar day, in the same shape the day headings already
@@ -4376,7 +4848,7 @@
   function renderClock() {
     var now = new Date();
     el.topClock.textContent = formatClockTime(now);
-    el.topDate.textContent = formatDateHeader(now);
+    el.topDate.textContent = formatDateShort(now);
   }
 
   function renderAll(opts) {
@@ -4390,6 +4862,9 @@
     renderTempBanner();
     renderMeasurements();
     renderPlanSoon();
+    // Only while it is being looked at: it reads the whole log, and nobody is
+    // served by rebuilding it behind a screen nobody is on.
+    if (!el.screenHandover.hidden) renderHandover();
     if (withLog) renderLog();
   }
 
@@ -4401,6 +4876,7 @@
   }
 
   renderVersion();
+  buildHandoverHours();
   renderNameFonts();
   renderZone();
   toggleNameFonts(false);
