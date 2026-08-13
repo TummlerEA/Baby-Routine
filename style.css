@@ -187,6 +187,22 @@ body {
   color: var(--text-dim);
 }
 
+/* Reserved whether or not there is anything to say, so confirming a tap does
+   not shift the three buttons under the finger about to make the next one. */
+.action-note {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+  min-height: 14px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.action-btn.just-logged .action-note { color: var(--text); }
+#btnFeed.just-logged { border-color: var(--accent-feed); }
+#btnDiaper.just-logged { border-color: var(--accent-diaper); }
+#btnSleep.just-logged { border-color: var(--accent-sleep); }
+
 #btnFeed.active-flash { border-color: var(--accent-feed); }
 #btnDiaper.active-flash { border-color: var(--accent-diaper); }
 #btnSleep.active-flash, #btnSleep.sleeping { border-color: var(--accent-sleep); }
@@ -697,6 +713,31 @@ body {
   text-transform: uppercase;
   font-weight: 700;
   color: var(--accent-diaper);
+}
+
+.nextup-undo {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.nextup-undo:active { background: var(--bg-elevated-2); }
+
+.nextup-repeat {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--danger-bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .nextup-close {
