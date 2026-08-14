@@ -1955,84 +1955,81 @@ body {
 }
 .shop-delete:active { opacity: 0.6; }
 
-/* The carer rota: seven fixed rows, each a day-toggle plus its detail —
-   never a growing list, so none of the shopping list's add/delete/undo
-   machinery is needed here. */
-.rota-days {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-/* One line per day: "Mon   09:00   6h". The toggle sizes to its own
-   content instead of growing, so the time and length sit right beside it
-   rather than dropping to a second line. */
-.rota-row {
-  align-items: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 10px 14px;
-}
-
-.rota-toggle {
-  align-items: center;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-  display: flex;
-  flex: 0 0 auto;
-  font-family: inherit;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0;
-  text-align: left;
-}
-.rota-toggle:active { opacity: 0.7; }
-
-.rota-day-name {
-  font-size: 16px;
-  font-weight: 600;
-  min-width: 34px;
-}
-
-.rota-day-state {
-  color: var(--text-faint);
-  font-size: 14px;
-}
-
-.rota-detail {
-  align-items: center;
-  display: flex;
-  flex: 1;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.rota-start-input,
-.rota-hours-select {
-  background: var(--bg-elevated-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  color-scheme: dark;
-  font-family: inherit;
-  font-size: 14px;
-  min-height: 44px;
-  padding: 8px;
-}
-
-.rota-start-input { min-width: 92px; }
-.rota-hours-select { min-width: 56px; }
-
 .rota-total {
   color: var(--text-dim);
   font-size: 14px;
   margin-top: 10px;
   text-align: center;
 }
+
+/* The calendar summary: a month header with prev/next, then one compact
+   line per week — a date range and that week's shifts, nothing drawn as an
+   actual day grid. Tapping a day opens it in the form above. */
+.rota-cal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+.rota-cal-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rota-cal-nav {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  min-height: 40px;
+  min-width: 40px;
+}
+.rota-cal-nav:active { opacity: 0.7; }
+
+.rota-cal-month {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rota-cal-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rota-cal-week {
+  align-items: baseline;
+  display: flex;
+  font-size: 14px;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.rota-cal-range {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.rota-cal-days {
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.rota-cal-day {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 2px;
+}
+.rota-cal-day:active { opacity: 0.6; }

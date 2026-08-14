@@ -11,7 +11,11 @@
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
   var PLANS_KEY = "baby-tracker-plans";
-  var ROTA_KEY = "baby-tracker-rota";
+  // Which dates the carer actually worked — sparse, one entry per date,
+  // merged the same last-write-wins, tombstoned way as the diary and the
+  // shopping list. See the comment above normaliseRotaShift for why this is
+  // not a recurring weekly pattern.
+  var ROTA_SHIFTS_KEY = "baby-tracker-rota-shifts";
   var NAME_FONT_KEY = "baby-tracker-name-font";
   // Which language the handover screen is read in. A property of the handset
   // and the person holding it, not of the baby, so unlike the name and its
@@ -224,11 +228,6 @@
   // Once ticked off (done), the status stops mattering and is not shown.
   var SHOP_STATUSES = ["new", "ordered", "arrived"];
 
-  // The weekly pattern only, deliberately — no exceptions list, no recurrence
-  // engine. If a single Thursday off turns out to need recording, that is the
-  // moment to add a sparse override keyed by date, not before.
-  var ROTA_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  var ROTA_DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var ROTA_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   var ROTA_DEFAULT_HOURS = 8;
 
@@ -389,55 +388,116 @@
     }
   }
 
-  // Seven slots, always present, indexed the same way Date.getDay() counts —
-  // 0 is Sunday. Never sparse, never a list that grows: a day is either off
-  // or it isn't, which is the whole of what was asked for.
-  function blankRotaDay() {
-    return { off: true, hours: 0, start: "" };
+  // No weekly template — tried first, and it did not survive contact with a
+  // real rota: which day starts the week and what time it starts on both
+  // move from one week to the next, so a recurring Mon/Tue/Wed pattern would
+  // be wrong about as often as it was right. What is kept instead is a
+  // sparse, date-keyed shift, one per date that actually has one — the same
+  // shape IDEAS.md set aside for a leave-day exception, generalised to be
+  // the only record there is. A date with nothing in it simply is not
+  // worked; nothing here says why.
+  function normaliseRotaShift(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var date = (typeof raw.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)) ? raw.date : "";
+    if (!date) return null;
+    var updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString();
+    if (raw.deleted) return { id: date, date: date, deleted: true, updatedAt: updatedAt };
+    var hours = Number(raw.hours);
+    var validHours = (hours > 0 && hours <= 24) ? Math.round(hours * 2) / 2 : 0;
+    if (!validHours) return null;
+    var start = (typeof raw.start === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.start)) ? raw.start : "";
+    return { id: date, date: date, hours: validHours, start: start, updatedAt: updatedAt };
   }
 
-  function normaliseRota(raw) {
-    var days = [];
-    for (var i = 0; i < 7; i++) {
-      var src = (raw && Array.isArray(raw.days)) ? raw.days[i] : null;
-      var hours = src ? Number(src.hours) : NaN;
-      var validHours = (hours > 0 && hours <= 24) ? Math.round(hours * 2) / 2 : 0;
-      var start = (src && typeof src.start === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(src.start))
-        ? src.start : "";
-      var off = !src || !!src.off || !(validHours > 0);
-      days.push({ off: off, hours: off ? 0 : validHours, start: off ? "" : start });
-    }
-    return { days: days };
-  }
-
-  function loadRota() {
+  function loadRotaShifts() {
     try {
-      var raw = localStorage.getItem(ROTA_KEY);
-      return normaliseRota(raw ? JSON.parse(raw) : null);
+      var raw = localStorage.getItem(ROTA_SHIFTS_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      return normaliseRota(null);
+      return [];
     }
   }
 
-  function saveRota(nextRota) {
+  function saveRotaShifts(list) {
     try {
-      localStorage.setItem(ROTA_KEY, JSON.stringify(nextRota));
-      touchMeta();
+      localStorage.setItem(ROTA_SHIFTS_KEY, JSON.stringify(list));
       hideError();
       scheduleSync();
       return true;
     } catch (e) {
-      showError("Couldn't save the rota");
+      showError("Couldn't save — this browser's storage is full");
       return false;
     }
   }
 
-  function rotaHasShifts(r) {
-    return (r || rota).days.some(function (d) { return !d.off; });
+  function pruneRotaShiftTombstones() {
+    var before = rotaShifts.length;
+    rotaShifts = rotaShifts.filter(function (s) { return !tombstoneExpired(s); });
+    return before - rotaShifts.length;
   }
 
-  function rotaWeeklyHours() {
-    return rota.days.reduce(function (sum, d) { return sum + (d.off ? 0 : d.hours); }, 0);
+  function mergeRotaShifts(remoteList) {
+    var byId = {};
+    rotaShifts.forEach(function (s) { byId[s.id] = s; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var shift = normaliseRotaShift(raw);
+      if (!shift || !shift.id) return;
+      if (tombstoneExpired(shift)) return;
+      var existing = byId[shift.id];
+      if (!existing) {
+        rotaShifts.push(shift);
+        byId[shift.id] = shift;
+        changed++;
+      } else if (shift.updatedAt > updatedAtOf(existing)) {
+        rotaShifts[rotaShifts.indexOf(existing)] = shift;
+        byId[shift.id] = shift;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function rotaShiftFor(dateKey) {
+    return rotaShifts.filter(function (s) { return s.date === dateKey && !s.deleted; })[0] || null;
+  }
+
+  function liveRotaShifts() {
+    return rotaShifts.filter(function (s) { return !s.deleted; });
+  }
+
+  function remoteMissesOurRotaShifts(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (s) { if (s && s.date) remoteById[s.date] = s; });
+    return rotaShifts.some(function (s) {
+      var mirror = remoteById[s.date];
+      return !mirror || updatedAtOf(s) > (mirror.updatedAt || "");
+    });
+  }
+
+  // One entry per date, id and date the same string, so setting a date
+  // twice replaces rather than duplicates, on this phone or any other.
+  function setRotaShift(dateKey, hours, start) {
+    var existing = rotaShifts.filter(function (s) { return s.date === dateKey; })[0];
+    var now = new Date().toISOString();
+    if (existing) {
+      existing.deleted = false;
+      existing.hours = hours;
+      existing.start = start;
+      existing.updatedAt = now;
+    } else {
+      rotaShifts.push({ id: dateKey, date: dateKey, hours: hours, start: start, updatedAt: now });
+    }
+    return saveRotaShifts(rotaShifts);
+  }
+
+  function clearRotaShift(dateKey) {
+    var existing = rotaShifts.filter(function (s) { return s.date === dateKey; })[0];
+    if (!existing) return true;
+    existing.deleted = true;
+    existing.updatedAt = new Date().toISOString();
+    return saveRotaShifts(rotaShifts);
   }
 
   function feedingOption(id) {
@@ -657,6 +717,7 @@
     var shopRetired = retireBoughtShopping();
     var shopPruned = pruneShopTombstones();
     if (shopRetired || shopPruned) saveShopping(shopping);
+    if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
   }
   var intervals = loadIntervals();
 
@@ -814,11 +875,24 @@
     screenRota: document.getElementById("screenRota"),
     rotaOpenBtn: document.getElementById("rotaOpen"),
     rotaBack: document.getElementById("rotaBack"),
-    rotaDays: document.getElementById("rotaDays"),
-    rotaTotal: document.getElementById("rotaTotal"),
+    rotaAddToggle: document.getElementById("rotaAddToggle"),
+    rotaAddToggleText: document.getElementById("rotaAddToggleText"),
+    rotaForm: document.getElementById("rotaForm"),
+    rotaDate: document.getElementById("rotaDate"),
+    rotaHours: document.getElementById("rotaHours"),
+    rotaStart: document.getElementById("rotaStart"),
+    rotaError: document.getElementById("rotaError"),
+    rotaSubmit: document.getElementById("rotaSubmit"),
+    rotaRemove: document.getElementById("rotaRemove"),
+    rotaCancel: document.getElementById("rotaCancel"),
     rotaBanner: document.getElementById("rotaBanner"),
     rotaBannerBtn: document.getElementById("rotaBannerBtn"),
     rotaBannerText: document.getElementById("rotaBannerText"),
+    rotaCalPrev: document.getElementById("rotaCalPrev"),
+    rotaCalNext: document.getElementById("rotaCalNext"),
+    rotaCalMonth: document.getElementById("rotaCalMonth"),
+    rotaCalWeeks: document.getElementById("rotaCalWeeks"),
+    rotaCalTotal: document.getElementById("rotaCalTotal"),
     aiRow: document.getElementById("aiRow"),
     aiOpen: document.getElementById("aiOpen"),
     aiBack: document.getElementById("aiBack"),
@@ -2408,7 +2482,7 @@
     // guard on events because that is all they contain, but a family with
     // appointments or a shopping list and nothing logged yet still has
     // something worth saving here.
-    if (!liveEvents().length && !livePlans().length && !liveShopping().length && !rotaHasShifts()) {
+    if (!liveEvents().length && !livePlans().length && !liveShopping().length && !liveRotaShifts().length) {
       showToast("Nothing to export yet");
       return;
     }
@@ -2418,7 +2492,7 @@
       dob: loadDob(),
       feeding: loadFeeding(),
       intervals: intervals,
-      rota: rota,
+      rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
@@ -2701,16 +2775,6 @@
       renderName();
       renderNameFonts();
     }
-    // The rota is one small record, not a growing list, so it merges the
-    // same way the name and date of birth do: genuinely newer settings
-    // replace ours outright, otherwise it only fills a phone that has
-    // nothing of its own to lose.
-    if (parsed.rota && (parsed.overwrite || !rotaHasShifts())) {
-      rota = normaliseRota(parsed.rota);
-      saveRota(rota);
-      renderRotaDays();
-      renderRotaBanner();
-    }
   }
 
   function applyBackupSettings(text) {
@@ -2725,7 +2789,7 @@
     // date of birth still only fill blanks, so a file never renames a baby.
     applyIncomingSettings({
       name: parsed.name, nameFont: parsed.nameFont, dob: parsed.dob, feeding: parsed.feeding,
-      intervals: parsed.intervals, rota: parsed.rota, takeIntervals: true, overwrite: false
+      intervals: parsed.intervals, takeIntervals: true, overwrite: false
     });
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
@@ -2734,6 +2798,11 @@
     if (Array.isArray(parsed.shopping) && mergeShopping(parsed.shopping)) {
       saveShopping(shopping);
       renderShopping();
+    }
+    if (Array.isArray(parsed.rotaShifts) && mergeRotaShifts(parsed.rotaShifts)) {
+      saveRotaShifts(rotaShifts);
+      renderRotaBanner();
+      renderRotaCalendar();
     }
   }
 
@@ -3247,13 +3316,13 @@
         nameFont: storedNameFont(),
         dob: loadDob(),
         feeding: loadFeeding(),
-        rota: rota,
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         updatedAt: metaStamp()
       },
       events: events,
       plans: plans,
-      shopping: shopping
+      shopping: shopping,
+      rotaShifts: rotaShifts
     };
   }
 
@@ -3366,6 +3435,9 @@
         var remoteShopping = Array.isArray(remoteDoc.shopping) ? remoteDoc.shopping : [];
         var pulledShopping = mergeShopping(remoteShopping);
         if (pulledShopping) saveShopping(shopping);
+        var remoteRotaShifts = Array.isArray(remoteDoc.rotaShifts) ? remoteDoc.rotaShifts : [];
+        var pulledRotaShifts = mergeRotaShifts(remoteRotaShifts);
+        if (pulledRotaShifts) saveRotaShifts(rotaShifts);
 
         var remoteMeta = remoteDoc.meta;
         applyingRemote = true;
@@ -3386,7 +3458,6 @@
               nameFont: remoteMeta.nameFont,
               dob: remoteMeta.dob,
               feeding: remoteMeta.feeding,
-              rota: remoteMeta.rota,
               intervals: remoteMeta.intervals,
               takeIntervals: remoteNewer,
               overwrite: remoteNewer
@@ -3403,6 +3474,7 @@
         }
         if (pulledPlans) renderPlans();
         if (pulledShopping) renderShopping();
+        if (pulledRotaShifts) { renderRotaBanner(); renderRotaCalendar(); }
         if (pulled || remoteMeta) renderAll();
 
         // Drop what has aged out before comparing, so the cleaned-up log is
@@ -3413,11 +3485,14 @@
         var shopRetired = retireBoughtShopping();
         var shopPruned = pruneShopTombstones();
         if (shopRetired || shopPruned) saveShopping(shopping);
+        if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
 
         var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
-          remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired);
+          remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
+          remoteRotaShifts.some(tombstoneExpired);
         var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
           remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
+          remoteMissesOurRotaShifts(remoteRotaShifts) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
         if (!mustPush) return { pulled: pulled, pushed: 0 };
 
@@ -4099,113 +4174,229 @@
 
   // ---------- carer rota ----------
 
-  var rota = loadRota();
+  var rotaShifts = loadRotaShifts();
+  var rotaEditKey = null; // the date open in the form, or null when it is closed
 
-  function todaysRotaDay(atDate) {
-    return rota.days[(atDate || new Date()).getDay()];
+  function todaysRotaShift() {
+    return rotaShiftFor(dayKeyOf(new Date()));
   }
 
   // Calendar-local minutes since midnight, not epoch arithmetic — adding
   // hours straight across a clock change is how the immunisation dates once
   // came out a day early, and a shift window would drift the same way.
-  function rotaShiftRange(day, atDate) {
-    if (!day || day.off || !day.hours || !day.start) return null;
-    var mins = Number(day.start.slice(0, 2)) * 60 + Number(day.start.slice(3, 5));
+  function rotaShiftRange(shift, atDate) {
+    if (!shift || !shift.hours || !shift.start) return null;
+    var mins = Number(shift.start.slice(0, 2)) * 60 + Number(shift.start.slice(3, 5));
     var base = new Date(atDate.getFullYear(), atDate.getMonth(), atDate.getDate());
     var from = new Date(base.getTime() + mins * MS_MIN);
-    var to = new Date(from.getTime() + day.hours * MS_HOUR);
+    var to = new Date(from.getTime() + shift.hours * MS_HOUR);
     return { from: from, to: to };
   }
 
-  function renderRotaTotal() {
-    var total = rotaWeeklyHours();
-    el.rotaTotal.textContent = total
-      ? (total + (total === 1 ? " hour" : " hours") + " a week, as things stand")
-      : "No days set yet — tap a day below to add one";
-  }
-
-  function rotaDayRow(i) {
-    var day = rota.days[i];
-    var row = document.createElement("div");
-    row.className = "rota-row";
-    row.innerHTML =
-      '<button type="button" class="rota-toggle" aria-pressed="' + (!day.off) + '">' +
-        '<span class="rota-day-name">' + ROTA_DAY_SHORT[i] + '</span>' +
-        (day.off ? '<span class="rota-day-state">Off</span>' : '') +
-      '</button>' +
-      '<div class="rota-detail"' + (day.off ? " hidden" : "") + '>' +
-        '<input type="time" class="rota-start-input" aria-label="' + ROTA_DAY_NAMES[i] + ' — start time, optional">' +
-        '<select class="rota-hours-select" aria-label="' + ROTA_DAY_NAMES[i] + ' — hours"></select>' +
-      '</div>';
-
-    var toggle = row.querySelector(".rota-toggle");
-    var hoursSelect = row.querySelector(".rota-hours-select");
-    var startInput = row.querySelector(".rota-start-input");
-
-    // "6h" rather than "6 hours" — the row reads as a single compact line,
-    // day, start time, length, the way it would be said out loud.
-    ROTA_HOURS.forEach(function (h) {
-      var opt = document.createElement("option");
-      opt.value = String(h);
-      opt.textContent = h + "h";
-      hoursSelect.appendChild(opt);
-    });
-    hoursSelect.value = String(day.hours || ROTA_DEFAULT_HOURS);
-    startInput.value = day.start || "";
-
-    toggle.addEventListener("click", function () {
-      day.off = !day.off;
-      // Mirrors what normaliseRota does to a reloaded record, so the same
-      // day looks the same whether or not the page has been reloaded since.
-      if (day.off) {
-        day.hours = 0;
-        day.start = "";
-      } else if (!day.hours) {
-        day.hours = ROTA_DEFAULT_HOURS;
-      }
-      if (!saveRota(rota)) return;
-      renderRotaDays();
-      renderRotaBanner();
-    });
-    hoursSelect.addEventListener("change", function () {
-      day.hours = Number(hoursSelect.value) || ROTA_DEFAULT_HOURS;
-      if (!saveRota(rota)) return;
-      renderRotaTotal();
-      renderRotaBanner();
-    });
-    startInput.addEventListener("change", function () {
-      day.start = startInput.value || "";
-      if (!saveRota(rota)) return;
-      renderRotaBanner();
-    });
-
-    return row;
-  }
-
-  function renderRotaDays() {
-    el.rotaDays.innerHTML = "";
-    for (var i = 0; i < 7; i++) el.rotaDays.appendChild(rotaDayRow(i));
-    renderRotaTotal();
-  }
-
-  // A quiet line on the main screen, and only while a shift with a known
-  // start time is actually on — a day marked "working" with no start time
-  // has nothing to count down to, so it earns no line here.
+  // A quiet line on the main screen, and only while today's shift has a
+  // known start time and is actually on — a shift with no start time has
+  // nothing to count down to, so it earns no line here.
   function renderRotaBanner() {
-    var range = rotaShiftRange(todaysRotaDay(), new Date());
+    var range = rotaShiftRange(todaysRotaShift(), new Date());
     var now = Date.now();
     var active = !!range && now >= +range.from && now < +range.to;
     el.rotaBanner.hidden = !active;
     if (active) el.rotaBannerText.textContent = "Carer here until " + formatClockTime(range.to);
   }
 
+  function buildRotaHoursOptions() {
+    el.rotaHours.innerHTML = "";
+    ROTA_HOURS.forEach(function (h) {
+      var opt = document.createElement("option");
+      opt.value = String(h);
+      opt.textContent = h + (h === 1 ? " hour" : " hours");
+      el.rotaHours.appendChild(opt);
+    });
+  }
+
+  function showRotaError(msg) {
+    el.rotaError.textContent = msg;
+    el.rotaError.hidden = false;
+  }
+
+  function closeRotaForm() {
+    rotaEditKey = null;
+    el.rotaForm.hidden = true;
+    el.rotaAddToggleText.textContent = "Add a shift";
+    el.rotaError.hidden = true;
+  }
+
+  // One form for both jobs: a blank date to add a new shift, or an existing
+  // one's date, hours and start time to change or remove it. Which it is
+  // reads off whether that date already has a shift, not off two screens.
+  function openRotaForm(dateKey) {
+    var existing = dateKey ? rotaShiftFor(dateKey) : null;
+    rotaEditKey = dateKey || dayKeyOf(new Date());
+    el.rotaForm.hidden = false;
+    el.rotaAddToggleText.textContent = "Hide the form";
+    el.rotaError.hidden = true;
+    el.rotaDate.value = rotaEditKey;
+    el.rotaHours.value = String((existing && existing.hours) || ROTA_DEFAULT_HOURS);
+    el.rotaStart.value = (existing && existing.start) || "";
+    el.rotaSubmit.textContent = existing ? "Save" : "Add it";
+    el.rotaRemove.hidden = !existing;
+    el.rotaForm.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  el.rotaAddToggle.addEventListener("click", function () {
+    if (el.rotaForm.hidden) openRotaForm(null); else closeRotaForm();
+  });
+  el.rotaCancel.addEventListener("click", closeRotaForm);
+
+  el.rotaSubmit.addEventListener("click", function () {
+    var date = el.rotaDate.value;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      showRotaError("Pick a date");
+      return;
+    }
+    var hours = Number(el.rotaHours.value) || ROTA_DEFAULT_HOURS;
+    var start = el.rotaStart.value || "";
+    if (!setRotaShift(date, hours, start)) return;
+    closeRotaForm();
+    renderRotaBanner();
+    renderRotaCalendar();
+  });
+
+  el.rotaRemove.addEventListener("click", function () {
+    if (!rotaEditKey) return;
+    if (!clearRotaShift(rotaEditKey)) return;
+    closeRotaForm();
+    renderRotaBanner();
+    renderRotaCalendar();
+  });
+
+  // ---------- carer rota: the calendar summary ----------
+
+  // The one place these shifts are actually seen: every date that has one,
+  // read forward a week at a time and browsable by month. Tapping a day
+  // opens it in the form above, pre-filled — this list is not itself
+  // editable, it is a compact way in to the form that is.
+  function startOfMonth(d) {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+
+  var rotaCalMonth = startOfMonth(new Date());
+
+  // Monday-start weeks, every one that touches this month — including the
+  // few days either side that belong to the month before or after, the way
+  // a paper month-to-view calendar always shows them.
+  function rotaCalWeeks(monthStart) {
+    var last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+    var firstWeekday = (monthStart.getDay() + 6) % 7; // 0 = Monday
+    var cursor = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1 - firstWeekday);
+    var weeks = [];
+    while (cursor <= last) {
+      var days = [];
+      for (var i = 0; i < 7; i++) {
+        days.push(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i));
+      }
+      weeks.push(days);
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+    }
+    return weeks;
+  }
+
+  // Only the dates that actually have a shift — a day with nothing recorded
+  // earns no entry at all, which is what keeps a week to "6h · 6h" rather
+  // than a row of sevens padded out with dashes.
+  function rotaWeekEntries(days) {
+    var entries = [];
+    days.forEach(function (d) {
+      var key = dayKeyOf(d);
+      var shift = rotaShiftFor(key);
+      if (shift) entries.push({ date: d, key: key, hours: shift.hours });
+    });
+    return entries;
+  }
+
+  function rotaWeekRange(days) {
+    var first = days[0], last = days[6];
+    var firstLabel = first.getDate() + " " + MONTHS[first.getMonth()].slice(0, 3);
+    var lastLabel = (first.getMonth() === last.getMonth() ? last.getDate() : last.getDate() + " " + MONTHS[last.getMonth()].slice(0, 3));
+    return firstLabel + "–" + lastLabel;
+  }
+
+  function renderRotaCalendar() {
+    el.rotaCalMonth.textContent = MONTHS[rotaCalMonth.getMonth()] + " " + rotaCalMonth.getFullYear();
+    el.rotaCalWeeks.innerHTML = "";
+    var weeks = rotaCalWeeks(rotaCalMonth);
+    var rows = weeks.map(function (days) {
+      var entries = rotaWeekEntries(days);
+      return entries.length ? { range: rotaWeekRange(days), entries: entries } : null;
+    }).filter(Boolean);
+
+    // The total for the month shown, not the whole rota — the one figure
+    // that actually answers "how much this month", now that a week is no
+    // longer one fixed number.
+    var monthTotal = 0;
+    weeks.forEach(function (days) {
+      days.forEach(function (d) {
+        if (d.getMonth() !== rotaCalMonth.getMonth()) return;
+        var shift = rotaShiftFor(dayKeyOf(d));
+        if (shift) monthTotal += shift.hours;
+      });
+    });
+    el.rotaCalTotal.textContent = monthTotal
+      ? (monthTotal + (monthTotal === 1 ? " hour" : " hours") + " this month")
+      : "Nothing recorded this month yet";
+
+    if (!rows.length) {
+      var empty = document.createElement("p");
+      empty.className = "data-hint";
+      empty.textContent = "No shifts recorded this month yet.";
+      el.rotaCalWeeks.appendChild(empty);
+      return;
+    }
+
+    rows.forEach(function (row) {
+      var line = document.createElement("div");
+      line.className = "rota-cal-week";
+      var range = document.createElement("span");
+      range.className = "rota-cal-range";
+      range.textContent = row.range;
+      line.appendChild(range);
+      var days = document.createElement("span");
+      days.className = "rota-cal-days";
+      row.entries.forEach(function (entry, i) {
+        if (i > 0) days.appendChild(document.createTextNode(" · "));
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "rota-cal-day";
+        btn.textContent = entry.hours + "h";
+        btn.setAttribute("aria-label", formatDateHeader(entry.date) + ", " + entry.hours + " hours — tap to change");
+        btn.addEventListener("click", function () { openRotaForm(entry.key); });
+        days.appendChild(btn);
+      });
+      line.appendChild(days);
+      el.rotaCalWeeks.appendChild(line);
+    });
+  }
+
+  el.rotaCalPrev.addEventListener("click", function () {
+    rotaCalMonth = new Date(rotaCalMonth.getFullYear(), rotaCalMonth.getMonth() - 1, 1);
+    renderRotaCalendar();
+  });
+  el.rotaCalNext.addEventListener("click", function () {
+    rotaCalMonth = new Date(rotaCalMonth.getFullYear(), rotaCalMonth.getMonth() + 1, 1);
+    renderRotaCalendar();
+  });
+
   el.rotaOpenBtn.addEventListener("click", function () {
-    renderRotaDays();
+    rotaCalMonth = startOfMonth(new Date());
+    closeRotaForm();
+    renderRotaCalendar();
     showScreen("rota");
   });
   el.rotaBack.addEventListener("click", showMain);
   el.rotaBannerBtn.addEventListener("click", function () {
-    renderRotaDays();
+    rotaCalMonth = startOfMonth(new Date());
+    closeRotaForm();
+    renderRotaCalendar();
     showScreen("rota");
   });
 
@@ -6196,6 +6387,10 @@
     // served by rebuilding it behind a screen nobody is on.
     if (!el.screenHandover.hidden) renderHandover();
     if (!el.screenShop.hidden) renderShopping();
+    // The calendar only, not the day editor above it — that one holds
+    // focused selects and time inputs mid-edit, and a periodic rebuild
+    // would drop whatever was half-chosen.
+    if (!el.screenRota.hidden) renderRotaCalendar();
     if (withLog) renderLog();
   }
 
@@ -6224,6 +6419,7 @@
   buildIntervalOptions();
   buildFeedingOptions();
   buildFedOptions();
+  buildRotaHoursOptions();
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
   renderSyncState();
   startSyncPolling();
