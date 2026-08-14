@@ -114,26 +114,26 @@ part-day warnings that took several attempts to get right in English.
 report may end up in front of a doctor, and stable column headings are worth
 more than a translated one.
 
-## A shopping list
+## A shopping list — built, in v38
 
-The carer adds nappies size 2, a parent buys them and ticks them off.
+Behind 🛒 in the top bar. What it turned out to need beyond the original plan:
 
-Structurally this is the diary again: a list of items with an id, a title, an
-`updatedAt` and a tombstone, merged by the same last-write-wins rule and
-carried in the same synced document. The diary code is the template; copy its
-shape rather than inventing another.
+An Amazon link on each item, opened by the phone itself — no scripted
+redirect, a plain `<a href>` so the OS hands it to the Amazon app the normal
+way. Left blank, the button searches `amazon.co.uk` for whatever was typed
+instead. Checked at the time: there is no public API for a real Amazon wish
+list — the Product Advertising API cannot read or write one, and scraping the
+page would be a request to somebody else's server, which this app does not
+make. A link field is the honest version of the same idea.
 
-Ticking off is a state, not a deletion. A bought item wants a `done` flag and
-the time it was set, so it can be un-ticked when somebody ticks the wrong line,
-and it should fade out of the list after a day or so rather than vanishing on
-the tap. Resist fields: no quantities, no categories, no due dates. "Nappies
-size 2, two packs" typed into one box beats three inputs, and this is a
-household list, not a project tracker.
+Bilingual from the start, sharing the handover's language setting rather than
+asking again — the reasoning for why is recorded under "The rest of the app in
+a second language" above.
 
-**Nobody is notified.** There is no server, so there is no push. An item added
-at eight is seen when the other person next opens the app, which might be the
-evening. Show when each item was added, and by whom if the phone has a name, so
-a list nobody has looked at reads as one nobody has looked at.
+A count on the top-bar icon, and a line on the handover screen naming what is
+outstanding. Neither is a real notification — there still isn't a server —
+but between them the list is seen without a deliberate trip to its own screen,
+which is as close as this app gets to nagging anybody.
 
 ## When the carer is here
 
@@ -170,11 +170,11 @@ One trap, already met once: work out when today's shift ends from calendar
 local time rather than by adding milliseconds. Adding hours across a clock
 change is how the immunisation dates came out a day early.
 
-**Order.** The handover and its 24-hour strip are built, in v34. Next the
-shopping list, which is a copy of the diary. Then the rota, which is small and
-makes the handover better by replacing the window it currently has to guess.
-The seven-day charts last: the most enjoyable to build and the least likely to
-change what anybody does.
+**Order.** The handover and its 24-hour strip are built, in v34. The shopping
+list is built, in v38. Next the rota, which is small and makes the handover
+better by replacing the window it currently has to guess. The seven-day
+charts last: the most enjoyable to build and the least likely to change what
+anybody does.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
