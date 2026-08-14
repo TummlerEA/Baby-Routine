@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=40">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -34,6 +34,7 @@
     <header class="topbar topbar-main">
       <div class="topbar-icons">
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
+        <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">⏰</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
         <button class="icon-btn icon-btn-badged" id="shopOpen" aria-label="Shopping list">🛒<span class="icon-badge" id="shopBadge" hidden>0</span></button>
         <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
@@ -65,6 +66,13 @@
         <button class="plan-soon-btn" id="planSoonBtn">
           <span class="plan-soon-icon">📅</span>
           <span class="plan-soon-text" id="planSoonText">—</span>
+        </button>
+      </section>
+
+      <section class="plan-soon" id="rotaBanner" hidden>
+        <button class="plan-soon-btn" id="rotaBannerBtn">
+          <span class="plan-soon-icon">⏰</span>
+          <span class="plan-soon-text" id="rotaBannerText">—</span>
         </button>
       </section>
 
@@ -330,6 +338,13 @@
           </article>
 
           <article class="info-card">
+            <h3>Carer rota (⏰)</h3>
+            <p>Which days the carer works and roughly how long — tap a day to turn it on or off, then pick the hours and, if you know it, a start time. That is the whole shape of the week; there is no separate record of who actually turned up when, and nothing here clocks anyone in or out.</p>
+            <p>A start time buys two things. While that shift is on, the main screen shows a quiet line — <strong>Carer here until</strong> the time it ends. A day marked working with no start time has nothing to count down to, so it stays quiet.</p>
+            <p>The pattern is settled between the carer and the other parent, not by this app — it just keeps the shape of it in one place, synced like everything else.</p>
+          </article>
+
+          <article class="info-card">
             <h3>Fixing mistakes</h3>
             <ul>
               <li><strong>Tap any entry</strong> in the history to change its type, time or details.</li>
@@ -534,6 +549,31 @@
       <section>
         <div class="data-panel">
           <p class="data-hint">Nothing here can send you a notification — a page in a browser cannot do that on a phone. Use <strong>Add to phone calendar</strong> on an appointment and your own calendar will remind you properly. The file is built on this phone and goes nowhere.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============ carer rota screen ============ -->
+  <div class="screen" id="screenRota" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="rotaBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Carer rota</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <p class="data-hint">Which days the carer works, and roughly how long — settled between the carer and the other parent, not by this app. Add a start time and the main screen shows a line while the shift is on, and the handover screen can use the real moment instead of a guess.</p>
+        <div class="rota-days" id="rotaDays"></div>
+        <p class="rota-total" id="rotaTotal">—</p>
+      </section>
+
+      <section>
+        <div class="data-panel">
+          <p class="data-hint">Not a timesheet: nothing here clocks anyone in or out, and there is no record of who actually turned up when. It is the shape of the week, kept in sync like everything else in the app.</p>
         </div>
       </section>
 
@@ -816,6 +856,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=40"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>

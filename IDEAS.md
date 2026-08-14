@@ -152,7 +152,7 @@ nothing left to track. It stays a pre-purchase detail, not a fourth thing to
 maintain forever: resisting fields is still the right default, this one earned
 its place by being asked for directly.
 
-## When the carer is here
+## When the carer is here — the weekly pattern is built, in v41
 
 Which days the carer works and roughly how long — Monday to Thursday, six hours
 or eight. The point is a parent knowing where the week stands at a glance. The
@@ -160,24 +160,28 @@ detail is settled between the carer and the other parent directly, so the app
 should show the shape of the arrangement and stay out of the arrangement
 itself.
 
-Start with a weekly pattern: seven days, each either off or a number of hours,
-with a start time if it is known. One record, synced with the settings, and a
-two-week strip to show what that comes to. That is very likely the whole
-feature — "Mon-Thu, 8h" is the answer to the question being asked.
+Behind ⏰ in the top bar: seven days, each either off or a number of hours,
+with a start time if it is known. One record, synced the way the name and
+date of birth are — a single stamp on the whole thing rather than per-item
+tombstones, since a week is seven fixed slots, never a growing list. A start
+time earns a quiet line on the main screen while that shift is on — **Carer
+here until five** — plus a running total of hours in the week. A day marked
+working with no start time gets neither, since there is no moment to count
+down to; it still counts toward the total.
 
 **Do not build a recurrence engine.** Repeating events with exceptions is where
 calendars stop being small: rules, end dates, and a list of the days the rule
 does not apply to. If the pattern turns out to need exceptions — a Thursday
 off, an extra Friday — add a sparse list of overrides keyed by date that the
-strip reads on top of the pattern, and add it only once the pattern has proved
-insufficient in use. Not before.
+main-screen line reads on top of the pattern, and add it only once the pattern
+has proved insufficient in use. Not before.
 
-What it buys beyond the picture: a quiet line on the main screen saying the
-carer is here until five, an honest total of hours in the week, and a better
-handover. The handover screen offers a choice of 6, 12 or 24 hours because it
-has nothing better to go on; with a rota it would not have to guess at all,
-since "since the shift started" is a real moment rather than a round number of
-hours back.
+**Not built yet: feeding the rota into the handover screen.** It still offers
+a choice of 6, 12 or 24 hours because it has nothing better to go on; with a
+rota in place it would not have to guess, since "since the shift started" is a
+real moment rather than a round number of hours back. Left for a follow-up
+rather than folded into v41, so the base record could ship and be tested on
+its own first.
 
 **Deliberately not a timesheet.** No clocking in, no recording who actually
 turned up when, no pay. That is a different product, it changes what the app is
@@ -185,13 +189,14 @@ between people who see each other every day, and it is not what was asked for.
 
 One trap, already met once: work out when today's shift ends from calendar
 local time rather than by adding milliseconds. Adding hours across a clock
-change is how the immunisation dates came out a day early.
+change is how the immunisation dates came out a day early — the rota's own
+range works out the shift's start and end from the calendar day, not from
+epoch arithmetic, for the same reason.
 
 **Order.** The handover and its 24-hour strip are built, in v34. The shopping
-list is built, in v38. Next the rota, which is small and makes the handover
-better by replacing the window it currently has to guess. The seven-day
-charts last: the most enjoyable to build and the least likely to change what
-anybody does.
+list is built, in v38. The carer rota's weekly pattern is built, in v41; next
+is wiring it into the handover window. The seven-day charts last: the most
+enjoyable to build and the least likely to change what anybody does.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
