@@ -1661,6 +1661,10 @@ body {
   min-height: 44px;
   padding: 0 14px;
 }
+/* Two letters would otherwise make a chip narrower than a fingertip. */
+.ho-chip-lang {
+  min-width: 60px;
+}
 .ho-chip.on {
   background: var(--bg-elevated);
   border-color: var(--accent-sleep);
