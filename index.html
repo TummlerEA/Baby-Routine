@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=40">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -34,6 +34,7 @@
     <header class="topbar topbar-main">
       <div class="topbar-icons">
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
+        <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">🤗</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
         <button class="icon-btn icon-btn-badged" id="shopOpen" aria-label="Shopping list">🛒<span class="icon-badge" id="shopBadge" hidden>0</span></button>
         <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
@@ -65,6 +66,13 @@
         <button class="plan-soon-btn" id="planSoonBtn">
           <span class="plan-soon-icon">📅</span>
           <span class="plan-soon-text" id="planSoonText">—</span>
+        </button>
+      </section>
+
+      <section class="plan-soon" id="rotaBanner" hidden>
+        <button class="plan-soon-btn" id="rotaBannerBtn">
+          <span class="plan-soon-icon">🤗</span>
+          <span class="plan-soon-text" id="rotaBannerText">—</span>
         </button>
       </section>
 
@@ -330,6 +338,14 @@
           </article>
 
           <article class="info-card">
+            <h3>Carer rota (🤗)</h3>
+            <p><strong>Add a shift</strong> for each date the carer actually works — a date, roughly how many hours, and a start time if you know it. There is no repeating pattern behind it: the day it starts and how long it runs can differ from one week to the next, and each shift is only ever the one date it says it is. Nothing here clocks anyone in or out, and there is no separate record of who actually turned up when.</p>
+            <p>A start time buys a quiet line on the main screen while that shift is on — <strong>Carer here until</strong> the time it ends. A shift with no start time has nothing to count down to, so it stays quiet.</p>
+            <p>Below the form is every shift that has been added, a week per line, browsable by month with the arrows either side of the month name — "3 Aug–9 &nbsp;6h · 6h". Tap a day's hours to open that shift again — change it or remove it — rather than typing the date in by hand a second time.</p>
+            <p>It is settled between the carer and the other parent, not by this app — this just keeps the shape of it in one place, synced like everything else.</p>
+          </article>
+
+          <article class="info-card">
             <h3>Fixing mistakes</h3>
             <ul>
               <li><strong>Tap any entry</strong> in the history to change its type, time or details.</li>
@@ -534,6 +550,64 @@
       <section>
         <div class="data-panel">
           <p class="data-hint">Nothing here can send you a notification — a page in a browser cannot do that on a phone. Use <strong>Add to phone calendar</strong> on an appointment and your own calendar will remind you properly. The file is built on this phone and goes nowhere.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============ carer rota screen ============ -->
+  <div class="screen" id="screenRota" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="rotaBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Carer rota</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <p class="data-hint">Which days the carer actually works, and roughly how long — settled between the carer and the other parent, not by this app. Each shift is its own date: no repeating pattern to fight with when the week starts on a different day than last week's did.</p>
+
+        <button class="log-toggle" id="rotaAddToggle">
+          <span class="log-icon">➕</span>
+          <span id="rotaAddToggleText">Add a shift</span>
+        </button>
+
+        <div class="data-panel" id="rotaForm" hidden>
+          <label class="manual-field">
+            <span class="manual-label">Date</span>
+            <input id="rotaDate" class="manual-input" type="date">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Hours</span>
+            <select id="rotaHours" class="manual-input"></select>
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Start time <span class="manual-optional">— optional</span></span>
+            <input id="rotaStart" class="manual-input" type="time">
+          </label>
+          <p class="manual-error" id="rotaError" hidden></p>
+          <button class="data-btn data-btn-import" id="rotaSubmit">Add it</button>
+          <button class="data-btn" id="rotaRemove" hidden>Remove this shift</button>
+          <button class="data-btn" id="rotaCancel">Cancel</button>
+        </div>
+
+        <div class="rota-cal">
+          <div class="rota-cal-head">
+            <button type="button" class="rota-cal-nav" id="rotaCalPrev" aria-label="Previous month">‹</button>
+            <span class="rota-cal-month" id="rotaCalMonth">—</span>
+            <button type="button" class="rota-cal-nav" id="rotaCalNext" aria-label="Next month">›</button>
+          </div>
+          <div class="rota-cal-weeks" id="rotaCalWeeks"></div>
+        </div>
+        <p class="rota-total" id="rotaCalTotal">—</p>
+        <p class="data-hint">Every shift that has been added, a week per line, browsable by month. Tap a day's hours to change or remove that one shift.</p>
+      </section>
+
+      <section>
+        <div class="data-panel">
+          <p class="data-hint">Not a timesheet: nothing here clocks anyone in or out, and there is no record of who actually turned up when. It is the shape of the week, kept in sync like everything else in the app.</p>
         </div>
       </section>
 
@@ -816,6 +890,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=40"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>

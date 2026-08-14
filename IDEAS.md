@@ -152,32 +152,45 @@ nothing left to track. It stays a pre-purchase detail, not a fourth thing to
 maintain forever: resisting fields is still the right default, this one earned
 its place by being asked for directly.
 
-## When the carer is here
+## When the carer is here — built, in v41
 
-Which days the carer works and roughly how long — Monday to Thursday, six hours
-or eight. The point is a parent knowing where the week stands at a glance. The
-detail is settled between the carer and the other parent directly, so the app
-should show the shape of the arrangement and stay out of the arrangement
-itself.
+Which days the carer works and roughly how long. The point is a parent
+knowing where the week stands at a glance. The detail is settled between the
+carer and the other parent directly, so the app should show the shape of the
+arrangement and stay out of the arrangement itself.
 
-Start with a weekly pattern: seven days, each either off or a number of hours,
-with a start time if it is known. One record, synced with the settings, and a
-two-week strip to show what that comes to. That is very likely the whole
-feature — "Mon-Thu, 8h" is the answer to the question being asked.
+**The first design was a recurring weekly pattern — Monday to Thursday, six
+hours or eight — and it was wrong.** It shipped, was shown around, and did
+not survive contact with an actual rota: which day the week starts on, and
+what time each shift starts, both move from one week to the next. A template
+that is right about half the time is worse than no template, since every week
+now needs correcting rather than just recording. It was pulled before release
+and replaced with what is live behind 🤗 in the top bar now:
 
-**Do not build a recurrence engine.** Repeating events with exceptions is where
-calendars stop being small: rules, end dates, and a list of the days the rule
-does not apply to. If the pattern turns out to need exceptions — a Thursday
-off, an extra Friday — add a sparse list of overrides keyed by date that the
-strip reads on top of the pattern, and add it only once the pattern has proved
-insufficient in use. Not before.
+**Every shift is its own date.** Add a date, roughly how many hours, and a
+start time if it is known — the same shape a plan or a shopping item already
+has, so it syncs, merges and tombstones the exact same way: last write wins,
+a deletion travels as a tombstone, nothing here invents a second mechanism.
+There is no pattern behind it and nothing is assumed about next week from
+this week; a family whose days really are regular just adds each one as it is
+known, same as anybody else.
 
-What it buys beyond the picture: a quiet line on the main screen saying the
-carer is here until five, an honest total of hours in the week, and a better
-handover. The handover screen offers a choice of 6, 12 or 24 hours because it
-has nothing better to go on; with a rota it would not have to guess at all,
-since "since the shift started" is a real moment rather than a round number of
-hours back.
+A start time earns a quiet line on the main screen while today's shift is on
+— **Carer here until five** — and the rota screen totals the hours for
+whichever month is on screen. A shift with no start time gets neither, since
+there is no moment to count down to; it still counts toward the total.
+
+Reading it back stays compact even though adding it is no longer a fixed
+seven slots: a calendar summary under the form lists only the dates that
+actually have a shift, a week per line — "3 Aug–9 &nbsp;6h · 6h" — browsable
+by month, empty weeks skipped outright. Tapping a day's hours reopens that
+one shift in the same form, to change the length or start time or remove it,
+rather than a separate edit screen.
+
+**Not built yet: feeding the rota into the handover screen.** It still offers
+a choice of 6, 12 or 24 hours because it has nothing better to go on; with
+today's actual shift on record it would not have to guess, since "since the
+shift started" is a real moment rather than a round number of hours back.
 
 **Deliberately not a timesheet.** No clocking in, no recording who actually
 turned up when, no pay. That is a different product, it changes what the app is
@@ -185,13 +198,15 @@ between people who see each other every day, and it is not what was asked for.
 
 One trap, already met once: work out when today's shift ends from calendar
 local time rather than by adding milliseconds. Adding hours across a clock
-change is how the immunisation dates came out a day early.
+change is how the immunisation dates came out a day early — the rota's own
+range works out a shift's start and end from the calendar day, not from
+epoch arithmetic, for the same reason.
 
 **Order.** The handover and its 24-hour strip are built, in v34. The shopping
-list is built, in v38. Next the rota, which is small and makes the handover
-better by replacing the window it currently has to guess. The seven-day
-charts last: the most enjoyable to build and the least likely to change what
-anybody does.
+list is built, in v38. The carer rota is built, in v41 — a plain per-date
+record after the recurring pattern turned out to be the wrong shape; next is
+wiring today's shift into the handover window. The seven-day charts last: the
+most enjoyable to build and the least likely to change what anybody does.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
