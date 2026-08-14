@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=38">
+<link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
 
@@ -314,7 +314,8 @@
 
           <article class="info-card">
             <h3>Shopping list (🛒)</h3>
-            <p>What is needed, and who is fetching it. Type what to buy and, if you like, paste a link — tapping <strong>Open</strong> hands that link straight to the Amazon app if one is installed on the phone. Leave the link blank and the button searches Amazon UK for whatever you typed instead.</p>
+            <p>Either box on its own is enough to add something. Type a name and tapping <strong>Amazon</strong> searches Amazon UK for it; paste a link instead — a full one, or a short <code>amzn.eu</code> one — and tapping <strong>Open</strong> hands it straight to the Amazon app if one is installed. Give only a link and the item shows as the link itself, in italics, until you rename it: there is no way to ask Amazon for a product's title without making a request to their server, which this app does not do.</p>
+            <p>Before something is bought, a small pill shows where it stands: <strong>New</strong>, <strong>Ordered</strong> or <strong>Arrived</strong>. Tapping it moves it on a step, wrapping back to New so a mis-tap is one more tap from undone. Buying does not depend on it — tick something off from any status, New included.</p>
             <p>Tick something off when it is bought. It stays crossed out under <strong>Bought</strong> for a day, so a mis-tap is easy to undo, then it clears itself.</p>
             <p>The number on the top-bar icon is how many are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
             <p>Reads in English or Russian, the same choice and the same button as the handover screen above. Whatever anybody types stays exactly as typed.</p>
@@ -807,6 +808,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=38"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>

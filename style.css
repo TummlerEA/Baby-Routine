@@ -1798,12 +1798,12 @@ body {
 
 .shop-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 10px 10px 10px 4px;
+  padding: 6px 10px 6px 4px;
 }
 .shop-item.is-done {
   opacity: 0.55;
@@ -1821,9 +1821,14 @@ body {
 }
 .shop-tick:active { opacity: 0.6; }
 
-.shop-body {
+.shop-content {
   flex: 1;
   min-width: 0;
+}
+
+.shop-body {
+  display: block;
+  width: 100%;
   background: none;
   border: none;
   text-align: left;
@@ -1835,6 +1840,10 @@ body {
   color: var(--text);
   overflow-wrap: anywhere;
 }
+.shop-title.is-link-only {
+  font-style: italic;
+  color: var(--text-dim);
+}
 .shop-item.is-done .shop-title {
   text-decoration: line-through;
 }
@@ -1842,6 +1851,38 @@ body {
   font-size: 12px;
   color: var(--text-faint);
   margin-top: 2px;
+}
+
+.shop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+/* Smaller than the app's usual 44px touch target on purpose: this is a
+   secondary, correctable action — not a one-handed 3am tap — and it has to
+   share a row with the Amazon button on a 320px phone. */
+.shop-status {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.shop-status:active { opacity: 0.7; }
+.shop-status.st-ordered {
+  border-color: var(--accent-sleep);
+  color: var(--text);
+}
+.shop-status.st-arrived {
+  border-color: var(--accent-diaper);
+  color: var(--text);
 }
 
 .shop-open {
@@ -1853,7 +1894,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
-  padding: 10px 12px;
+  padding: 6px 12px;
   min-height: 44px;
   display: flex;
   align-items: center;
