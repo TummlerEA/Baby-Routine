@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=34">
+<link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 
@@ -305,6 +305,7 @@
             <p>For the moment somebody takes over — the other parent coming off a night, a grandparent, a nanny arriving at the door. It answers, in sentences, what they are about to ask: when the last feed was and how long it took, how many nappies and of what kind, how much sleep there has been, what is due next, and anything measured along the way.</p>
             <p>Above the words is the same stretch drawn as a strip: feeds on the top rail, nappies in the middle, sleep along the bottom, with time running left to right and ending at this minute. The darker bands are night. A timed feed is drawn as long as it took.</p>
             <p>Choose <strong>6</strong>, <strong>12</strong> or <strong>24 hours</strong>. It is always counted back from right now, never from midnight: at nine in the morning "today" is three hours old, which tells whoever has just arrived nothing about the night that has just gone.</p>
+            <p><strong>English or Russian.</strong> A second row of buttons switches the whole screen — the sentences, the dates, the counts and the temperature advice — between the two. Each button is written in its own language, so the one that fixes an unreadable screen is legible from that screen. The choice belongs to the handset: a carer can read Russian on her phone while yours stays in English, and it never travels over sync, a backup or a share link. Only this screen changes; the rest of the app is English for now. Names, appointments and anything else somebody typed stay exactly as they typed them — the app translates nobody's words, which would take a service to ask, and it asks nobody anything.</p>
             <p>None of it leaves the phone. It is a page to read together, not something to send.</p>
           </article>
 
@@ -524,7 +525,7 @@
 
     <header class="topbar topbar-settings">
       <button class="icon-btn" id="handoverBack" aria-label="Back">←</button>
-      <span class="topbar-heading">Handover</span>
+      <span class="topbar-heading" id="handoverTitle">Handover</span>
     </header>
 
     <main class="content">
@@ -536,16 +537,21 @@
         </div>
 
         <div class="ho-window">
-          <span class="ho-window-label">The last</span>
+          <span class="ho-window-label" id="handoverWindowLabel">The last</span>
           <div class="ho-chips" id="handoverHours"></div>
         </div>
 
+        <div class="ho-window">
+          <span class="ho-window-label" id="handoverLangLabel">Language</span>
+          <div class="ho-chips" id="handoverLangs"></div>
+        </div>
+
         <div class="ho-strip" id="handoverStrip"></div>
-        <p class="ho-empty" id="handoverEmpty" hidden>Nothing has been logged in this stretch.</p>
+        <p class="ho-empty" id="handoverEmpty" hidden></p>
 
         <div class="ho-lines" id="handoverLines"></div>
 
-        <p class="data-hint">All of this is worked out from what has been logged. Anything nobody tapped in is not here — a quiet strip can mean a quiet night or a phone left in another room.</p>
+        <p class="data-hint" id="handoverFooter"></p>
       </section>
 
     </main>
@@ -752,6 +758,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=34"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>
