@@ -26,7 +26,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "35";
+    var fallback = "36";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -191,11 +191,12 @@
   // twelve covers the night somebody else had, and a full day is there for
   // the appointment where all of it gets asked about at once.
   var HANDOVER_HOURS = [6, 12, 24];
-  // Each written in its own language, so the chip that fixes an unreadable
-  // screen is legible from that screen.
+  // Labelled with the two-letter code rather than the language's own name:
+  // "en" and "ru" are read the same by everybody, which is what the chip that
+  // fixes an unreadable screen has to be.
   var HANDOVER_LANGS = [
-    { id: "en", label: "English" },
-    { id: "ru", label: "Русский" }
+    { id: "en", label: "en" },
+    { id: "ru", label: "ru" }
   ];
   var HANDOVER_DEFAULT_HOURS = 12;
   // Whoever is taking over needs today and tomorrow, not the term ahead.
@@ -4645,10 +4646,10 @@
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ho-chip";
-      // Each named in its own language and never translated, so somebody who
-      // cannot read the language on screen can still find the button that
-      // fixes that.
+      // Never translated and never restyled by which language is on: whichever
+      // one somebody cannot read, both chips look the same to them.
       btn.textContent = lang.label;
+      btn.classList.add("ho-chip-lang");
       btn.addEventListener("click", function () {
         handoverLang = lang.id;
         saveHandoverLang(lang.id);
