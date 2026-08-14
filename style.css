@@ -951,6 +951,48 @@ body {
   color: var(--text-dim);
 }
 
+.nextup-time-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* A native control on purpose — on a phone it is the OS's own wheel, already
+   sitting on the moment this was logged, so winding it back is one gesture
+   rather than a search through fixed choices for the nearest one. */
+.nextup-time-input {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  padding: 10px 14px;
+  min-height: 48px;
+  min-width: 0;
+  flex: 1;
+  color-scheme: dark;
+}
+.nextup-time-input:focus {
+  outline: 2px solid var(--accent-sleep);
+  outline-offset: -1px;
+}
+
+.nextup-time-now {
+  flex-shrink: 0;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 16px;
+  min-height: 48px;
+  cursor: pointer;
+}
+.nextup-time-now:active { opacity: 0.7; }
+
 /* Six choices never fit one row on a phone, and a 5-then-1 wrap reads as an
    accident. Two even rows of three is deliberate, and holds at any width. */
 .feed-chips {

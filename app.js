@@ -26,7 +26,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "39";
+    var fallback = "40";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -224,6 +224,12 @@
   var SHOP_STATUSES = ["new", "ordered", "arrived"];
 
   var NEXTUP_TIMEOUT = 20000;
+  // Catching up on a whole sequence — woke, nappy, fed, asleep again —
+  // happens in one sitting well after the fact, and needs a time rather than
+  // a handful of round numbers to fix it against. Kept to today: the entry is
+  // stamped onto the day it was originally logged on, and correcting
+  // something onto a different day — spanning midnight — goes through the
+  // manual form below, which has an actual date to set.
   // How long the button says what it just did. Long enough to be read by
   // somebody who tapped and looked away, short enough to be gone before the
   // next feed.
@@ -639,6 +645,9 @@
     nextUpTitle: document.getElementById("nextUpTitle"),
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
+    nextUpForecastBlock: document.getElementById("nextUpForecastBlock"),
+    timeScroll: document.getElementById("timeScroll"),
+    timeScrollNow: document.getElementById("timeScrollNow"),
     sourceBlock: document.getElementById("sourceBlock"),
     sourceChips: document.getElementById("sourceChips"),
     feedBlock: document.getElementById("feedBlock"),
@@ -1819,18 +1828,37 @@
   var nextUpTimer = null;
   var nextUpKind = null;
   var nextUpEventId = null;
+  // The moment this entry was actually tapped, fixed for the life of the
+  // card. Backdating reads and writes against this rather than against "now"
+  // at the moment of the tap, so picking 20m and then 30m lands 30 minutes
+  // before the original tap, not 30 minutes before whenever the second tap
+  // happened to land.
+  var nextUpBaseTime = null;
 
   function hideNextUp() {
     clearTimeout(nextUpTimer);
     el.nextUp.hidden = true;
     nextUpKind = null;
     nextUpEventId = null;
+    nextUpBaseTime = null;
   }
 
   function chipChoices(currentMin) {
     var list = CHIP_CHOICES.slice();
     if (list.indexOf(currentMin) === -1) list.push(currentMin);
     return list.sort(function (a, b) { return a - b; });
+  }
+
+  // Every kind of entry can be backdated the same way, so this renders on its
+  // own rather than inside any of the type-specific blocks below it.
+  // A native time control rather than a row of round numbers: on a phone it
+  // opens as a wheel already sitting on the moment this was logged, and
+  // winding it back is one continuous gesture instead of a search through
+  // fixed choices for the nearest one. No date on it — this is always today
+  // by construction, and touching a different day belongs to the manual form.
+  function renderTimeScroll(event) {
+    if (document.activeElement === el.timeScroll) return;
+    el.timeScroll.value = formatClockTime(new Date(event.time));
   }
 
   function renderNextUp() {
@@ -1840,14 +1868,23 @@
       hideNextUp();
       return;
     }
-    var planned = plannedMinutesFor(nextUpKind, event);
-    var when = new Date(new Date(event.time).getTime() + planned * MS_MIN);
+    // Waking up does not start a new gap, so there is no "next" to plan —
+    // but it still deserves the same time correction as everything else,
+    // which is the only reason this card shows for it at all.
+    var isWake = event.type === "sleep_end";
+    el.nextUpForecastBlock.hidden = isWake;
 
     el.nextUpTitle.textContent =
-      KIND_META[nextUpKind].logged + " at " + formatClockTime(new Date(event.time));
+      (isWake ? "Woke up" : KIND_META[nextUpKind].logged) + " at " + formatClockTime(new Date(event.time));
     renderRepeatWarning(event);
-    el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
-      ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
+    renderTimeScroll(event);
+
+    if (!isWake) {
+      var planned = plannedMinutesFor(nextUpKind, event);
+      var when = new Date(new Date(event.time).getTime() + planned * MS_MIN);
+      el.nextUpLine.innerHTML = "Next " + KIND_META[nextUpKind].label.toLowerCase() +
+        ' <span class="nextup-when">' + escapeHtml(formatWhen(when)) + '</span>';
+    }
 
     var isFeed = nextUpKind === "feed";
     var asksSource = isFeed && asksFedWith();
@@ -1897,19 +1934,23 @@
       });
     }
 
-    el.nextUpChips.innerHTML = "";
-    chipChoices(planned).forEach(function (mins) {
-      var chip = document.createElement("button");
-      chip.className = "nextup-chip" + (mins === planned ? " selected" : "");
-      chip.setAttribute("data-min", String(mins));
-      chip.textContent = formatDuration(mins * MS_MIN);
-      el.nextUpChips.appendChild(chip);
-    });
+    if (!isWake) {
+      el.nextUpChips.innerHTML = "";
+      chipChoices(planned).forEach(function (mins) {
+        var chip = document.createElement("button");
+        chip.className = "nextup-chip" + (mins === planned ? " selected" : "");
+        chip.setAttribute("data-min", String(mins));
+        chip.textContent = formatDuration(mins * MS_MIN);
+        el.nextUpChips.appendChild(chip);
+      });
+    }
   }
 
   function showNextUp(kind, eventId) {
     nextUpKind = kind;
     nextUpEventId = eventId;
+    var event = events.filter(function (e) { return e.id === eventId; })[0];
+    nextUpBaseTime = event ? +new Date(event.time) : Date.now();
     el.nextUp.hidden = false;
     renderNextUp();
     clearTimeout(nextUpTimer);
@@ -1952,6 +1993,47 @@
     var id = nextUpEventId;
     hideNextUp();
     if (id) deleteEvent(id);
+  });
+
+  // The button that just confirmed the tap still says when it was logged,
+  // and moving the time invalidates that — so every correction below
+  // refreshes it too, exactly as the chips elsewhere on this card already do.
+  function reconfirmLoggedButton() {
+    var buttons = { feed: [el.btnFeed, el.feedNote, "feed"],
+      diaper: [el.btnDiaper, el.diaperNote, "diaper"], sleep: [el.btnSleep, el.sleepNote, "sleep"] };
+    var target = buttons[nextUpKind];
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (target && event) confirmOnButton(target[0], target[1], target[2], new Date(event.time));
+  }
+
+  function applyTimeScroll(newTime) {
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+    event.time = newTime.toISOString();
+    touch(event);
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    reconfirmLoggedButton();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  }
+
+  el.timeScroll.addEventListener("input", function () {
+    if (!nextUpKind) return;
+    // Fires on every notch of the wheel, including the instant between
+    // picking the hour and picking the minute — a half-typed value is not
+    // acted on, it is simply waited out.
+    var m = /^(\d{2}):(\d{2})$/.exec(el.timeScroll.value);
+    if (!m) return;
+    var base = new Date(nextUpBaseTime);
+    applyTimeScroll(new Date(base.getFullYear(), base.getMonth(), base.getDate(),
+      +m[1], +m[2], 0, 0));
+  });
+
+  el.timeScrollNow.addEventListener("click", function () {
+    if (!nextUpKind) return;
+    applyTimeScroll(new Date(nextUpBaseTime));
   });
 
   el.sourceChips.addEventListener("click", function (ev) {
@@ -2135,10 +2217,12 @@
   });
 
   el.btnSleep.addEventListener("click", function () {
-    // Waking up does not start a new gap, so there is nothing to plan there.
     var sleeping = isSleepingNow();
     var id = quickLog(sleeping ? "sleep_end" : "sleep_start", el.btnSleep, el.sleepNote, "sleep");
-    if (id && !sleeping) showNextUp("sleep", id);
+    // Waking up does not start a new gap, so there is nothing to plan there —
+    // but the card still opens for it, purely for the time correction below,
+    // which renderNextUp hides the forecast half of when the event is a wake.
+    if (id) showNextUp("sleep", id);
   });
 
   // ---------- export ----------
