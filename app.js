@@ -26,7 +26,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "38";
+    var fallback = "39";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -217,6 +217,11 @@
   // assumes a UK Amazon the same way. There is no setting for it because
   // there is nowhere else in the app that would need one.
   var AMAZON_SEARCH = "https://www.amazon.co.uk/s?k=";
+  // Where an item stands before it is bought. "new" is the default and is
+  // never written explicitly by a human — tapping the pill only ever moves it
+  // forward, wrapping back to "new" so a mis-tap is one more tap from undone.
+  // Once ticked off (done), the status stops mattering and is not shown.
+  var SHOP_STATUSES = ["new", "ordered", "arrived"];
 
   var NEXTUP_TIMEOUT = 20000;
   // How long the button says what it just did. Long enough to be read by
@@ -4799,6 +4804,11 @@
       whatLabel: "What is needed",
       linkLabel: "Link",
       linkOptional: "— optional",
+      // Whichever of the two is on the pill is where a tap sends it next —
+      // said as the destination, not the current state, matching the tick's
+      // own "Mark as bought" / "Put it back" pattern.
+      statusLabel: { "new": "New", ordered: "Ordered", arrived: "Arrived" },
+      statusNext: { "new": "Mark as ordered", ordered: "Mark as arrived", arrived: "Mark as new" },
       add: "Add",
       save: "Save",
       cancel: "Cancel",
@@ -4816,13 +4826,14 @@
       added: "Added to the list",
       updated: "Item updated",
       removed: "Item deleted",
-      needText: "Type what is needed",
+      needText: "Type what is needed, or paste a link",
       badLink: "A link has to start with http:// or https://",
       quiet: "Nobody is told. There is no server behind this app and a web page cannot ring " +
         "a phone, so an item added at eight is seen when the other person next opens the app.",
-      amazonNote: "A link is opened by the phone, which hands it to the Amazon app if one is " +
-        "installed. Leave the link blank and the button searches Amazon UK for what you typed " +
-        "instead. Nothing is sent anywhere until somebody taps it.",
+      amazonNote: "Either box is enough on its own. A link with nothing typed shows as the " +
+        "link itself until you rename it; a name with no link searches Amazon UK for it " +
+        "instead. A link is opened by the phone, which hands it to the Amazon app if one is " +
+        "installed. Nothing is sent anywhere until somebody taps it.",
       // Read out on the handover screen, so the list is seen without a
       // separate trip to its own screen.
       handoverTitle: function (n) { return n === 1 ? "1 item to buy" : n + " items to buy"; },
@@ -4838,6 +4849,9 @@
       whatLabel: "Что нужно купить",
       linkLabel: "Ссылка",
       linkOptional: "— необязательно",
+      statusLabel: { "new": "Новое", ordered: "Заказано", arrived: "Приехало" },
+      statusNext: { "new": "Отметить заказанным", ordered: "Отметить прибывшим",
+        arrived: "Вернуть в «новое»" },
       add: "Добавить",
       save: "Сохранить",
       cancel: "Отмена",
@@ -4855,14 +4869,15 @@
       added: "Добавлено в список",
       updated: "Позиция изменена",
       removed: "Позиция удалена",
-      needText: "Напишите, что нужно купить",
+      needText: "Напишите, что нужно купить, или вставьте ссылку",
       badLink: "Ссылка должна начинаться с http:// или https://",
       quiet: "Никого не уведомит. Сервера за приложением нет, а веб-страница не может позвонить " +
         "на телефон, поэтому добавленное в восемь утра увидят, когда в следующий раз откроют " +
         "приложение.",
-      amazonNote: "Ссылку открывает телефон: если установлено приложение Amazon, он передаст её " +
-        "туда. Без ссылки кнопка ищет на Amazon UK то, что вы написали. Никуда ничего не " +
-        "уходит, пока кнопку не нажали.",
+      amazonNote: "Достаточно заполнить только одно поле. Если есть только ссылка, вместо " +
+        "названия покажется сама ссылка — пока её не переименуют; если есть только название, " +
+        "кнопка ищет его на Amazon UK. Ссылку открывает телефон: если установлено приложение " +
+        "Amazon, он передаст её туда. Никуда ничего не уходит, пока кнопку не нажали.",
       handoverTitle: function (n) {
         return pluralRu(n, "1 позиция на покупку", n + " позиции на покупку", n + " позиций на покупку");
       },
@@ -4920,9 +4935,9 @@
     if (link) item.link = link;
     if (raw.done) item.done = true;
     if (raw.deleted) item.deleted = true;
-    // A live item with nothing written on it is junk; a tombstone has nothing
-    // written on it by design.
-    if (!item.title && !item.deleted) return null;
+    // A live item needs a name or a link to be worth keeping — either is
+    // enough on its own. A tombstone has neither, by design.
+    if (!item.title && !item.link && !item.deleted) return null;
     var added = new Date(String(raw.addedAt || "").trim().replace(" ", "T"));
     var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
     item.updatedAt = isNaN(stamped.getTime()) ? new Date().toISOString() : stamped.toISOString();
@@ -4931,7 +4946,30 @@
       var ticked = new Date(String(raw.doneAt || "").trim().replace(" ", "T"));
       item.doneAt = isNaN(ticked.getTime()) ? item.updatedAt : ticked.toISOString();
     }
+    // Absent or unrecognised reads as "new" — the same thing an item added
+    // before this existed should read as.
+    item.status = SHOP_STATUSES.indexOf(String(raw.status)) >= 0 ? String(raw.status) : "new";
     return item;
+  }
+
+  // Read this way everywhere rather than trusting item.status to be set,
+  // because loadShopping() hands back whatever was written before this
+  // existed without normalising it.
+  function shopStatusOf(item) {
+    return SHOP_STATUSES.indexOf(item.status) >= 0 ? item.status : "new";
+  }
+
+  function nextShopStatus(status) {
+    var i = SHOP_STATUSES.indexOf(status);
+    return SHOP_STATUSES[(i + 1) % SHOP_STATUSES.length];
+  }
+
+  // A link with nothing typed is shown as the link itself, stripped of the
+  // part that says nothing — "amazon.co.uk/dp/…" rather than
+  // "https://www.amazon.co.uk/dp/…" — until somebody renames it.
+  function shopTitleText(item) {
+    if (item.title) return item.title;
+    return String(item.link || "").replace(/^https?:\/\/(www\.)?/i, "");
   }
 
   function liveShopping() {
@@ -4967,6 +5005,7 @@
       delete item.link;
       delete item.done;
       delete item.doneAt;
+      delete item.status;
       item.deleted = true;
       touch(item);
       changed++;
@@ -5022,13 +5061,25 @@
   }
 
   function addShopItem(title, link) {
-    var item = { id: uuid(), title: cleanText(title, MAX_SHOP_TITLE), addedAt: new Date().toISOString() };
+    var item = {
+      id: uuid(), title: cleanText(title, MAX_SHOP_TITLE), status: "new",
+      addedAt: new Date().toISOString()
+    };
     if (link) item.link = link;
     touch(item);
     shopping.push(item);
     if (!saveShopping(shopping)) return null;
     renderShopping();
     return item.id;
+  }
+
+  function setShopStatus(id, status) {
+    var target = shopping.filter(function (item) { return item.id === id; })[0];
+    if (!target) return;
+    target.status = status;
+    touch(target);
+    if (!saveShopping(shopping)) return;
+    renderShopping();
   }
 
   function setShopDone(id, done) {
@@ -5049,11 +5100,15 @@
   function deleteShopItem(id) {
     var target = shopping.filter(function (item) { return item.id === id; })[0];
     if (!target) return;
-    var carried = { title: target.title, link: target.link, done: target.done, doneAt: target.doneAt };
+    var carried = {
+      title: target.title, link: target.link, done: target.done, doneAt: target.doneAt,
+      status: target.status
+    };
     target.title = "";
     delete target.link;
     delete target.done;
     delete target.doneAt;
+    delete target.status;
     target.deleted = true;
     touch(target);
     if (!saveShopping(shopping)) return;
@@ -5067,6 +5122,7 @@
         target.done = true;
         target.doneAt = carried.doneAt;
       }
+      target.status = carried.status || "new";
       touch(target);
       if (!saveShopping(shopping)) return;
       renderShopping();
@@ -5103,16 +5159,18 @@
   function submitShopForm() {
     var T = sh();
     var title = cleanText(el.shopWhat.value, MAX_SHOP_TITLE);
-    if (!title) {
-      showError(T.needText);
-      el.shopWhat.focus();
-      return;
-    }
     var typed = cleanText(el.shopLink.value, MAX_SHOP_LINK);
     var link = safeLink(typed);
     if (typed && !link) {
       showError(T.badLink);
       el.shopLink.focus();
+      return;
+    }
+    // Either box is enough on its own — a link with nothing typed still
+    // names something, shown as the link itself until somebody renames it.
+    if (!title && !link) {
+      showError(T.needText);
+      el.shopWhat.focus();
       return;
     }
     hideError();
@@ -5149,13 +5207,19 @@
     tick.setAttribute("aria-pressed", item.done ? "true" : "false");
     tick.addEventListener("click", function () { setShopDone(item.id, !item.done); });
 
+    // A column of its own so the tappable "edit" area (a <button>, below) and
+    // the link (an <a>, which a button cannot legally contain) can sit one
+    // above the other without one being nested inside the other.
+    var content = document.createElement("div");
+    content.className = "shop-content";
+
     var body = document.createElement("button");
     body.type = "button";
     body.className = "shop-body";
     body.setAttribute("aria-label", T.edit);
     var title = document.createElement("div");
-    title.className = "shop-title";
-    title.textContent = item.title;
+    title.className = "shop-title" + (item.title ? "" : " is-link-only");
+    title.textContent = shopTitleText(item);
     var when = document.createElement("div");
     when.className = "shop-when";
     when.textContent = item.done
@@ -5164,6 +5228,23 @@
     body.appendChild(title);
     body.appendChild(when);
     body.addEventListener("click", function () { startShopEdit(item.id); });
+    content.appendChild(body);
+
+    var actions = document.createElement("div");
+    actions.className = "shop-actions";
+
+    // Before it is bought, one tap moves it on to the next stage; once
+    // bought, the journey is over and the pill would say nothing useful.
+    if (!item.done) {
+      var status = shopStatusOf(item);
+      var pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "shop-status st-" + status;
+      pill.textContent = T.statusLabel[status];
+      pill.setAttribute("aria-label", T.statusNext[status]);
+      pill.addEventListener("click", function () { setShopStatus(item.id, nextShopStatus(status)); });
+      actions.appendChild(pill);
+    }
 
     // A real anchor rather than a scripted open, so the phone treats it as an
     // ordinary link and hands it to whichever app claims that address.
@@ -5173,6 +5254,8 @@
     open.target = "_blank";
     open.rel = "noopener noreferrer";
     open.textContent = item.link ? T.openLink : T.searchAmazon;
+    actions.appendChild(open);
+    content.appendChild(actions);
 
     var remove = document.createElement("button");
     remove.type = "button";
@@ -5182,8 +5265,7 @@
     remove.addEventListener("click", function () { deleteShopItem(item.id); });
 
     row.appendChild(tick);
-    row.appendChild(body);
-    row.appendChild(open);
+    row.appendChild(content);
     row.appendChild(remove);
     return row;
   }

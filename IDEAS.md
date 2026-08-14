@@ -135,6 +135,23 @@ outstanding. Neither is a real notification — there still isn't a server —
 but between them the list is seen without a deliberate trip to its own screen,
 which is as close as this app gets to nagging anybody.
 
+**v39.** Two refinements once it was in daily use. A link on its own is now
+enough to add something — the name is filled in later, or left as the link
+itself, shown in italics as a visible placeholder rather than a blank. Fetching
+the real title from Amazon was asked for and is not possible without a request
+to Amazon's server, which stays off the table for the reason above; the link
+standing in for the name until somebody renames it is the honest middle
+ground.
+
+And a status ahead of "bought": **New → Ordered → Arrived**, a pill that
+states the next tap rather than the current state, cycling forward and
+wrapping back round so a mis-tap costs one more tap rather than a rebuild.
+Buying is still independent of it — the tick works from any status, New
+included, and the pill retires once something is bought, since there is
+nothing left to track. It stays a pre-purchase detail, not a fourth thing to
+maintain forever: resisting fields is still the right default, this one earned
+its place by being asked for directly.
+
 ## When the carer is here
 
 Which days the carer works and roughly how long — Monday to Thursday, six hours
