@@ -53,12 +53,34 @@ body {
   padding: calc(16px + var(--safe-top)) 20px 12px;
 }
 
+/* The main screen's header carries a growing row of buttons plus a clock —
+   more than one line holds once a fifth or sixth button joins it. Split into
+   two rows instead of shrinking anything: the icons get a full-width row of
+   their own, so a new button is room to add rather than another squeeze. */
+.topbar-main {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding-bottom: 10px;
+}
+.topbar-icons {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.topbar-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
 .topbar-date {
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
-  /* Never two lines: the buttons beside it keep their full size and the date
+  /* Never two lines: the clock beside it keeps its full size and the date
      gives way instead, on the narrowest phone there is. */
   white-space: nowrap;
   overflow: hidden;
@@ -71,6 +93,7 @@ body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
+  flex-shrink: 0;
 }
 
 .content {
@@ -882,6 +905,25 @@ body {
 }
 
 .icon-btn:active { opacity: 0.6; }
+
+.icon-btn-badged {
+  position: relative;
+}
+.icon-badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--accent-feed);
+  color: #1a0f00;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
 
 #settingsBack {
   font-size: 26px;
@@ -1736,3 +1778,96 @@ body {
   color: var(--text-dim);
   margin-top: 3px;
 }
+
+/* ---------- shopping list ---------- */
+
+.shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.shop-heading {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 10px 0 2px;
+}
+.shop-heading:first-child { margin-top: 0; }
+
+.shop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 10px 10px 4px;
+}
+.shop-item.is-done {
+  opacity: 0.55;
+}
+
+.shop-tick {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.shop-tick:active { opacity: 0.6; }
+
+.shop-body {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.shop-title {
+  font-size: 16px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.shop-item.is-done .shop-title {
+  text-decoration: line-through;
+}
+.shop-when {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.shop-open {
+  flex-shrink: 0;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 10px 12px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.shop-open:active { opacity: 0.7; }
+
+.shop-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 18px;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.shop-delete:active { opacity: 0.6; }

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
 
@@ -31,14 +31,17 @@
   <!-- ============ main screen ============ -->
   <div class="screen" id="screenMain">
 
-    <header class="topbar">
-      <div class="topbar-date" id="topDate">—</div>
-      <div class="topbar-right">
-        <span class="topbar-clock" id="topClock">--:--</span>
+    <header class="topbar topbar-main">
+      <div class="topbar-icons">
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
+        <button class="icon-btn icon-btn-badged" id="shopOpen" aria-label="Shopping list">🛒<span class="icon-badge" id="shopBadge" hidden>0</span></button>
         <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
+      </div>
+      <div class="topbar-status">
+        <div class="topbar-date" id="topDate">—</div>
+        <span class="topbar-clock" id="topClock">--:--</span>
       </div>
     </header>
 
@@ -305,8 +308,16 @@
             <p>For the moment somebody takes over — the other parent coming off a night, a grandparent, a nanny arriving at the door. It answers, in sentences, what they are about to ask: when the last feed was and how long it took, how many nappies and of what kind, how much sleep there has been, what is due next, and anything measured along the way.</p>
             <p>Above the words is the same stretch drawn as a strip: feeds on the top rail, nappies in the middle, sleep along the bottom, with time running left to right and ending at this minute. The darker bands are night. A timed feed is drawn as long as it took.</p>
             <p>Choose <strong>6</strong>, <strong>12</strong> or <strong>24 hours</strong>. It is always counted back from right now, never from midnight: at nine in the morning "today" is three hours old, which tells whoever has just arrived nothing about the night that has just gone.</p>
-            <p><strong>English or Russian.</strong> A second row of buttons switches the whole screen — the sentences, the dates, the counts and the temperature advice — between the two. The buttons are marked <strong>en</strong> and <strong>ru</strong> rather than with the languages' own names, so the chip that fixes an unreadable screen reads the same whichever language you have. The choice belongs to the handset: a carer can read Russian on her phone while yours stays in English, and it never travels over sync, a backup or a share link. Only this screen changes; the rest of the app is English for now. Names, appointments and anything else somebody typed stay exactly as they typed them — the app translates nobody's words, which would take a service to ask, and it asks nobody anything.</p>
+            <p><strong>English or Russian.</strong> A second row of buttons switches the whole screen — the sentences, the dates, the counts and the temperature advice — between the two. The buttons are marked <strong>en</strong> and <strong>ru</strong> rather than with the languages' own names, so the chip that fixes an unreadable screen reads the same whichever language you have. The choice belongs to the handset and is shared with the shopping list below: a carer can read Russian on both her screens while yours stay in English, and it never travels over sync, a backup or a share link. Only these two screens change; the rest of the app is English for now. Names, appointments and anything else somebody typed stay exactly as they typed them — the app translates nobody's words, which would take a service to ask, and it asks nobody anything.</p>
             <p>None of it leaves the phone. It is a page to read together, not something to send.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Shopping list (🛒)</h3>
+            <p>What is needed, and who is fetching it. Type what to buy and, if you like, paste a link — tapping <strong>Open</strong> hands that link straight to the Amazon app if one is installed on the phone. Leave the link blank and the button searches Amazon UK for whatever you typed instead.</p>
+            <p>Tick something off when it is bought. It stays crossed out under <strong>Bought</strong> for a day, so a mis-tap is easy to undo, then it clears itself.</p>
+            <p>The number on the top-bar icon is how many are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
+            <p>Reads in English or Russian, the same choice and the same button as the handover screen above. Whatever anybody types stays exactly as typed.</p>
           </article>
 
           <article class="info-card">
@@ -557,6 +568,44 @@
     </main>
   </div>
 
+  <!-- ============ shopping list screen ============ -->
+  <div class="screen" id="screenShop" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="shopBack" aria-label="Back">←</button>
+      <span class="topbar-heading" id="shopTitle">Shopping list</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <div class="ho-window">
+          <span class="ho-window-label" id="shopLangLabel">Language</span>
+          <div class="ho-chips" id="shopLangs"></div>
+        </div>
+
+        <div class="data-panel">
+          <label class="manual-field">
+            <span class="manual-label" id="shopWhatLabel">What is needed</span>
+            <input id="shopWhat" class="manual-input" type="text" maxlength="80" autocomplete="off">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label" id="shopLinkLabel">Link <span class="manual-optional">— optional</span></span>
+            <input id="shopLink" class="manual-input" type="url" maxlength="500" autocomplete="off" inputmode="url">
+          </label>
+          <button class="data-btn data-btn-import" id="shopSubmit">Add</button>
+          <button class="data-btn" id="shopCancel" hidden>Cancel</button>
+        </div>
+
+        <div class="shop-list" id="shopList"></div>
+
+        <p class="data-hint" id="shopQuiet"></p>
+        <p class="data-hint" id="shopAmazonNote"></p>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ ask an AI screen ============ -->
   <div class="screen" id="screenAi" hidden>
 
@@ -758,6 +807,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=36"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

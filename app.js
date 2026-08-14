@@ -26,7 +26,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "36";
+    var fallback = "38";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -193,8 +193,9 @@
   var HANDOVER_HOURS = [6, 12, 24];
   // Labelled with the two-letter code rather than the language's own name:
   // "en" and "ru" are read the same by everybody, which is what the chip that
-  // fixes an unreadable screen has to be.
-  var HANDOVER_LANGS = [
+  // fixes an unreadable screen has to be. Shared by every screen that offers
+  // the choice — handover today, the shopping list from v38.
+  var LANG_CHOICES = [
     { id: "en", label: "en" },
     { id: "ru", label: "ru" }
   ];
@@ -205,6 +206,17 @@
   var HANDOVER_SPREAD_WORTH_SAYING = 20 * MS_MIN;
   // Below this, "due" and "now" are the same word.
   var HANDOVER_DUE_NOW = 2 * MS_MIN;
+
+  var SHOPPING_KEY = "baby-tracker-shopping";
+  var MAX_SHOP_TITLE = 80;
+  var MAX_SHOP_LINK = 500;
+  // Long enough that a mis-tap is still undoable the same evening, short
+  // enough that "bought" does not quietly turn into a second, permanent list.
+  var SHOP_DONE_LINGER = 24 * MS_HOUR;
+  // Everything in the app so far has been UK English and NHS numbers; this
+  // assumes a UK Amazon the same way. There is no setting for it because
+  // there is nowhere else in the app that would need one.
+  var AMAZON_SEARCH = "https://www.amazon.co.uk/s?k=";
 
   var NEXTUP_TIMEOUT = 20000;
   // How long the button says what it just did. Long enough to be read by
@@ -570,6 +582,10 @@
   function pruneOnStartup() {
     prunedOnLoad = pruneTombstones();
     if (prunedOnLoad) saveEvents(events);
+    if (prunePlanTombstones()) savePlans(plans);
+    var shopRetired = retireBoughtShopping();
+    var shopPruned = pruneShopTombstones();
+    if (shopRetired || shopPruned) saveShopping(shopping);
   }
   var intervals = loadIntervals();
 
@@ -680,6 +696,22 @@
     handoverLangLabel: document.getElementById("handoverLangLabel"),
     handoverLangs: document.getElementById("handoverLangs"),
     handoverFooter: document.getElementById("handoverFooter"),
+    screenShop: document.getElementById("screenShop"),
+    shopOpenBtn: document.getElementById("shopOpen"),
+    shopBack: document.getElementById("shopBack"),
+    shopTitle: document.getElementById("shopTitle"),
+    shopLangLabel: document.getElementById("shopLangLabel"),
+    shopLangs: document.getElementById("shopLangs"),
+    shopWhatLabel: document.getElementById("shopWhatLabel"),
+    shopWhat: document.getElementById("shopWhat"),
+    shopLinkLabel: document.getElementById("shopLinkLabel"),
+    shopLink: document.getElementById("shopLink"),
+    shopBadge: document.getElementById("shopBadge"),
+    shopSubmit: document.getElementById("shopSubmit"),
+    shopCancel: document.getElementById("shopCancel"),
+    shopList: document.getElementById("shopList"),
+    shopQuiet: document.getElementById("shopQuiet"),
+    shopAmazonNote: document.getElementById("shopAmazonNote"),
     handoverWho: document.getElementById("handoverWho"),
     handoverWhen: document.getElementById("handoverWhen"),
     handoverHours: document.getElementById("handoverHours"),
@@ -2215,7 +2247,14 @@
   });
 
   el.exportJson.addEventListener("click", function () {
-    if (guardEmpty()) return;
+    // A full backup, not a log report — CSV, Markdown and the AI summary all
+    // guard on events because that is all they contain, but a family with
+    // appointments or a shopping list and nothing logged yet still has
+    // something worth saving here.
+    if (!liveEvents().length && !livePlans().length && !liveShopping().length) {
+      showToast("Nothing to export yet");
+      return;
+    }
     var payload = JSON.stringify({
       name: loadName(),
       nameFont: storedNameFont(),
@@ -2223,6 +2262,7 @@
       feeding: loadFeeding(),
       intervals: intervals,
       plans: plans,
+      shopping: shopping,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
@@ -2523,6 +2563,10 @@
       savePlans(plans);
       renderPlans();
     }
+    if (Array.isArray(parsed.shopping) && mergeShopping(parsed.shopping)) {
+      saveShopping(shopping);
+      renderShopping();
+    }
   }
 
   // Anything arriving from another phone or a file, made safe to store.
@@ -2695,6 +2739,7 @@
     el.screenAi.hidden = name !== "ai";
     el.screenPlan.hidden = name !== "plan";
     el.screenHandover.hidden = name !== "handover";
+    el.screenShop.hidden = name !== "shop";
     window.scrollTo(0, 0);
   }
 
@@ -3037,7 +3082,8 @@
         updatedAt: metaStamp()
       },
       events: events,
-      plans: plans
+      plans: plans,
+      shopping: shopping
     };
   }
 
@@ -3147,6 +3193,9 @@
         var remotePlans = Array.isArray(remoteDoc.plans) ? remoteDoc.plans : [];
         var pulledPlans = mergePlans(remotePlans);
         if (pulledPlans) savePlans(plans);
+        var remoteShopping = Array.isArray(remoteDoc.shopping) ? remoteDoc.shopping : [];
+        var pulledShopping = mergeShopping(remoteShopping);
+        if (pulledShopping) saveShopping(shopping);
 
         var remoteMeta = remoteDoc.meta;
         applyingRemote = true;
@@ -3182,6 +3231,7 @@
           applyingRemote = false;
         }
         if (pulledPlans) renderPlans();
+        if (pulledShopping) renderShopping();
         if (pulled || remoteMeta) renderAll();
 
         // Drop what has aged out before comparing, so the cleaned-up log is
@@ -3189,11 +3239,14 @@
         var pruned = pruneTombstones();
         if (pruned) saveEvents(events);
         if (prunePlanTombstones()) savePlans(plans);
+        var shopRetired = retireBoughtShopping();
+        var shopPruned = pruneShopTombstones();
+        if (shopRetired || shopPruned) saveShopping(shopping);
 
         var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
-          remotePlans.some(tombstoneExpired);
+          remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired);
         var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
-          remoteMissesOurPlans(remotePlans) ||
+          remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
         if (!mustPush) return { pulled: pulled, pushed: 0 };
 
@@ -4210,24 +4263,29 @@
   // the morning today is three hours old, and a handover measured that way
   // says nothing at all about the night the other person just had.
   var handoverHours = HANDOVER_DEFAULT_HOURS;
-  var handoverLang = storedHandoverLang();
+  var uiLang = storedUiLang();
 
-  // Which language this screen is read in — and only this screen; the rest of
-  // the app stays English for now. Deliberately kept out of the synced
-  // settings: the carer's phone reads Russian and the parents' read English at
-  // the same time, so one of them choosing must never change it for the others.
-  // It stays out of backups, reports and share links for the same reason.
-  function storedHandoverLang() {
+  // Which language the handover and shopping screens are read in — shared
+  // between them, since it is a property of the handset and the person
+  // holding it rather than of either screen. Deliberately kept out of the
+  // synced settings: the carer's phone reads Russian and the parents' read
+  // English at the same time, so one of them choosing must never change it
+  // for the others. It stays out of backups, reports and share links too.
+  function storedUiLang() {
     try { return localStorage.getItem(LANG_KEY) === "ru" ? "ru" : "en"; }
     catch (e) { return "en"; }
   }
 
-  function saveHandoverLang(id) {
+  function saveUiLang(id) {
     try { localStorage.setItem(LANG_KEY, id === "ru" ? "ru" : "en"); }
     catch (e) { showError("Couldn't save the language"); }
   }
 
-  function ho() { return HANDOVER_TEXT[handoverLang] || HANDOVER_TEXT.en; }
+  // A duration in whichever language is currently on, shared by every screen
+  // that states one rather than each carrying its own copy.
+  function uiDuration(ms) { return uiLang === "ru" ? durationRu(ms) : formatDuration(ms); }
+
+  function ho() { return HANDOVER_TEXT[uiLang] || HANDOVER_TEXT.en; }
 
   function handoverWindow() {
     var toMs = Date.now();
@@ -4487,6 +4545,7 @@
       handoverNappyRow(w, live),
       handoverSleepRow(w, analysis),
       handoverDueRow(analysis),
+      handoverShopRow(),
       handoverReadingRow(w, live),
       handoverPlanRow(w)
     ];
@@ -4631,6 +4690,35 @@
     return out.join("");
   }
 
+  // Shared by every screen that offers a language choice — handover and the
+  // shopping list both read it, so both build the same two buttons rather
+  // than each keeping its own copy that could drift out of step.
+  function buildLangChips(container) {
+    LANG_CHOICES.forEach(function (lang) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip ho-chip-lang";
+      // Never translated and never restyled by which language is on: whichever
+      // one somebody cannot read, both chips look the same to them.
+      btn.textContent = lang.label;
+      btn.addEventListener("click", function () {
+        uiLang = lang.id;
+        saveUiLang(lang.id);
+        renderHandover();
+        renderShopping();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  function markLangChips(container) {
+    Array.prototype.forEach.call(container.children, function (btn, i) {
+      var on = LANG_CHOICES[i].id === uiLang;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
   function buildHandoverChips() {
     HANDOVER_HOURS.forEach(function (hours) {
       var btn = document.createElement("button");
@@ -4642,21 +4730,7 @@
       });
       el.handoverHours.appendChild(btn);
     });
-    HANDOVER_LANGS.forEach(function (lang) {
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "ho-chip";
-      // Never translated and never restyled by which language is on: whichever
-      // one somebody cannot read, both chips look the same to them.
-      btn.textContent = lang.label;
-      btn.classList.add("ho-chip-lang");
-      btn.addEventListener("click", function () {
-        handoverLang = lang.id;
-        saveHandoverLang(lang.id);
-        renderHandover();
-      });
-      el.handoverLangs.appendChild(btn);
-    });
+    buildLangChips(el.handoverLangs);
   }
 
   function markHandoverChips() {
@@ -4667,11 +4741,7 @@
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
-    Array.prototype.forEach.call(el.handoverLangs.children, function (btn, i) {
-      var on = HANDOVER_LANGS[i].id === handoverLang;
-      btn.classList.toggle("on", on);
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
-    });
+    markLangChips(el.handoverLangs);
   }
 
   // The heading and the two labels a screen reader announces. Set at startup
@@ -4712,6 +4782,490 @@
   });
   el.handoverBack.addEventListener("click", showMain);
 
+
+  // ---------- a shopping list ----------
+
+  // Structurally the diary again: a list of records with an id, an updatedAt
+  // and a tombstone, merged by the same last-write-wins rule and carried in
+  // the same synced document. Where it differs is that ticking something off
+  // is a state and not a deletion — a mis-tap has to be undoable, and "bought
+  // this morning" is worth being able to see for the rest of the day.
+  var SHOPPING_TEXT = {
+    en: {
+      screenTitle: "Shopping list",
+      back: "Back",
+      langLabel: "Language",
+      badge: function (n) { return String(n); },
+      whatLabel: "What is needed",
+      linkLabel: "Link",
+      linkOptional: "— optional",
+      add: "Add",
+      save: "Save",
+      cancel: "Cancel",
+      empty: "Nothing on the list.",
+      toBuy: "To buy",
+      bought: "Bought",
+      addedAgo: function (dur) { return "added " + dur + " ago"; },
+      boughtAgo: function (dur) { return "bought " + dur + " ago"; },
+      openLink: "🛒 Open",
+      searchAmazon: "🛒 Amazon",
+      markBought: "Mark as bought",
+      markNotBought: "Put it back on the list",
+      remove: "Delete",
+      edit: "Edit item",
+      added: "Added to the list",
+      updated: "Item updated",
+      removed: "Item deleted",
+      needText: "Type what is needed",
+      badLink: "A link has to start with http:// or https://",
+      quiet: "Nobody is told. There is no server behind this app and a web page cannot ring " +
+        "a phone, so an item added at eight is seen when the other person next opens the app.",
+      amazonNote: "A link is opened by the phone, which hands it to the Amazon app if one is " +
+        "installed. Leave the link blank and the button searches Amazon UK for what you typed " +
+        "instead. Nothing is sent anywhere until somebody taps it.",
+      // Read out on the handover screen, so the list is seen without a
+      // separate trip to its own screen.
+      handoverTitle: function (n) { return n === 1 ? "1 item to buy" : n + " items to buy"; },
+      handoverLine: function (titles, more) {
+        return titles.join(", ") + (more ? " and " + more + " more." : ".");
+      }
+    },
+    ru: {
+      screenTitle: "Список покупок",
+      back: "Назад",
+      langLabel: "Язык",
+      badge: function (n) { return String(n); },
+      whatLabel: "Что нужно купить",
+      linkLabel: "Ссылка",
+      linkOptional: "— необязательно",
+      add: "Добавить",
+      save: "Сохранить",
+      cancel: "Отмена",
+      empty: "В списке пусто.",
+      toBuy: "Нужно купить",
+      bought: "Куплено",
+      addedAgo: function (dur) { return "добавлено " + dur + " назад"; },
+      boughtAgo: function (dur) { return "куплено " + dur + " назад"; },
+      openLink: "🛒 Открыть",
+      searchAmazon: "🛒 Amazon",
+      markBought: "Отметить купленным",
+      markNotBought: "Вернуть в список",
+      remove: "Удалить",
+      edit: "Изменить позицию",
+      added: "Добавлено в список",
+      updated: "Позиция изменена",
+      removed: "Позиция удалена",
+      needText: "Напишите, что нужно купить",
+      badLink: "Ссылка должна начинаться с http:// или https://",
+      quiet: "Никого не уведомит. Сервера за приложением нет, а веб-страница не может позвонить " +
+        "на телефон, поэтому добавленное в восемь утра увидят, когда в следующий раз откроют " +
+        "приложение.",
+      amazonNote: "Ссылку открывает телефон: если установлено приложение Amazon, он передаст её " +
+        "туда. Без ссылки кнопка ищет на Amazon UK то, что вы написали. Никуда ничего не " +
+        "уходит, пока кнопку не нажали.",
+      handoverTitle: function (n) {
+        return pluralRu(n, "1 позиция на покупку", n + " позиции на покупку", n + " позиций на покупку");
+      },
+      handoverLine: function (titles, more) {
+        return titles.join(", ") + (more ? " и ещё " + more + "." : ".");
+      }
+    }
+  };
+
+  function sh() { return SHOPPING_TEXT[uiLang] || SHOPPING_TEXT.en; }
+
+  var shopping = loadShopping();
+  var editingShopId = null;
+
+  function loadShopping() {
+    try {
+      var raw = localStorage.getItem(SHOPPING_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read your shopping list");
+      return [];
+    }
+  }
+
+  function saveShopping(list) {
+    try {
+      localStorage.setItem(SHOPPING_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
+    }
+  }
+
+  // This list is the one place in the app where something one person typed
+  // becomes a link on somebody else's phone, so only an ordinary web address
+  // is ever allowed through. A pasted "javascript:" would otherwise be one
+  // tap away, and it would be a tap the other person had no reason to distrust.
+  function safeLink(raw) {
+    var text = cleanText(raw, MAX_SHOP_LINK);
+    if (!text) return "";
+    return /^https?:\/\/\S+$/i.test(text) ? text : "";
+  }
+
+  // Anything arriving from another phone or a file, made safe to store.
+  function normaliseShopItem(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var item = { id: id, title: cleanText(raw.title, MAX_SHOP_TITLE) };
+    var link = safeLink(raw.link);
+    if (link) item.link = link;
+    if (raw.done) item.done = true;
+    if (raw.deleted) item.deleted = true;
+    // A live item with nothing written on it is junk; a tombstone has nothing
+    // written on it by design.
+    if (!item.title && !item.deleted) return null;
+    var added = new Date(String(raw.addedAt || "").trim().replace(" ", "T"));
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    item.updatedAt = isNaN(stamped.getTime()) ? new Date().toISOString() : stamped.toISOString();
+    item.addedAt = isNaN(added.getTime()) ? item.updatedAt : added.toISOString();
+    if (item.done) {
+      var ticked = new Date(String(raw.doneAt || "").trim().replace(" ", "T"));
+      item.doneAt = isNaN(ticked.getTime()) ? item.updatedAt : ticked.toISOString();
+    }
+    return item;
+  }
+
+  function liveShopping() {
+    return shopping.filter(function (item) { return !isDeleted(item); });
+  }
+
+  // Oldest first: a list where the thing somebody forgot sinks to the bottom
+  // is a list that forgets it again.
+  function outstandingShopping() {
+    return liveShopping().filter(function (item) { return !item.done; })
+      .sort(function (a, b) { return a.addedAt > b.addedAt ? 1 : -1; });
+  }
+
+  function boughtShopping() {
+    var now = Date.now();
+    return liveShopping().filter(function (item) {
+      return item.done && now - +new Date(item.doneAt || item.updatedAt) < SHOP_DONE_LINGER;
+    }).sort(function (a, b) { return a.doneAt > b.doneAt ? -1 : 1; });
+  }
+
+  // A bought item stays in view for a day so a mis-tap can be undone, then it
+  // is retired as a tombstone rather than merely hidden — otherwise every
+  // phone keeps a growing list of things bought last month and hands them
+  // back to each other forever. Both phones work the rule out from the same
+  // two fields, so they agree on it without discussing it.
+  function retireBoughtShopping() {
+    var now = Date.now();
+    var changed = 0;
+    shopping.forEach(function (item) {
+      if (isDeleted(item) || !item.done) return;
+      if (now - +new Date(item.doneAt || item.updatedAt) < SHOP_DONE_LINGER) return;
+      item.title = "";
+      delete item.link;
+      delete item.done;
+      delete item.doneAt;
+      item.deleted = true;
+      touch(item);
+      changed++;
+    });
+    return changed;
+  }
+
+  function pruneShopTombstones() {
+    var before = shopping.length;
+    shopping = shopping.filter(function (item) { return !tombstoneExpired(item); });
+    return before - shopping.length;
+  }
+
+  function mergeShopping(remoteList) {
+    var byId = {};
+    shopping.forEach(function (item) { byId[item.id] = item; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var item = normaliseShopItem(raw);
+      if (!item || !item.id) return;
+      if (tombstoneExpired(item)) return;
+      var existing = byId[item.id];
+      if (!existing) {
+        shopping.push(item);
+        byId[item.id] = item;
+        changed++;
+      } else if (item.updatedAt > updatedAtOf(existing)) {
+        shopping[shopping.indexOf(existing)] = item;
+        byId[item.id] = item;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteMissesOurShopping(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (item) {
+      if (item && item.id) remoteById[item.id] = item;
+    });
+    return shopping.some(function (item) {
+      var mirror = remoteById[item.id];
+      return !mirror || updatedAtOf(item) > (mirror.updatedAt || "");
+    });
+  }
+
+  // Where a tap on the trolley goes. A link the phone recognises is handed to
+  // whichever app claims that address by the phone itself — nothing here
+  // arranges that, and nothing here is sent until somebody taps.
+  function shopLinkFor(item) {
+    if (item.link) return item.link;
+    return AMAZON_SEARCH + encodeURIComponent(item.title);
+  }
+
+  function addShopItem(title, link) {
+    var item = { id: uuid(), title: cleanText(title, MAX_SHOP_TITLE), addedAt: new Date().toISOString() };
+    if (link) item.link = link;
+    touch(item);
+    shopping.push(item);
+    if (!saveShopping(shopping)) return null;
+    renderShopping();
+    return item.id;
+  }
+
+  function setShopDone(id, done) {
+    var target = shopping.filter(function (item) { return item.id === id; })[0];
+    if (!target) return;
+    if (done) {
+      target.done = true;
+      target.doneAt = new Date().toISOString();
+    } else {
+      delete target.done;
+      delete target.doneAt;
+    }
+    touch(target);
+    if (!saveShopping(shopping)) return;
+    renderShopping();
+  }
+
+  function deleteShopItem(id) {
+    var target = shopping.filter(function (item) { return item.id === id; })[0];
+    if (!target) return;
+    var carried = { title: target.title, link: target.link, done: target.done, doneAt: target.doneAt };
+    target.title = "";
+    delete target.link;
+    delete target.done;
+    delete target.doneAt;
+    target.deleted = true;
+    touch(target);
+    if (!saveShopping(shopping)) return;
+    renderShopping();
+    var T = sh();
+    showToast(T.removed, function () {
+      delete target.deleted;
+      target.title = carried.title;
+      if (carried.link) target.link = carried.link;
+      if (carried.done) {
+        target.done = true;
+        target.doneAt = carried.doneAt;
+      }
+      touch(target);
+      if (!saveShopping(shopping)) return;
+      renderShopping();
+    });
+  }
+
+  function startShopEdit(id) {
+    var target = liveShopping().filter(function (item) { return item.id === id; })[0];
+    if (!target) return;
+    editingShopId = id;
+    el.shopWhat.value = target.title;
+    el.shopLink.value = target.link || "";
+    renderShopForm();
+    el.shopWhat.focus();
+  }
+
+  function cancelShopEdit() {
+    editingShopId = null;
+    el.shopWhat.value = "";
+    el.shopLink.value = "";
+    renderShopForm();
+  }
+
+  function renderShopForm() {
+    var T = sh();
+    el.shopWhatLabel.textContent = T.whatLabel;
+    el.shopLinkLabel.innerHTML = escapeHtml(T.linkLabel) + ' <span class="manual-optional">' +
+      escapeHtml(T.linkOptional) + '</span>';
+    el.shopSubmit.textContent = editingShopId ? T.save : T.add;
+    el.shopCancel.textContent = T.cancel;
+    el.shopCancel.hidden = !editingShopId;
+  }
+
+  function submitShopForm() {
+    var T = sh();
+    var title = cleanText(el.shopWhat.value, MAX_SHOP_TITLE);
+    if (!title) {
+      showError(T.needText);
+      el.shopWhat.focus();
+      return;
+    }
+    var typed = cleanText(el.shopLink.value, MAX_SHOP_LINK);
+    var link = safeLink(typed);
+    if (typed && !link) {
+      showError(T.badLink);
+      el.shopLink.focus();
+      return;
+    }
+    hideError();
+    if (editingShopId) {
+      var target = shopping.filter(function (item) { return item.id === editingShopId; })[0];
+      if (target) {
+        target.title = title;
+        if (link) target.link = link; else delete target.link;
+        touch(target);
+        if (!saveShopping(shopping)) return;
+      }
+      cancelShopEdit();
+      renderShopping();
+      showToast(T.updated);
+      return;
+    }
+    if (!addShopItem(title, link)) return;
+    el.shopWhat.value = "";
+    el.shopLink.value = "";
+    el.shopWhat.focus();
+    showToast(T.added);
+  }
+
+  function shopRow(item) {
+    var T = sh();
+    var row = document.createElement("div");
+    row.className = "shop-item" + (item.done ? " is-done" : "");
+
+    var tick = document.createElement("button");
+    tick.type = "button";
+    tick.className = "shop-tick";
+    tick.textContent = item.done ? "☑" : "☐";
+    tick.setAttribute("aria-label", item.done ? T.markNotBought : T.markBought);
+    tick.setAttribute("aria-pressed", item.done ? "true" : "false");
+    tick.addEventListener("click", function () { setShopDone(item.id, !item.done); });
+
+    var body = document.createElement("button");
+    body.type = "button";
+    body.className = "shop-body";
+    body.setAttribute("aria-label", T.edit);
+    var title = document.createElement("div");
+    title.className = "shop-title";
+    title.textContent = item.title;
+    var when = document.createElement("div");
+    when.className = "shop-when";
+    when.textContent = item.done
+      ? T.boughtAgo(uiDuration(Date.now() - +new Date(item.doneAt || item.updatedAt)))
+      : T.addedAgo(uiDuration(Date.now() - +new Date(item.addedAt || item.updatedAt)));
+    body.appendChild(title);
+    body.appendChild(when);
+    body.addEventListener("click", function () { startShopEdit(item.id); });
+
+    // A real anchor rather than a scripted open, so the phone treats it as an
+    // ordinary link and hands it to whichever app claims that address.
+    var open = document.createElement("a");
+    open.className = "shop-open";
+    open.href = shopLinkFor(item);
+    open.target = "_blank";
+    open.rel = "noopener noreferrer";
+    open.textContent = item.link ? T.openLink : T.searchAmazon;
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "shop-delete";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.remove);
+    remove.addEventListener("click", function () { deleteShopItem(item.id); });
+
+    row.appendChild(tick);
+    row.appendChild(body);
+    row.appendChild(open);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function renderShopList() {
+    var T = sh();
+    el.shopList.innerHTML = "";
+    var waiting = outstandingShopping();
+    var done = boughtShopping();
+    if (!waiting.length && !done.length) {
+      var empty = document.createElement("div");
+      empty.className = "log-empty";
+      empty.textContent = T.empty;
+      el.shopList.appendChild(empty);
+      return;
+    }
+    [[T.toBuy, waiting], [T.bought, done]].forEach(function (pair) {
+      if (!pair[1].length) return;
+      var heading = document.createElement("div");
+      heading.className = "shop-heading";
+      heading.textContent = pair[0];
+      el.shopList.appendChild(heading);
+      pair[1].forEach(function (item) { el.shopList.appendChild(shopRow(item)); });
+    });
+  }
+
+  function applyShopChrome() {
+    var T = sh();
+    el.shopTitle.textContent = T.screenTitle;
+    el.shopBack.setAttribute("aria-label", T.back);
+    el.shopOpenBtn.setAttribute("aria-label", T.screenTitle);
+    el.shopLangLabel.textContent = T.langLabel;
+    el.shopQuiet.textContent = T.quiet;
+    el.shopAmazonNote.textContent = T.amazonNote;
+  }
+
+  // A small count on the top-bar icon, so the list is visible without opening
+  // it — the only way this app can hint that something needs doing, having no
+  // server to send a real notification from.
+  function renderShopBadge() {
+    var n = outstandingShopping().length;
+    el.shopBadge.textContent = sh().badge(n);
+    el.shopBadge.hidden = n === 0;
+  }
+
+  function renderShopping() {
+    renderShopBadge();
+    if (el.screenShop.hidden) return;
+    applyShopChrome();
+    markLangChips(el.shopLangs);
+    renderShopForm();
+    renderShopList();
+  }
+
+  // Read out on the handover screen: three names is a glance, and the count
+  // covers whatever does not fit.
+  var HANDOVER_SHOP_NAMES = 3;
+  function handoverShopRow() {
+    var waiting = outstandingShopping();
+    if (!waiting.length) return null;
+    var T = sh();
+    var shown = waiting.slice(0, HANDOVER_SHOP_NAMES).map(function (item) { return item.title; });
+    var more = waiting.length - shown.length;
+    return { icon: "🛒", title: T.handoverTitle(waiting.length),
+      details: [T.handoverLine(shown, more)] };
+  }
+
+  el.shopOpenBtn.addEventListener("click", function () {
+    showScreen("shop");
+    cancelShopEdit();
+    renderShopping();
+  });
+  el.shopBack.addEventListener("click", showMain);
+  el.shopSubmit.addEventListener("click", submitShopForm);
+  el.shopCancel.addEventListener("click", cancelShopEdit);
+  [el.shopWhat, el.shopLink].forEach(function (input) {
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      submitShopForm();
+    });
+  });
 
   // ---------- ask an AI ----------
 
@@ -5276,9 +5830,11 @@
     renderTempBanner();
     renderMeasurements();
     renderPlanSoon();
+    renderShopBadge();
     // Only while it is being looked at: it reads the whole log, and nobody is
     // served by rebuilding it behind a screen nobody is on.
     if (!el.screenHandover.hidden) renderHandover();
+    if (!el.screenShop.hidden) renderShopping();
     if (withLog) renderLog();
   }
 
@@ -5292,6 +5848,8 @@
   renderVersion();
   buildHandoverChips();
   applyHandoverChrome();
+  buildLangChips(el.shopLangs);
+  applyShopChrome();
   renderNameFonts();
   renderZone();
   toggleNameFonts(false);
