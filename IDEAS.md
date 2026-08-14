@@ -84,6 +84,36 @@ compared, and today drawn as a bar beside six complete ones is the same mistake
 the AI summary had to be taught out of. Either leave today off the chart, or
 mark it plainly as unfinished.
 
+## The rest of the app in a second language
+
+The handover reads in Russian from v35. Nothing else does, and that was a
+deliberate stopping point rather than an unfinished job: it is the one screen
+somebody who cannot read English has to read every day.
+
+What the machinery already provides, if this goes further: a strings table with
+both languages side by side, three-form plurals, genitive months, Russian
+durations, comma decimals, and the rule that no sentence may require a gender
+for the baby. Copy that shape; do not invent a second one.
+
+**What the next step would cost.** The screens a carer actually touches — the
+three buttons, the card after a tap, the history, the manual form — are roughly
+another 120 strings and 25 sentences. That leaves the app visibly half
+translated: Settings, Help, the exports and the AI screen would still be
+English. Ugly, but a carer never opens those.
+
+**What full translation would cost, and why it is not obviously worth it.** The
+Help screen is about 3,100 words — around nine tenths of all the text in the
+app — and it is not ordinary prose: NHS routing, the red flags that mean 999,
+safer sleep, temperature thresholds. Translating that is a responsibility, not
+a task, and every future edit is then made twice. The AI prompt is another
+question again: if the interface is Russian the prompt should probably go out
+in Russian so the answer comes back in Russian, which means re-writing the
+part-day warnings that took several attempts to get right in English.
+
+**Leave the exports in English whichever way this goes.** A CSV or a Markdown
+report may end up in front of a doctor, and stable column headings are worth
+more than a translated one.
+
 ## A shopping list
 
 The carer adds nappies size 2, a parent buys them and ticks them off.

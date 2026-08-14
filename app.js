@@ -12,6 +12,10 @@
   var FEEDING_KEY = "baby-tracker-feeding";
   var PLANS_KEY = "baby-tracker-plans";
   var NAME_FONT_KEY = "baby-tracker-name-font";
+  // Which language the handover screen is read in. A property of the handset
+  // and the person holding it, not of the baby, so unlike the name and its
+  // style this one never travels between phones.
+  var LANG_KEY = "baby-tracker-lang";
   var SYNC_PATH = "baby-tracker-log.json";
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
@@ -22,7 +26,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "34";
+    var fallback = "35";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -187,6 +191,12 @@
   // twelve covers the night somebody else had, and a full day is there for
   // the appointment where all of it gets asked about at once.
   var HANDOVER_HOURS = [6, 12, 24];
+  // Each written in its own language, so the chip that fixes an unreadable
+  // screen is legible from that screen.
+  var HANDOVER_LANGS = [
+    { id: "en", label: "English" },
+    { id: "ru", label: "Русский" }
+  ];
   var HANDOVER_DEFAULT_HOURS = 12;
   // Whoever is taking over needs today and tomorrow, not the term ahead.
   var HANDOVER_PLAN_HORIZON = 2 * MS_DAY;
@@ -664,6 +674,11 @@
     screenHandover: document.getElementById("screenHandover"),
     handoverOpenBtn: document.getElementById("handoverOpen"),
     handoverBack: document.getElementById("handoverBack"),
+    handoverTitle: document.getElementById("handoverTitle"),
+    handoverWindowLabel: document.getElementById("handoverWindowLabel"),
+    handoverLangLabel: document.getElementById("handoverLangLabel"),
+    handoverLangs: document.getElementById("handoverLangs"),
+    handoverFooter: document.getElementById("handoverFooter"),
     handoverWho: document.getElementById("handoverWho"),
     handoverWhen: document.getElementById("handoverWhen"),
     handoverHours: document.getElementById("handoverHours"),
@@ -3857,6 +3872,336 @@
     showScreen("plan");
   });
 
+  // ---------- handover: the words ----------
+
+  // Russian counts in three forms, and which one you need depends on the last
+  // digit: 1 кормление, 2 кормления, 5 кормлений — with the teens breaking the
+  // rule they otherwise look like they follow.
+  function pluralRu(n, one, few, many) {
+    var ten = n % 10;
+    var hundred = n % 100;
+    if (ten === 1 && hundred !== 11) return one;
+    if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return few;
+    return many;
+  }
+
+  // Months in the genitive, because a Russian date reads "13 августа" and
+  // never "13 август".
+  var MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  var WEEKDAYS_RU = ["воскресенье", "понедельник", "вторник", "среда",
+    "четверг", "пятница", "суббота"];
+
+  function durationRu(ms) {
+    if (ms < 0) ms = 0;
+    var totalMin = Math.floor(ms / MS_MIN);
+    var h = Math.floor(totalMin / 60);
+    var m = totalMin % 60;
+    if (h <= 0) return m + " мин";
+    if (m === 0) return h + " ч";
+    return h + " ч " + m + " мин";
+  }
+
+  function ageRu(days) {
+    if (days === null || days < 0) return "";
+    if (days < 14) return days + "-й день";
+    var weeks = Math.floor(days / 7);
+    var rest = days % 7;
+    if (weeks < 9) {
+      return weeks + " " + pluralRu(weeks, "неделя", "недели", "недель") +
+        (rest ? " " + rest + " " + pluralRu(rest, "день", "дня", "дней") : "");
+    }
+    var months = Math.floor(days / 30.44);
+    return months + " " + pluralRu(months, "месяц", "месяца", "месяцев");
+  }
+
+  var MEASURE_RU = {
+    weight: "Вес",
+    height: "Рост",
+    temp: "Температура",
+    head: "Окружность головы",
+    other: ""
+  };
+
+  // A decimal point is a thousands separator to a Russian reader, so 37.2 has
+  // to become 37,2 before it goes on screen.
+  function measureValueRu(event) {
+    var value = measureValueOf(event);
+    var comma = function (shown) { return String(shown).replace(".", ","); };
+    if (event.type === "weight") return comma(Math.round(value) / 1000) + " кг";
+    if (event.type === "temp") return comma(value.toFixed(1)) + " °C";
+    if (event.type === "height" || event.type === "head") return comma(value.toFixed(1)) + " см";
+    var unit = measureUnitOf(event);
+    return comma(Number(value.toFixed(2))) + (unit ? " " + unit : "");
+  }
+
+  // Every sentence on the handover screen, in both languages, written as
+  // functions rather than as strings with holes punched in them. Russian puts
+  // the words in a different order from English and bends their endings to
+  // match what is being counted, so a fragment translated on its own comes out
+  // wrong however carefully it is translated. The two halves of each entry sit
+  // next to each other on purpose: that is the only thing stopping them
+  // drifting apart as the screen changes.
+  //
+  // Nothing here says "he" or "she". The app is never told which, and Russian
+  // verbs in the past tense would have to pick one, so every line is phrased
+  // around a noun instead — "Сон начался", not "он заснул".
+  var HANDOVER_TEXT = {
+    en: {
+      screenTitle: "Handover",
+      back: "Back",
+      windowLabel: "The last",
+      langLabel: "Language",
+      hours: function (n) { return n + " hours"; },
+      noName: "The baby",
+      age: function (days) { return formatAge(days); },
+      now: function (clock, date, hours) {
+        return "It is " + clock + " on " + date + ". Everything below covers the last " +
+          hours + ", up to this minute.";
+      },
+      empty: "Nothing has been logged in this stretch.",
+      footer: "All of this is worked out from what has been logged. Anything nobody " +
+        "tapped in is not here — a quiet strip can mean a quiet night or a phone left " +
+        "in another room.",
+      stripLabel: function (hours) {
+        return "The last " + hours + " drawn as a strip. Everything marked on it is " +
+          "written out in words underneath.";
+      },
+
+      duration: function (ms) { return formatDuration(ms); },
+      dateHeader: function (date) { return formatDateHeader(date); },
+      // The day word trails the time in English and leads it in Russian, which
+      // is exactly why this cannot be assembled from shared pieces.
+      at: function (date, day) {
+        var time = formatClockTime(date);
+        if (day === "today") return "at " + time;
+        if (day === "yesterday") return "at " + time + " yesterday";
+        if (day === "tomorrow") return "at " + time + " tomorrow";
+        return "at " + time + " on " + formatDateHeader(date);
+      },
+      ago: function (ms) { return formatDuration(ms) + " ago"; },
+
+      asleepFor: function (dur) { return "Asleep for " + dur; },
+      wentDown: function (at) { return "Went down " + at + "."; },
+      longSleep: "That is a long stretch — the wake-up may never have been logged.",
+      awake: "Awake",
+      woke: function (atAgo) { return "Woke " + atAgo + "."; },
+
+      feeds: function (n) { return n + (n === 1 ? " feed" : " feeds"); },
+      noFeeds: "No feeds",
+      lastFeed: function (atAgo, extras) {
+        return "Last " + atAgo + (extras ? " — " + extras : "") + ".";
+      },
+      feedLength: function (dur) { return dur + " on it"; },
+      feedSource: function (source) { return source.label.toLowerCase(); },
+      nothingLogged: "Nothing has been logged yet.",
+      spacing: function (middle, shortest, longest) {
+        return "About " + middle + " apart" +
+          (shortest ? " — anything from " + shortest + " to " + longest : "") + ".";
+      },
+      feedingTotal: function (dur, timed, all) {
+        return dur + " spent feeding" + (timed
+          ? ", though only " + timed + " of the " + all + (timed === 1 ? " was timed." : " were timed.")
+          : ".");
+      },
+
+      nappies: function (n) { return n + (n === 1 ? " nappy" : " nappies"); },
+      noNappies: "No nappies",
+      wet: function (n) { return n + " wet"; },
+      dirty: function (n) { return n + " dirty"; },
+      dry: function (n) { return n + " dry"; },
+      unsaid: function (n) { return n + " not recorded"; },
+      lastNappy: function (atAgo) { return "Last " + atAgo + "."; },
+      noDirty: function (atAgo) {
+        return "Nothing dirty in this stretch — the last was " + atAgo + ".";
+      },
+
+      asleepTotal: function (dur) { return dur + " asleep"; },
+      noSleep: "No sleep logged",
+      stretches: function (n, longest) {
+        return "In " + n + (n === 1 ? " stretch" : " stretches") +
+          (longest ? ", the longest " + longest : "") + ".";
+      },
+      clipped: "One of those began before this stretch and is counted only from where it starts.",
+
+      dueTitle: "Due next",
+      kind: function (kind) { return KIND_META[kind].label; },
+      dueIn: function (dur) { return "in " + dur; },
+      dueLate: function (dur) { return "was due " + dur + " ago"; },
+      dueNow: "due about now",
+      dueLine: function (icon, label, phrase, at) {
+        return icon + " " + label + " " + phrase + ", " + at + ".";
+      },
+      dueAsleep: function (icon, label) { return icon + " " + label + " — asleep right now."; },
+      dueNote: "These come off the plan in Settings, not off the baby.",
+
+      readingsTitle: "Readings taken",
+      readingLine: function (event, at) {
+        var named = MEASURES[event.type].freeform ? "" : MEASURES[event.type].label + " ";
+        return named + measureLine(event) + " " + at + ".";
+      },
+      tempHigh: function (event) {
+        return formatMeasure("temp", measureValueOf(event)) + " is a high temperature.";
+      },
+      tempHighAdvice: function (knowsAge) {
+        return knowsAge
+          ? "Call an ambulance straight away for a baby this age — 999 in the UK, 112 across " +
+            "Europe. For anything less urgent, NHS 111 in the UK, or your doctor."
+          : "At 38°C or above in a baby under 3 months, call an ambulance now — 999 in the UK, " +
+            "112 across Europe. Set the date of birth in Settings and this will use the right " +
+            "threshold for your baby's age.";
+      },
+      tempLow: function (event) {
+        return formatMeasure("temp", measureValueOf(event)) + " is low.";
+      },
+      tempLowAdvice: "A temperature below 36°C in a baby needs checking — ring your doctor, or " +
+        "NHS 111 in the UK. Call an ambulance (999, or 112 across Europe) if they are also " +
+        "floppy, pale or hard to wake.",
+
+      planTitle: "Coming up",
+      planWhen: function (date, hasTime, day) {
+        var named = day === "today" ? "Today" : day === "tomorrow" ? "Tomorrow"
+          : day === "yesterday" ? "Yesterday" : formatDateHeader(date);
+        return hasTime ? named + " at " + formatClockTime(date) : named;
+      },
+      planLine: function (when, title, place) {
+        return when + " — " + title + (place ? ", " + place : "") + ".";
+      }
+    },
+
+    ru: {
+      screenTitle: "Передача смены",
+      back: "Назад",
+      windowLabel: "Последние",
+      langLabel: "Язык",
+      hours: function (n) { return n + " " + pluralRu(n, "час", "часа", "часов"); },
+      noName: "Ребёнок",
+      age: function (days) { return ageRu(days); },
+      now: function (clock, date, hours) {
+        return "Сейчас " + clock + ", " + date + ". Всё ниже — за последние " +
+          hours + ", до текущей минуты.";
+      },
+      empty: "За это время ничего не записано.",
+      footer: "Всё это посчитано по тому, что записали. Чего никто не отметил — здесь нет: " +
+        "пустая полоска может значить и спокойную ночь, и телефон, забытый в другой комнате.",
+      stripLabel: function (hours) {
+        return "Последние " + hours + " в виде полоски. Всё, что на ней отмечено, ниже " +
+          "написано словами.";
+      },
+
+      duration: function (ms) { return durationRu(ms); },
+      dateHeader: function (date) {
+        return WEEKDAYS_RU[date.getDay()] + ", " + date.getDate() + " " + MONTHS_RU[date.getMonth()];
+      },
+      at: function (date, day) {
+        var time = formatClockTime(date);
+        if (day === "today") return "в " + time;
+        if (day === "yesterday") return "вчера в " + time;
+        if (day === "tomorrow") return "завтра в " + time;
+        return date.getDate() + " " + MONTHS_RU[date.getMonth()] + " в " + time;
+      },
+      ago: function (ms) { return durationRu(ms) + " назад"; },
+
+      asleepFor: function (dur) { return "Спит " + dur; },
+      wentDown: function (at) { return "Сон начался " + at + "."; },
+      longSleep: "Это очень долго — возможно, пробуждение не записали.",
+      awake: "Не спит",
+      woke: function (atAgo) { return "Пробуждение " + atAgo + "."; },
+
+      feeds: function (n) { return n + " " + pluralRu(n, "кормление", "кормления", "кормлений"); },
+      noFeeds: "Кормлений нет",
+      lastFeed: function (atAgo, extras) {
+        return "Последнее " + atAgo + (extras ? " — " + extras : "") + ".";
+      },
+      feedLength: function (dur) { return dur; },
+      feedSource: function (source) {
+        return { breast: "грудь", formula: "смесь", expressed: "сцеженное" }[source.id] || "";
+      },
+      nothingLogged: "Пока ничего не записано.",
+      spacing: function (middle, shortest, longest) {
+        return "В среднем каждые " + middle +
+          (shortest ? " — от " + shortest + " до " + longest : "") + ".";
+      },
+      feedingTotal: function (dur, timed, all) {
+        return "На кормления ушло " + dur + (timed
+          ? ", но длительность записана только у " + timed + " из " + all + "."
+          : ".");
+      },
+
+      nappies: function (n) { return n + " " + pluralRu(n, "подгузник", "подгузника", "подгузников"); },
+      noNappies: "Подгузников нет",
+      wet: function (n) { return n + " " + pluralRu(n, "мокрый", "мокрых", "мокрых"); },
+      dirty: function (n) { return n + " " + pluralRu(n, "грязный", "грязных", "грязных"); },
+      dry: function (n) { return n + " " + pluralRu(n, "сухой", "сухих", "сухих"); },
+      unsaid: function (n) { return n + " без пометки"; },
+      lastNappy: function (atAgo) { return "Последний " + atAgo + "."; },
+      noDirty: function (atAgo) {
+        return "Грязных за это время не было — последний " + atAgo + ".";
+      },
+
+      asleepTotal: function (dur) { return "Сон " + dur; },
+      noSleep: "Сон не записан",
+      stretches: function (n, longest) {
+        return "За " + n + " " + pluralRu(n, "заход", "захода", "заходов") +
+          (longest ? ", самый долгий " + longest : "") + ".";
+      },
+      clipped: "Один из них начался раньше этого отрезка и посчитан только с его начала.",
+
+      dueTitle: "Дальше по плану",
+      kind: function (kind) {
+        return { feed: "Кормление", diaper: "Подгузник", sleep: "Сон" }[kind];
+      },
+      dueIn: function (dur) { return "через " + dur; },
+      // "просрочено" would have to agree in gender with the word in front of
+      // it, and it cannot agree with both "кормление" and "подгузник". A
+      // prepositional phrase agrees with nothing, which is the point.
+      dueLate: function (dur) { return "с опозданием на " + dur; },
+      dueNow: "пора сейчас",
+      dueLine: function (icon, label, phrase, at) {
+        return icon + " " + label + " — " + phrase + " (" + at + ").";
+      },
+      dueAsleep: function (icon, label) { return icon + " " + label + " — сейчас спит."; },
+      dueNote: "Это расчёт по интервалам из настроек, а не наблюдение за ребёнком.",
+
+      readingsTitle: "Замеры",
+      readingLine: function (event, at) {
+        var label = MEASURES[event.type].freeform
+          ? measureLabelOf(event) : MEASURE_RU[event.type];
+        return (label ? label + " " : "") + measureValueRu(event) + " " + at + ".";
+      },
+      tempHigh: function (event) {
+        return measureValueRu(event) + " — высокая температура.";
+      },
+      tempHighAdvice: function (knowsAge) {
+        return knowsAge
+          ? "Для ребёнка такого возраста сразу вызывайте скорую. " +
+            "В Великобритании 999, по Европе 112. " +
+            "Если случай не срочный — в Великобритании NHS 111 или ваш врач."
+          : "При 38 °C и выше у ребёнка младше 3 месяцев вызывайте скорую немедленно. " +
+            "В Великобритании 999, по Европе 112. " +
+            "Укажите дату рождения в настройках, и порог будет считаться по возрасту.";
+      },
+      tempLow: function (event) {
+        return measureValueRu(event) + " — низкая температура.";
+      },
+      tempLowAdvice: "Температура ниже 36 °C у ребёнка требует проверки — позвоните врачу, " +
+        "в Великобритании это NHS 111. " +
+        "Вызывайте скорую (в Великобритании 999, по Европе 112), если ребёнок к тому же " +
+        "вялый, бледный или его трудно разбудить.",
+
+      planTitle: "Дальше в календаре",
+      planWhen: function (date, hasTime, day) {
+        var named = day === "today" ? "Сегодня" : day === "tomorrow" ? "Завтра"
+          : day === "yesterday" ? "Вчера"
+          : WEEKDAYS_RU[date.getDay()] + ", " + date.getDate() + " " + MONTHS_RU[date.getMonth()];
+        return hasTime ? named + " в " + formatClockTime(date) : named;
+      },
+      planLine: function (when, title, place) {
+        return when + " — " + title + (place ? ", " + place : "") + ".";
+      }
+    }
+  };
+
   // ---------- handover ----------
 
   // What somebody arriving at the door asks for, in the order they ask for it.
@@ -3864,6 +4209,24 @@
   // the morning today is three hours old, and a handover measured that way
   // says nothing at all about the night the other person just had.
   var handoverHours = HANDOVER_DEFAULT_HOURS;
+  var handoverLang = storedHandoverLang();
+
+  // Which language this screen is read in — and only this screen; the rest of
+  // the app stays English for now. Deliberately kept out of the synced
+  // settings: the carer's phone reads Russian and the parents' read English at
+  // the same time, so one of them choosing must never change it for the others.
+  // It stays out of backups, reports and share links for the same reason.
+  function storedHandoverLang() {
+    try { return localStorage.getItem(LANG_KEY) === "ru" ? "ru" : "en"; }
+    catch (e) { return "en"; }
+  }
+
+  function saveHandoverLang(id) {
+    try { localStorage.setItem(LANG_KEY, id === "ru" ? "ru" : "en"); }
+    catch (e) { showError("Couldn't save the language"); }
+  }
+
+  function ho() { return HANDOVER_TEXT[handoverLang] || HANDOVER_TEXT.en; }
 
   function handoverWindow() {
     var toMs = Date.now();
@@ -3877,84 +4240,89 @@
     });
   }
 
-  // "at 07:20" while it is still today, and the day named the moment it is
-  // not: a handover window crosses midnight more often than it does not.
-  function handoverAt(date) {
+  // Which day a time falls on, named rather than formatted, because English
+  // trails the day word after the clock and Russian leads with it.
+  function handoverDay(date) {
     var now = new Date();
     var key = dayKeyOf(date);
-    var time = formatClockTime(date);
-    if (key === dayKeyOf(now)) return "at " + time;
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "at " + time + " yesterday";
-    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "at " + time + " tomorrow";
-    return "at " + time + " on " + formatDateHeader(date);
+    if (key === dayKeyOf(now)) return "today";
+    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "yesterday";
+    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "tomorrow";
+    return "";
+  }
+
+  function handoverAt(date) {
+    return ho().at(date, handoverDay(date));
   }
 
   function handoverAgo(date) {
-    return handoverAt(date) + ", " + formatDuration(Date.now() - +date) + " ago";
+    return handoverAt(date) + ", " + ho().ago(Date.now() - +date);
   }
 
   // Three numbers rather than one: the middle says what to expect, the spread
   // says whether it is worth expecting anything.
   function handoverSpacing(gaps) {
     if (gaps.length < 2) return "";
+    var T = ho();
     var lengths = gaps.map(function (g) { return g.ms; });
     var shortest = Math.min.apply(null, lengths);
     var longest = Math.max.apply(null, lengths);
-    var line = "About " + formatDuration(median(lengths)) + " apart";
     // "anything from 3h 24m to 3h 36m" is not a spread, it is the same number
     // said three times. Only a gap wide enough to change what somebody expects
-    // earns the extra clause.
-    if (longest - shortest >= HANDOVER_SPREAD_WORTH_SAYING) {
-      line += " — anything from " + formatDuration(shortest) + " to " + formatDuration(longest);
-    }
-    return line + ".";
+    // earns the extra clause; an empty shortest is how that is asked for.
+    var wide = longest - shortest >= HANDOVER_SPREAD_WORTH_SAYING;
+    return T.spacing(T.duration(median(lengths)),
+      wide ? T.duration(shortest) : "", wide ? T.duration(longest) : "");
   }
 
   function handoverStateRow(analysis) {
+    var T = ho();
     var now = Date.now();
     var row = { icon: "👶", title: "", details: [] };
     if (analysis.active) {
       var down = new Date(analysis.active.time);
-      row.title = "Asleep for " + formatDuration(now - +down);
-      row.details.push("Went down " + handoverAt(down) + ".");
-      if (now - +down > SUSPICIOUS_SLEEP) {
-        row.details.push("That is a long stretch — the wake-up may never have been logged.");
-      }
+      row.title = T.asleepFor(T.duration(now - +down));
+      row.details.push(T.wentDown(handoverAt(down)));
+      if (now - +down > SUSPICIOUS_SLEEP) row.details.push(T.longSleep);
     } else {
-      row.title = "Awake";
+      row.title = T.awake;
       var woke = sortedByTimeDesc(liveEvents().filter(function (e) {
         return e.type === "sleep_end";
       }))[0];
-      if (woke) row.details.push("Woke " + handoverAgo(new Date(woke.time)) + ".");
+      if (woke) row.details.push(T.woke(handoverAgo(new Date(woke.time))));
     }
     return row;
   }
 
   function handoverFeedRow(w, live) {
+    var T = ho();
     var all = live.filter(function (e) { return e.type === "feed"; });
     var feeds = inHandoverWindow(all, w);
     var row = {
       icon: KIND_META.feed.icon,
-      title: feeds.length ? feeds.length + (feeds.length === 1 ? " feed" : " feeds") : "No feeds",
+      title: feeds.length ? T.feeds(feeds.length) : T.noFeeds,
       details: []
     };
     var last = sortedByTimeDesc(all)[0];
     if (last) {
       var extras = [];
       var mins = fedMinutesOf(last);
-      if (mins !== null) extras.push(formatDuration(mins * MS_MIN) + " on it");
+      if (mins !== null) extras.push(T.feedLength(T.duration(mins * MS_MIN)));
       var source = feedSource(fedWithOf(last));
-      if (source) extras.push(source.label.toLowerCase());
-      row.details.push("Last " + handoverAgo(new Date(last.time)) +
-        (extras.length ? " — " + extras.join(", ") : "") + ".");
+      if (source) {
+        var named = T.feedSource(source);
+        if (named) extras.push(named);
+      }
+      row.details.push(T.lastFeed(handoverAgo(new Date(last.time)), extras.join(", ")));
     } else {
-      row.details.push("Nothing has been logged yet.");
+      row.details.push(T.nothingLogged);
     }
     var spacing = handoverSpacing(aiGaps("feed", w.fromMs));
     if (spacing) row.details.push(spacing);
 
     // Only ever the feeds somebody actually timed, and it says how many those
-    // were — a total over three of eight feeds is not a total.
+    // were — a total over three of eight feeds is not a total. A zero for the
+    // count is how "all of them were timed" is asked for.
     var fedMs = 0;
     var timed = 0;
     feeds.forEach(function (e) {
@@ -3964,16 +4332,14 @@
       timed++;
     });
     if (timed) {
-      row.details.push(formatDuration(fedMs) + " spent feeding" +
-        (timed < feeds.length
-          ? ", though only " + timed + " of the " + feeds.length +
-            (timed === 1 ? " was timed." : " were timed.")
-          : "."));
+      row.details.push(T.feedingTotal(T.duration(fedMs),
+        timed < feeds.length ? timed : 0, feeds.length));
     }
     return row;
   }
 
   function handoverNappyRow(w, live) {
+    var T = ho();
     var all = live.filter(function (e) { return e.type === "diaper"; });
     var nappies = inHandoverWindow(all, w);
     var wet = 0, dirty = 0, dry = 0, unsaid = 0;
@@ -3986,19 +4352,17 @@
     });
     var row = {
       icon: KIND_META.diaper.icon,
-      title: nappies.length
-        ? nappies.length + (nappies.length === 1 ? " nappy" : " nappies")
-        : "No nappies",
+      title: nappies.length ? T.nappies(nappies.length) : T.noNappies,
       details: []
     };
     var made = [];
-    if (wet) made.push(wet + " wet");
-    if (dirty) made.push(dirty + " dirty");
-    if (dry) made.push(dry + " dry");
-    if (unsaid) made.push(unsaid + " not recorded");
+    if (wet) made.push(T.wet(wet));
+    if (dirty) made.push(T.dirty(dirty));
+    if (dry) made.push(T.dry(dry));
+    if (unsaid) made.push(T.unsaid(unsaid));
     if (made.length) row.details.push(made.join(", ") + ".");
     var last = sortedByTimeDesc(all)[0];
-    if (last) row.details.push("Last " + handoverAgo(new Date(last.time)) + ".");
+    if (last) row.details.push(T.lastNappy(handoverAgo(new Date(last.time))));
 
     // How long since a dirty one is the question a stranger is likeliest to be
     // asked, so it is answered rather than left to be counted off the log.
@@ -4007,15 +4371,13 @@
         var kind = nappyOf(e);
         return kind === "dirty" || kind === "both";
       }))[0];
-      if (lastDirty) {
-        row.details.push("Nothing dirty in this stretch — the last was " +
-          handoverAgo(new Date(lastDirty.time)) + ".");
-      }
+      if (lastDirty) row.details.push(T.noDirty(handoverAgo(new Date(lastDirty.time))));
     }
     return row;
   }
 
   function handoverSleepRow(w, analysis) {
+    var T = ho();
     var now = Date.now();
     var stretches = 0;
     var longest = 0;
@@ -4033,63 +4395,71 @@
     var total = sleepMsInRange(analysis, w.fromMs, w.toMs, now);
     var row = {
       icon: KIND_META.sleep.icon,
-      title: total ? formatDuration(total) + " asleep" : "No sleep logged",
+      title: total ? T.asleepTotal(T.duration(total)) : T.noSleep,
       details: []
     };
     if (stretches) {
-      row.details.push("In " + stretches + (stretches === 1 ? " stretch" : " stretches") +
-        (stretches > 1 ? ", the longest " + formatDuration(longest) : "") + ".");
+      row.details.push(T.stretches(stretches, stretches > 1 ? T.duration(longest) : ""));
       // Only said when it happened. A sleep that began before the window is
       // counted from where the window starts, and the figure above would
       // otherwise look like the length of the whole sleep.
-      if (clipped) {
-        row.details.push("One of those began before this stretch and is counted " +
-          "only from where it starts.");
-      }
+      if (clipped) row.details.push(T.clipped);
     }
     return row;
   }
 
   function handoverDueRow(analysis) {
+    var T = ho();
     var now = Date.now();
-    var row = { icon: "⏭", title: "Due next", details: [] };
+    var row = { icon: "⏭", title: T.dueTitle, details: [] };
     KINDS.forEach(function (kind) {
       if (kind === "sleep" && analysis.active) {
-        row.details.push(KIND_META.sleep.icon + " " + KIND_META.sleep.label + " — asleep right now.");
+        row.details.push(T.dueAsleep(KIND_META.sleep.icon, T.kind("sleep")));
         return;
       }
       var forecast = computeForecast(kind);
       if (!forecast.hasData) return;
       var diff = +forecast.nextTime - now;
-      var due = Math.abs(diff) < HANDOVER_DUE_NOW ? "due about now"
-        : diff < 0 ? "was due " + formatDuration(-diff) + " ago"
-        : "in " + formatDuration(diff);
-      row.details.push(KIND_META[kind].icon + " " + KIND_META[kind].label + " " + due +
-        ", " + handoverAt(forecast.nextTime) + ".");
+      var phrase = Math.abs(diff) < HANDOVER_DUE_NOW ? T.dueNow
+        : diff < 0 ? T.dueLate(T.duration(-diff))
+        : T.dueIn(T.duration(diff));
+      row.details.push(T.dueLine(KIND_META[kind].icon, T.kind(kind), phrase,
+        handoverAt(forecast.nextTime)));
     });
     if (!row.details.length) return null;
     // Said plainly, because a time on a screen looks like knowledge and this
     // is arithmetic on an interval somebody typed into Settings.
-    row.details.push("These come off the plan in Settings, not off the baby.");
+    row.details.push(T.dueNote);
     return row;
   }
 
   function handoverReadingRow(w, live) {
+    var T = ho();
     var readings = inHandoverWindow(live.filter(function (e) {
       return MEASURES[e.type] && measureValueOf(e) !== null;
     }), w);
     if (!readings.length) return null;
-    var row = { icon: "🌡", title: "Readings taken", details: [] };
+    var row = { icon: "🌡", title: T.readingsTitle, details: [] };
     sortedByTimeDesc(readings).forEach(function (e) {
-      var named = MEASURES[e.type].freeform ? "" : MEASURES[e.type].label + " ";
-      row.details.push(named + measureLine(e) + " " + handoverAt(new Date(e.time)) + ".");
+      row.details.push(T.readingLine(e, handoverAt(new Date(e.time))));
+      // The one thing on this screen that has to be understood rather than
+      // merely read, so it is translated with everything else rather than
+      // being left in a language the person holding the baby may not have.
       var concern = temperatureConcern(e);
-      if (concern) row.details.push(concern.headline + ". " + concern.advice);
+      if (!concern) return;
+      if (concern.level === "high") {
+        row.details.push(T.tempHigh(e));
+        row.details.push(T.tempHighAdvice(ageDaysAt(e.time) !== null));
+      } else {
+        row.details.push(T.tempLow(e));
+        row.details.push(T.tempLowAdvice);
+      }
     });
     return row;
   }
 
   function handoverPlanRow(w) {
+    var T = ho();
     var now = Date.now();
     var horizon = now + HANDOVER_PLAN_HORIZON;
     var lines = [];
@@ -4097,9 +4467,14 @@
       var start = planStart(plan);
       if (start < w.fromMs || start > horizon) return;
       if (lines.length >= HANDOVER_MAX_PLANS) return;
-      lines.push(planWhen(plan) + " — " + plan.title + (plan.place ? ", " + plan.place : "") + ".");
+      var at = new Date(start);
+      // The title and the place stay exactly as somebody typed them. Nothing
+      // here translates what a person wrote, and nothing ever will: that would
+      // need a service to ask, and this app asks nobody anything.
+      lines.push(T.planLine(T.planWhen(at, !!plan.time, handoverDay(at)),
+        plan.title, plan.place || ""));
     });
-    return lines.length ? { icon: "📅", title: "Coming up", details: lines } : null;
+    return lines.length ? { icon: "📅", title: T.planTitle, details: lines } : null;
   }
 
   function handoverRows(w) {
@@ -4148,6 +4523,8 @@
   // the three rails are the three buttons on the main screen, in that order.
   // Colour never carries meaning on its own — each rail is labelled with the
   // same icon as its button, and every mark on it is written out underneath.
+  // It is also the one part of the screen that needs no translation: an icon
+  // and a clock read the same in both languages.
   function handoverStripSvg(w) {
     var WIDTH = 320, LEFT = 22, RIGHT = 4, TOP = 4, LANE = 20, GAP = 6, AXIS = 15;
     var lanes = [
@@ -4161,6 +4538,7 @@
     var span = w.toMs - w.fromMs;
     var live = liveEvents();
     var analysis = analyzeSleep();
+    var T = ho();
 
     function x(ms) {
       var at = LEFT + (Math.max(w.fromMs, Math.min(w.toMs, ms)) - w.fromMs) / span * plotW;
@@ -4169,8 +4547,7 @@
     function laneTop(i) { return TOP + i * (LANE + GAP); }
 
     var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height + '" role="img" ' +
-      'aria-label="The last ' + w.hours + ' hours drawn as a strip. Everything marked on it ' +
-      'is written out in words underneath.">'];
+      'aria-label="' + escapeHtml(T.stripLabel(T.hours(w.hours))) + '">'];
 
     // Night shaded behind everything, walked hour by hour on the local clock
     // rather than by adding milliseconds, so a clock change cannot slide the
@@ -4253,41 +4630,76 @@
     return out.join("");
   }
 
-  function buildHandoverHours() {
+  function buildHandoverChips() {
     HANDOVER_HOURS.forEach(function (hours) {
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ho-chip";
-      btn.textContent = hours + " hours";
       btn.addEventListener("click", function () {
         handoverHours = hours;
         renderHandover();
       });
       el.handoverHours.appendChild(btn);
     });
+    HANDOVER_LANGS.forEach(function (lang) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      // Each named in its own language and never translated, so somebody who
+      // cannot read the language on screen can still find the button that
+      // fixes that.
+      btn.textContent = lang.label;
+      btn.addEventListener("click", function () {
+        handoverLang = lang.id;
+        saveHandoverLang(lang.id);
+        renderHandover();
+      });
+      el.handoverLangs.appendChild(btn);
+    });
   }
 
-  function markHandoverHours() {
+  function markHandoverChips() {
+    var T = ho();
     Array.prototype.forEach.call(el.handoverHours.children, function (btn, i) {
       var on = HANDOVER_HOURS[i] === handoverHours;
+      btn.textContent = T.hours(HANDOVER_HOURS[i]);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    Array.prototype.forEach.call(el.handoverLangs.children, function (btn, i) {
+      var on = HANDOVER_LANGS[i].id === handoverLang;
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
 
+  // The heading and the two labels a screen reader announces. Set at startup
+  // too, so the button in the top bar is named in the right language before
+  // anybody has opened the screen behind it.
+  function applyHandoverChrome() {
+    var T = ho();
+    el.handoverTitle.textContent = T.screenTitle;
+    el.handoverBack.setAttribute("aria-label", T.back);
+    el.handoverOpenBtn.setAttribute("aria-label", T.screenTitle);
+  }
+
   function renderHandover() {
+    var T = ho();
     var w = handoverWindow();
     var now = new Date();
     var typed = loadName().trim();
     var ageDays = ageDaysAt(Date.now());
+    var age = ageDays === null ? "" : T.age(ageDays);
 
-    el.handoverWho.textContent = (typed || "The baby") +
-      (ageDays === null ? "" : ", " + formatAge(ageDays));
-    el.handoverWhen.textContent = "It is " + formatClockTime(now) + " on " +
-      formatDateHeader(now) + ". Everything below covers the last " +
-      w.hours + " hours, up to this minute.";
+    el.handoverWho.textContent = (typed || T.noName) + (age ? ", " + age : "");
+    el.handoverWhen.textContent = T.now(formatClockTime(now), T.dateHeader(now), T.hours(w.hours));
+    el.handoverWindowLabel.textContent = T.windowLabel;
+    el.handoverLangLabel.textContent = T.langLabel;
+    el.handoverEmpty.textContent = T.empty;
+    el.handoverFooter.textContent = T.footer;
 
-    markHandoverHours();
+    applyHandoverChrome();
+    markHandoverChips();
     el.handoverStrip.innerHTML = handoverStripSvg(w);
     el.handoverEmpty.hidden = inHandoverWindow(liveEvents(), w).length > 0;
     renderHandoverLines(handoverRows(w));
@@ -4298,6 +4710,7 @@
     renderHandover();
   });
   el.handoverBack.addEventListener("click", showMain);
+
 
   // ---------- ask an AI ----------
 
@@ -4876,7 +5289,8 @@
   }
 
   renderVersion();
-  buildHandoverHours();
+  buildHandoverChips();
+  applyHandoverChrome();
   renderNameFonts();
   renderZone();
   toggleNameFonts(false);
