@@ -219,6 +219,43 @@ record after the recurring pattern turned out to be the wrong shape; next is
 wiring today's shift into the handover window. The seven-day charts last: the
 most enjoyable to build and the least likely to change what anybody does.
 
+## Voice logging, via Siri Shortcuts — built, in v43
+
+Saying "Feed" to Siri, hands-free, and having it land in the log. No backend
+of ours to receive it — everything the app owns already lives in a private
+GitHub repository, so a Siri Shortcut just writes there directly, using the
+same repository and token sync already has.
+
+**A queue directory, rather than editing the shared document.** A Shortcut
+cannot run the app's own merge logic, so it cannot safely read the main JSON
+file, add an entry and write it back — a sync running at the same moment
+would either collide with it or get silently overwritten by it. Instead
+every voice entry is its own new file under `voice-queue/`, created with a
+single write and no read first, since a freshly made, uniquely named file
+can never conflict with anything already there. Sync lists the directory,
+turns each file into a real event, and deletes it.
+
+**Everything needed is in the filename, not the file's contents.** A queue
+file is named `voice-queue/feed__<id>__<time>.json` — type, a fresh id and
+the time all sit in the name itself, so sync never has to fetch and parse a
+file's body: the one directory listing GitHub already returns is the whole
+payload. What is actually written inside the file does not matter and is
+never read.
+
+**Idempotent by id, on purpose.** A Shortcut has no way to resolve a write
+conflict itself, so the design instead makes replay harmless: applying the
+same filename twice produces the same event once, keyed by the id already
+inside it. A queue file that fails to delete, or a sync that runs twice
+before it does, costs nothing — it is simply looked at again and does
+nothing new the second time.
+
+**Not built: parsing a spoken time.** "Log a feed at half three" would need
+real speech parsing; every Shortcut instead logs the moment it runs, which
+is exactly how the buttons on the main screen already behave. Structured
+measurements — weight, temperature — by voice are not attempted either:
+turning free speech into a number worth trusting is a different, harder
+problem than turning a fixed phrase into a fixed type.
+
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
 recorded the three o'clock feed is useful on its own, and it costs a text box.

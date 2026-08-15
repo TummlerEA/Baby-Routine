@@ -22,6 +22,15 @@
   // style this one never travels between phones.
   var LANG_KEY = "baby-tracker-lang";
   var SYNC_PATH = "baby-tracker-log.json";
+  // Where a voice shortcut (Siri, run entirely on-device) drops one small
+  // file per logged moment, named "<type>__<id>__<time>.json" — everything
+  // sync needs to turn it into a real event lives in the filename, so
+  // picking the queue up again never requires reading a file's contents.
+  // Each filename is unique, so the shortcut can always create without
+  // reading a sha first, and sync can always delete without a write race.
+  var VOICE_QUEUE_DIR = "voice-queue";
+  var VOICE_LOG_TYPES = { feed: true, diaper: true, sleep_start: true, sleep_end: true };
+  var VOICE_NAME_RE = /^([a-z_]+)__([0-9a-fA-F-]{8,64})__(\d{8}T\d{6}Z)\.json$/;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -31,7 +40,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "42";
+    var fallback = "43";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3264,8 +3273,8 @@
     return new TextDecoder().decode(bytes);
   }
 
-  function githubUrl(repo) {
-    return "https://api.github.com/repos/" + repo + "/contents/" + SYNC_PATH;
+  function githubUrl(repo, path) {
+    return "https://api.github.com/repos/" + repo + "/contents/" + (path || SYNC_PATH);
   }
 
   function githubHeaders(token) {
@@ -3285,8 +3294,8 @@
   }
 
   // Reads the stored document. A 404 simply means nothing has been written yet.
-  function fetchRemote(config) {
-    return fetch(githubUrl(config.repo) + "?ref=HEAD&t=" + Date.now(), {
+  function fetchRemote(config, path) {
+    return fetch(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
       headers: githubHeaders(config.token),
       cache: "no-store"
     }).then(function (response) {
@@ -3304,13 +3313,13 @@
     });
   }
 
-  function putRemote(config, doc, sha) {
+  function putRemote(config, doc, sha, path) {
     var payload = {
       message: "Update baby log (" + new Date().toISOString() + ")",
       content: textToBase64(JSON.stringify(doc, null, 1))
     };
     if (sha) payload.sha = sha;
-    return fetch(githubUrl(config.repo), {
+    return fetch(githubUrl(config.repo, path), {
       method: "PUT",
       headers: githubHeaders(config.token),
       body: JSON.stringify(payload)
@@ -3319,6 +3328,77 @@
       return response.json().then(function (body) {
         return (body.content && body.content.sha) || null;
       });
+    });
+  }
+
+  // Lists the queue directory. Each file's name alone carries type + id +
+  // time, so this one request is all sync needs to know what a voice
+  // shortcut has dropped since the last look — no per-file read.
+  function listRemoteDir(config, path) {
+    return fetch(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
+      headers: githubHeaders(config.token),
+      cache: "no-store"
+    }).then(function (response) {
+      if (response.status === 404) return [];
+      if (!response.ok) throw { http: response.status };
+      return response.json().then(function (body) {
+        return Array.isArray(body) ? body : [];
+      });
+    });
+  }
+
+  // Best-effort: if it is already gone (another sync got there first) that
+  // is the outcome we wanted anyway.
+  function deleteRemoteFile(config, path, sha, message) {
+    return fetch(githubUrl(config.repo, path), {
+      method: "DELETE",
+      headers: githubHeaders(config.token),
+      body: JSON.stringify({ message: message || "Baby tracker: processed voice entry", sha: sha })
+    }).then(function (response) {
+      if (!response.ok && response.status !== 404 && response.status !== 409) throw { http: response.status };
+    }).catch(function () {});
+  }
+
+  // "feed__3f9c2b7a-…__20260815T153000Z.json" -> { id, type, time }. No
+  // JSON body to parse — the filename is the whole record, which is why the
+  // shortcut never needs to read the queue before it can write to it.
+  function parseVoiceFilename(name) {
+    var m = VOICE_NAME_RE.exec(String(name || ""));
+    if (!m) return null;
+    if (!VOICE_LOG_TYPES[m[1]]) return null;
+    var iso = m[3].replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z");
+    var time = new Date(iso);
+    if (isNaN(time.getTime())) return null;
+    return { id: m[2], type: m[1], time: time.toISOString() };
+  }
+
+  // Turns whatever is waiting in the queue into real events (by id, so
+  // seeing the same file twice is harmless) and clears the files out.
+  // Failures here are swallowed by the caller: a stalled voice entry just
+  // waits for the next sync rather than breaking the ordinary one.
+  function processVoiceQueue(config) {
+    return listRemoteDir(config, VOICE_QUEUE_DIR).then(function (entries) {
+      var files = entries.filter(function (e) { return e && e.type === "file" && e.name && e.sha; });
+      if (!files.length) return 0;
+      var byId = {};
+      events.forEach(function (e) { byId[e.id] = e; });
+      var changed = 0;
+      files.forEach(function (file) {
+        var parsed = parseVoiceFilename(file.name);
+        if (!parsed || byId[parsed.id]) return;
+        var event = { id: parsed.id, type: parsed.type, time: parsed.time };
+        if (event.type === "feed") {
+          var source = feedSource(defaultFedWith());
+          if (source) event.fedWith = source.id;
+        }
+        touch(event);
+        events.push(event);
+        byId[event.id] = event;
+        changed++;
+      });
+      return Promise.all(files.map(function (file) {
+        return deleteRemoteFile(config, VOICE_QUEUE_DIR + "/" + file.name, file.sha);
+      })).then(function () { return changed; });
     });
   }
 
@@ -3440,7 +3520,14 @@
 
     var attempt = function (remaining) {
       var config = syncConfig;
-      return fetchRemote(config).then(function (found) {
+      // The voice queue lives in its own file per entry, so reading it runs
+      // alongside the main document rather than blocking on it. A queue
+      // hiccup (offline, a bad token) must never fail the sync it rode in
+      // on, so it is swallowed here rather than left to reject the pair.
+      var voicePromise = processVoiceQueue(config).catch(function () { return 0; });
+      return Promise.all([fetchRemote(config), voicePromise]).then(function (results) {
+        var found = results[0];
+        var pulledVoice = results[1];
         var remoteDoc = found.doc || {};
         var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
         var pulled = mergeIntoLocal(remoteEvents);
@@ -3483,14 +3570,14 @@
             // where it was rather than claiming to be the newer side.
             setMetaStamp(remoteNewer ? remoteMeta.updatedAt : stampBefore);
           }
-          if (pulled) saveEvents(events);
+          if (pulled || pulledVoice) saveEvents(events);
         } finally {
           applyingRemote = false;
         }
         if (pulledPlans) renderPlans();
         if (pulledShopping) renderShopping();
         if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
-        if (pulled || remoteMeta) renderAll();
+        if (pulled || pulledVoice || remoteMeta) renderAll();
 
         // Drop what has aged out before comparing, so the cleaned-up log is
         // what gets compared and sent.
@@ -3509,12 +3596,12 @@
           remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
           remoteMissesOurRotaShifts(remoteRotaShifts) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
-        if (!mustPush) return { pulled: pulled, pushed: 0 };
+        if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
         return putRemote(config, localDocument(), found.sha).then(function (sha) {
           syncConfig.sha = sha;
           saveSyncConfig(syncConfig);
-          return { pulled: pulled, pushed: 1 };
+          return { pulled: pulled + pulledVoice, pushed: 1 };
         }).catch(function (err) {
           // Another phone committed between our read and our write.
           if (err && err.http === 409 && remaining > 0) return attempt(remaining - 1);
@@ -3527,7 +3614,7 @@
       syncInFlight = false;
       setSyncState("ok", "Connected to " + syncConfig.repo);
       if (result.pulled) {
-        showToast("Synced — " + result.pulled + (result.pulled === 1 ? " entry" : " entries") + " from the other phone");
+        showToast("Synced — " + result.pulled + (result.pulled === 1 ? " new entry" : " new entries"));
       }
       if (syncQueued) {
         syncQueued = false;

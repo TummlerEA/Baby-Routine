@@ -26,6 +26,7 @@ Live version: **https://tummlerea.github.io/Baby-Routine/**
 - **Undo on delete**: a deleted entry can be restored for seven seconds.
 - **Export and backup**: CSV (opens in Excel), Markdown (a readable report) and JSON (a full backup).
 - **Automatic sync between phones**, through a **private** GitHub repository holding one JSON file. No server of ours: the app talks to the GitHub Contents API directly. It syncs on open, on return, roughly once a minute while on screen, and shortly after anything you log, batching a burst of taps into one commit. Concurrent writes are safe — a stale-sha conflict is retried after re-merging, and because merging is order-independent nothing is lost either way. The access token is stored on the device that typed it and never appears in a backup, a report or a share link.
+- **Logging by voice, hands-free**, once sync is connected. A Siri Shortcut can log a feed, a nappy or a sleep change just by saying its name — "Hey Siri, Feed" — without unlocking the phone. It writes one small file straight into the same private repository, named so the type, a unique id and the time are all in the filename itself; the next sync turns it into a real entry and deletes the file. Seeing the same file twice is harmless by design, so a shaky connection can never duplicate an entry. See "Voice logging" below for how to set the Shortcuts up.
 - **Pasting a link, for Home Screen users.** On iOS a web app added to the Home Screen keeps its data entirely separately from Safari, and a tapped link always opens in Safari — never in the installed app. So Settings takes a pasted share link: copy the link out of the chat instead of tapping it, and the entries land where you actually work. A link already opened in Safari offers a button that copies it ready for pasting.
 - **Inviting a partner.** One button produces a message with the app's address and a short explanation of how the two of you will swap entries — worth sending before any data, since it also asks them to open it in Safari and add it to their Home Screen. Your baby's name, date of birth and planned intervals travel across with the first batch of entries, so nobody retypes them.
 - **Share links for a partner.** Settings makes a link carrying your recent entries — a day, two days, a week, or everything. The data rides in the URL fragment, so it is never uploaded anywhere and the hosting server never sees it. Opening the link on another phone offers to merge it rather than doing so silently, and because merging is order-independent it works in both directions: send one back after your shift and both logs agree. A two-day link is about 1.6 KB; the app warns when a period is long enough that messaging apps might mangle it.
@@ -68,6 +69,33 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 **Releasing.** Bump the `?v=` on both assets in `index.html`, the `version` in `version.json` and the `file://` fallback in `app.js` to the same number, in one commit. The `?v=` is what makes browsers fetch the new files; `version.json` is what makes an already-open copy notice. `test_update.js` and `test_version.js` fail if any of the three disagree, and the version shown on screen is read from the script's own `?v=`, so it can never claim to be something other than what loaded.
 
+## Voice logging (Siri Shortcuts)
+
+Needs sync already connected (Settings → private repository) — the Shortcut writes into that same repository, so it needs a token with Contents write access to it. Reusing the token already saved in Settings is simplest; a separate fine-grained PAT scoped to just that repository works too, if you would rather limit what a lost phone could reach. Either way, paste the token straight into the Shortcut — never send it anywhere else, including here.
+
+Build one helper Shortcut that does the actual work, then one tiny trigger Shortcut per thing you want to log, each just calling the helper with a type.
+
+**Helper Shortcut — name it "Log to Baby Tracker", accepting text input:**
+
+1. **Generate UUID** → save as `ID`.
+2. **Current Date**, then **Change Time Zone** → **UTC**, so the time in the filename is unambiguous regardless of the phone's own zone.
+3. **Format Date** → Custom format `yyyyMMdd'T'HHmmss'Z'` → save as `Stamp`.
+4. **Text**: `voice-queue/[Shortcut Input]__[ID]__[Stamp].json` → save as `Path`.
+5. **Text**: `https://api.github.com/repos/OWNER/REPO/contents/[Path]` (your own owner/repo) → save as `Url`.
+6. **Get Contents of URL**: `[Url]`, method **PUT**, headers `Authorization: Bearer YOUR_TOKEN` and `Accept: application/vnd.github+json`, request body **JSON** with `message` = `voice: [Shortcut Input]` and `content` = `e30=` (a fixed, harmless placeholder — sync reads the filename, never the file's contents, so nothing else needs to be built here).
+7. Optionally **Speak Text**: "Logged" — Siri reads it back out loud, so you get confirmation without looking at the phone at all.
+
+**Trigger Shortcuts**, one each, every one just a single **Run Shortcut** action calling "Log to Baby Tracker" with a fixed text input:
+
+- "Feed" → input `feed`
+- "Nappy" → input `diaper`
+- "Fell asleep" → input `sleep_start`
+- "Woke up" → input `sleep_end`
+
+Name each one what you want to say to Siri — "Hey Siri, Feed" runs it by the Shortcut's own name, no separate phrase recording needed, though "Add to Siri" lets you record something more natural if you would rather.
+
+The queue directory itself is documented under "How data is stored" below.
+
 ## Time and time zones
 
 Every entry is stored as a UTC instant and rendered through the browser's own local methods, so the zone the app works in is whatever the phone is set to — there is nothing to configure and nothing to keep in step. Move the phone to another country and the same instant is simply read on the new clock, which is what you want: the log follows you.
@@ -91,6 +119,7 @@ There is deliberately no in-app zone override. `<input type="datetime-local">`, 
 - `baby-tracker-sync` — the private repository and access token, if sync is connected. Deliberately excluded from every export.
 - `baby-tracker-name-font` — which typeface the name is set in. It belongs to the name rather than to the handset, so it travels with the other settings: synced, backed up and carried by a share link. A style whose font this phone does not have is still stored, and simply shows as the default here rather than being dropped on the way through.
 - `baby-tracker-ai` — whether the Ask an AI button is shown and whether the summary may carry the baby's name. Per-device and never exported, shared or synced: whether a phone is willing to send anything outwards is that phone's own business, and it must not arrive switched on from elsewhere.
+- The synced repository also holds a `voice-queue/` directory when voice logging is set up (see above) — one file per not-yet-applied voice entry, named `<type>__<id>__<compact-UTC-time>.json`. Everything sync needs is in the name; the file's contents are never read. Not stored in `localStorage` at all: the app lists the directory on every sync, turns each file into a real event keyed by the id in its name (so seeing the same file twice is a no-op, not a duplicate), and deletes it. A file that survives a failed delete, or one with a name sync does not recognise, is simply picked up — or cleared out — on the next attempt.
 
 Settings — the name and its style, the date of birth, the feeding type and the intervals — travel as one group with a single timestamp, and the most recently edited side wins. Connecting to a repository is the exception: joining a log that already exists means adopting its settings whole, however old they are. Otherwise a phone with a name typed into it would keep that name and push it over everybody else's on its first commit.
 
