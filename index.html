@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=41">
+<link rel="stylesheet" href="style.css?v=42">
 </head>
 <body>
 
@@ -339,10 +339,10 @@
 
           <article class="info-card">
             <h3>Carer rota (🤗)</h3>
-            <p><strong>Add a shift</strong> for each date the carer actually works — a date, roughly how many hours, and a start time if you know it. There is no repeating pattern behind it: the day it starts and how long it runs can differ from one week to the next, and each shift is only ever the one date it says it is. Nothing here clocks anyone in or out, and there is no separate record of who actually turned up when.</p>
-            <p>A start time buys a quiet line on the main screen while that shift is on — <strong>Carer here until</strong> the time it ends. A shift with no start time has nothing to count down to, so it stays quiet.</p>
-            <p>Below the form is every shift that has been added, a week per line, browsable by month with the arrows either side of the month name — "3 Aug–9 &nbsp;6h · 6h". Tap a day's hours to open that shift again — change it or remove it — rather than typing the date in by hand a second time.</p>
-            <p>It is settled between the carer and the other parent, not by this app — this just keeps the shape of it in one place, synced like everything else.</p>
+            <p>One week on screen at a time, with arrows either side of the date range to move to another. <strong>Tap a day</strong> to step it forward: nothing set → <strong>Off</strong> → working, and a third tap clears it back to nothing set. Marking a day off is always one tap away, from wherever it currently stands.</p>
+            <p>Once a day is working, two dropdowns appear — hours and a start time — pre-set to 6 hours and 9:00 rather than left blank, since changing a sensible default is quicker than typing one in from nothing. The start time moves in half-hour steps, not one minute at a time.</p>
+            <p>Every shift is its own date: how long a day runs and when it starts can differ from one week to the next, and there is no repeating pattern behind any of it to fight with when the real week does not match last week's. The total for the week on screen sits next to the date range.</p>
+            <p>A start time buys a quiet line on the main screen while that shift is on — <strong>Carer here until</strong> the time it ends. A shift with no start time has nothing to count down to, so it stays quiet. Nothing here clocks anyone in or out, and there is no separate record of who actually turned up when — it is settled between the carer and the other parent, not by this app, and this just keeps the shape of it in one place, synced like everything else.</p>
           </article>
 
           <article class="info-card">
@@ -567,42 +567,18 @@
     <main class="content">
 
       <section>
-        <p class="data-hint">Which days the carer actually works, and roughly how long — settled between the carer and the other parent, not by this app. Each shift is its own date: no repeating pattern to fight with when the week starts on a different day than last week's did.</p>
+        <p class="data-hint">Which days the carer actually works, and roughly how long — settled between the carer and the other parent, not by this app. One week on screen at a time: tap a day to step it from nothing set, to <strong>Off</strong>, to working — no repeating pattern to fight with when the week starts on a different day than last week's did.</p>
 
-        <button class="log-toggle" id="rotaAddToggle">
-          <span class="log-icon">➕</span>
-          <span id="rotaAddToggleText">Add a shift</span>
-        </button>
-
-        <div class="data-panel" id="rotaForm" hidden>
-          <label class="manual-field">
-            <span class="manual-label">Date</span>
-            <input id="rotaDate" class="manual-input" type="date">
-          </label>
-          <label class="manual-field">
-            <span class="manual-label">Hours</span>
-            <select id="rotaHours" class="manual-input"></select>
-          </label>
-          <label class="manual-field">
-            <span class="manual-label">Start time <span class="manual-optional">— optional</span></span>
-            <input id="rotaStart" class="manual-input" type="time">
-          </label>
-          <p class="manual-error" id="rotaError" hidden></p>
-          <button class="data-btn data-btn-import" id="rotaSubmit">Add it</button>
-          <button class="data-btn" id="rotaRemove" hidden>Remove this shift</button>
-          <button class="data-btn" id="rotaCancel">Cancel</button>
-        </div>
-
-        <div class="rota-cal">
-          <div class="rota-cal-head">
-            <button type="button" class="rota-cal-nav" id="rotaCalPrev" aria-label="Previous month">‹</button>
-            <span class="rota-cal-month" id="rotaCalMonth">—</span>
-            <button type="button" class="rota-cal-nav" id="rotaCalNext" aria-label="Next month">›</button>
+        <div class="rota-week">
+          <div class="rota-week-head">
+            <button type="button" class="rota-cal-nav" id="rotaWeekPrev" aria-label="Previous week">‹</button>
+            <span class="rota-week-range" id="rotaWeekRange">—</span>
+            <span class="rota-week-total" id="rotaWeekTotal">—</span>
+            <button type="button" class="rota-cal-nav" id="rotaWeekNext" aria-label="Next week">›</button>
           </div>
-          <div class="rota-cal-weeks" id="rotaCalWeeks"></div>
+          <div class="rota-week-days" id="rotaWeekDays"></div>
         </div>
-        <p class="rota-total" id="rotaCalTotal">—</p>
-        <p class="data-hint">Every shift that has been added, a week per line, browsable by month. Tap a day's hours to change or remove that one shift.</p>
+        <p class="data-hint">Tap a day: once for <strong>Off</strong>, again to set hours and a start time, again to clear it back to nothing set. Hours and start time default to 6 and 9:00 — change either from its own dropdown, in half-hour steps rather than scrolling a minute at a time.</p>
       </section>
 
       <section>
@@ -890,6 +866,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=41"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>

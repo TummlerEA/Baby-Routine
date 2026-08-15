@@ -1955,17 +1955,11 @@ body {
 }
 .shop-delete:active { opacity: 0.6; }
 
-.rota-total {
-  color: var(--text-dim);
-  font-size: 14px;
-  margin-top: 10px;
-  text-align: center;
-}
-
-/* The calendar summary: a month header with prev/next, then one compact
-   line per week — a date range and that week's shifts, nothing drawn as an
-   actual day grid. Tapping a day opens it in the form above. */
-.rota-cal {
+/* The week editor: a header with prev/next and the week's total, then
+   seven always-present day rows — tapping one steps it through nothing
+   set, off, and working, with the working state's two dropdowns appearing
+   inline rather than behind a separate form. */
+.rota-week {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1973,9 +1967,10 @@ body {
   padding: 12px 14px;
 }
 
-.rota-cal-head {
+.rota-week-head {
   align-items: center;
   display: flex;
+  gap: 10px;
   justify-content: space-between;
   margin-bottom: 10px;
 }
@@ -1993,43 +1988,86 @@ body {
 }
 .rota-cal-nav:active { opacity: 0.7; }
 
-.rota-cal-month {
+.rota-week-range {
+  flex: 1;
   font-size: 15px;
   font-weight: 700;
 }
 
-.rota-cal-weeks {
+.rota-week-total {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.rota-week-days {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.rota-cal-week {
-  align-items: baseline;
+.rota-row {
+  align-items: center;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   display: flex;
-  font-size: 14px;
+  flex-wrap: wrap;
   gap: 10px;
-  justify-content: space-between;
+  padding: 10px 12px;
 }
 
-.rota-cal-range {
-  color: var(--text-faint);
-  flex-shrink: 0;
-}
-
-.rota-cal-days {
-  color: var(--text-dim);
-  text-align: right;
-}
-
-.rota-cal-day {
+.rota-toggle {
+  align-items: center;
   background: none;
   border: none;
   color: var(--text);
   cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  font-family: inherit;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  text-align: left;
+}
+.rota-toggle:active { opacity: 0.7; }
+
+.rota-day-name {
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 56px;
+}
+
+.rota-day-state {
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.rota-toggle[data-state="off"] .rota-day-state {
+  color: var(--overdue);
+  font-weight: 600;
+}
+
+.rota-detail {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.rota-hours-select,
+.rota-start-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  color-scheme: dark;
   font-family: inherit;
   font-size: 14px;
-  font-weight: 600;
-  padding: 4px 2px;
+  min-height: 44px;
+  padding: 8px;
 }
-.rota-cal-day:active { opacity: 0.6; }
+
+.rota-hours-select { min-width: 56px; }
+.rota-start-select { min-width: 84px; }
