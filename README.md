@@ -71,16 +71,16 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## Voice logging (Siri Shortcuts)
 
-Needs sync already connected (Settings → private repository) — the Shortcut writes into that same repository, so it needs a token with Contents write access to it. Reusing the token already saved in Settings is simplest; a separate fine-grained PAT scoped to just that repository works too, if you would rather limit what a lost phone could reach. Either way, paste the token straight into the Shortcut — never send it anywhere else, including here.
+Needs sync already connected (Settings → private repository) — the Shortcut writes into that same repository, so it needs a token with Contents write access to it. The app never shows a saved token back once connected, so generate a fresh fine-grained PAT for the Shortcut instead: github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token, repository access limited to the one private repository, permission Contents: Read and write. Paste it straight into the Shortcut — never send it anywhere else, including here.
 
 Build one helper Shortcut that does the actual work, then one tiny trigger Shortcut per thing you want to log, each just calling the helper with a type.
 
 **Helper Shortcut — name it "Log to Baby Tracker", accepting text input:**
 
-1. **Generate UUID** → save as `ID`.
-2. **Current Date**, then **Change Time Zone** → **UTC**, so the time in the filename is unambiguous regardless of the phone's own zone.
-3. **Format Date** → Custom format `yyyyMMdd'T'HHmmss'Z'` → save as `Stamp`.
-4. **Text**: `voice-queue/[Shortcut Input]__[ID]__[Stamp].json` → save as `Path`.
+1. **Current Date**, then **Change Time Zone** → **UTC**, so the time in the filename is unambiguous regardless of the phone's own zone.
+2. **Format Date**, Date set explicitly to the result of step 1, Custom format `yyyyMMdd'T'HHmmss'Z'` → save as `Stamp`.
+3. **Format Date** again — a separate action, Date set explicitly to the result of step 1 too (do not let it default to step 2's text output), Custom format `yyyyMMddHHmmssSSS` → save as `Id`. Shortcuts has no built-in UUID generator; the same UTC instant down to the millisecond is unique enough for entries a person logs by voice.
+4. **Text**: `voice-queue/[Shortcut Input]__[Id]__[Stamp].json` → save as `Path`.
 5. **Text**: `https://api.github.com/repos/OWNER/REPO/contents/[Path]` (your own owner/repo) → save as `Url`.
 6. **Get Contents of URL**: `[Url]`, method **PUT**, headers `Authorization: Bearer YOUR_TOKEN` and `Accept: application/vnd.github+json`, request body **JSON** with `message` = `voice: [Shortcut Input]` and `content` = `e30=` (a fixed, harmless placeholder — sync reads the filename, never the file's contents, so nothing else needs to be built here).
 7. Optionally **Speak Text**: "Logged" — Siri reads it back out loud, so you get confirmation without looking at the phone at all.
