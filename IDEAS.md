@@ -176,16 +176,27 @@ this week; a family whose days really are regular just adds each one as it is
 known, same as anybody else.
 
 A start time earns a quiet line on the main screen while today's shift is on
-— **Carer here until five** — and the rota screen totals the hours for
-whichever month is on screen. A shift with no start time gets neither, since
-there is no moment to count down to; it still counts toward the total.
+— **Carer here until five**. A shift with no start time gets none, since
+there is no moment to count down to.
 
-Reading it back stays compact even though adding it is no longer a fixed
-seven slots: a calendar summary under the form lists only the dates that
-actually have a shift, a week per line — "3 Aug–9 &nbsp;6h · 6h" — browsable
-by month, empty weeks skipped outright. Tapping a day's hours reopens that
-one shift in the same form, to change the length or start time or remove it,
-rather than a separate edit screen.
+**Second false start: a date/hours/start-time form for every shift.** Correct
+in principle, wrong to use — a week's worth of shifts meant opening the form
+seven times, and the native time input scrolled a minute at a time to reach
+a start time nobody actually needed to the minute. Direct feedback after
+using it for real: too many taps, and marking a day as **off** — the thing
+asked to be quick — needed as many of them as recording a shift did.
+
+**What replaced it: a week on screen at a time, every day tappable in
+place.** Behind 🤗, one week's seven days always shown, prev/next to move to
+another. Tapping a day steps it forward — nothing set → off → working → back
+to nothing set — so off is always exactly one tap away, from wherever a day
+currently stands. Once a day is working, two dropdowns appear inline: hours,
+and a start time in half-hour steps rather than one-minute ones, both
+pre-set to sensible defaults (6 hours, 9:00) instead of blank, since moving
+a default is faster than typing one in from nothing. Every change saves
+immediately — there is no separate add/save step to open or close. The
+total for the week on screen sits beside the date range, so "6 off 6 6 7"
+reads as a number as well as a row.
 
 **Not built yet: feeding the rota into the handover screen.** It still offers
 a choice of 6, 12 or 24 hours because it has nothing better to go on; with
