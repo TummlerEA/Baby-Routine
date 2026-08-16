@@ -30,7 +30,24 @@
   // reading a sha first, and sync can always delete without a write race.
   var VOICE_QUEUE_DIR = "voice-queue";
   var VOICE_LOG_TYPES = { feed: true, diaper: true, sleep_start: true, sleep_end: true };
-  var VOICE_NAME_RE = /^([a-z_]+)__([0-9a-fA-F-]{8,64})__(\d{8}T\d{6}Z)\.json$/;
+  // The time segment is optional: a source that cannot reliably state a
+  // timezone-correct instant (a voice automation with no equivalent of
+  // Shortcuts' "Change Time Zone") can leave it out and get "whenever sync
+  // next notices the file" instead — still correct to within the poll
+  // interval, and never silently an hour out from a mismatched zone.
+  //
+  // The id accepts letters, digits and dashes — not just hex — so a
+  // different automation platform's own idea of "something unique" (a
+  // formatted date, a run count) can be used as-is instead of app.js
+  // needing to know each source's shape. It deliberately stops short of
+  // "anything": an id that reaches events some other way — pasted in as a
+  // JSON backup, or pulled from another phone's copy of the log — passes
+  // through normaliseImported first, which strips every character outside
+  // this exact set (see the comment there). A voice id with a character
+  // that sanitiser would strip survives its own first push fine, but comes
+  // back stripped on the very next pull and reads as a second, new event —
+  // so the two must agree on what "safe" means, not each invent their own.
+  var VOICE_NAME_RE = /^([a-z_]+)__([0-9A-Za-z-]{1,80})(?:__(\d{8}T\d{6}Z))?\.json$/;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -40,7 +57,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "43";
+    var fallback = "44";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2885,6 +2902,10 @@
     entry.updatedAt = isNaN(stamped.getTime()) ? entry.time : stamped.toISOString();
 
     // Ids arrive from a file, so keep only characters safe to put in markup.
+    // Every other id-producing path in the app (VOICE_NAME_RE included) has
+    // to stay inside this same set — an id that gets through elsewhere but
+    // is stripped here comes back different on its next pull and reads as
+    // a second, new event rather than the same one again.
     entry.id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
     return entry;
   }
@@ -3366,10 +3387,14 @@
     var m = VOICE_NAME_RE.exec(String(name || ""));
     if (!m) return null;
     if (!VOICE_LOG_TYPES[m[1]]) return null;
-    var iso = m[3].replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z");
-    var time = new Date(iso);
-    if (isNaN(time.getTime())) return null;
-    return { id: m[2], type: m[1], time: time.toISOString() };
+    var time = null;
+    if (m[3]) {
+      var iso = m[3].replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z");
+      time = new Date(iso);
+      if (isNaN(time.getTime())) return null;
+      time = time.toISOString();
+    }
+    return { id: m[2], type: m[1], time: time };
   }
 
   // Turns whatever is waiting in the queue into real events (by id, so
@@ -3386,7 +3411,7 @@
       files.forEach(function (file) {
         var parsed = parseVoiceFilename(file.name);
         if (!parsed || byId[parsed.id]) return;
-        var event = { id: parsed.id, type: parsed.type, time: parsed.time };
+        var event = { id: parsed.id, type: parsed.type, time: parsed.time || new Date().toISOString() };
         if (event.type === "feed") {
           var source = feedSource(defaultFedWith());
           if (source) event.fedWith = source.id;
