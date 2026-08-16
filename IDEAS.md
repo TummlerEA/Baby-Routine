@@ -219,7 +219,7 @@ record after the recurring pattern turned out to be the wrong shape; next is
 wiring today's shift into the handover window. The seven-day charts last: the
 most enjoyable to build and the least likely to change what anybody does.
 
-## Voice logging, via Siri Shortcuts — built, in v43
+## Voice logging — the queue side is built (v43–v44); no working trigger yet
 
 Saying "Feed" to Siri, hands-free, and having it land in the log. No backend
 of ours to receive it — everything the app owns already lives in a private
@@ -255,6 +255,30 @@ is exactly how the buttons on the main screen already behave. Structured
 measurements — weight, temperature — by voice are not attempted either:
 turning free speech into a number worth trusting is a different, harder
 problem than turning a fixed phrase into a fixed type.
+
+**Tried for real, and set aside: Shortcuts on iPhone, and IFTTT.** Both are
+sound in theory — that is what the design above is for — but neither was
+actually confirmed working, and both attempts are done for now:
+
+- *Shortcuts on iPhone*, built by hand, action by action, over a real phone,
+  screenshot by screenshot. The pieces went together correctly — the UTC
+  conversion, the dedup-safe id, the request itself — but the final step
+  reported success ("Logged") without the file actually landing in the
+  repository, and finding out which part was silently failing meant reading
+  Shortcuts' own error output action by action. That is where it stopped:
+  workable in principle, too much back-and-forth over screenshots to see
+  through to a working state.
+- *IFTTT*, as the Google Assistant route, was never built at all. It needs
+  something that changes on every run to keep queue filenames unique, and
+  free IFTTT has no confirmed way to produce that — would have meant either
+  asking the person to say a different word each time, or hoping a suitable
+  ingredient exists once the applet is actually open, neither tested.
+
+None of this touches the sync side above, which is built and has its own
+tests regardless of what eventually drives it — a working Shortcut, applet,
+or something else entirely can be dropped in later without another line of
+app.js. The search for a voice route continues on the phone's own terms
+rather than through either of these.
 
 Naming the phones — one setting, "whose phone is this" — is worth doing
 alongside whichever comes first. With three people logging, knowing who
