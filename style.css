@@ -237,6 +237,45 @@ body {
 #btnSleep.active-flash, #btnSleep.sleeping { border-color: var(--accent-sleep); }
 #btnSleep.sleeping .action-icon { color: var(--accent-sleep); }
 
+/* One tap for wake + nappy change + feed, in place of three. Half the
+   depth of the three main buttons and full width, since it stands for a
+   sequence rather than a single moment and has a longer label to show for
+   it — confirmation and undo both go through the ordinary toast, not a
+   note reserved on the button itself. */
+.combo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.combo-btn:active {
+  transform: scale(0.98);
+  background: var(--bg-elevated-2);
+}
+
+.combo-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.combo-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
 .section-title {
   display: flex;
   align-items: center;
