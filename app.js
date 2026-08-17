@@ -57,7 +57,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "46";
+    var fallback = "47";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -257,6 +257,11 @@
   // forward, wrapping back to "new" so a mis-tap is one more tap from undone.
   // Once ticked off (done), the status stops mattering and is not shown.
   var SHOP_STATUSES = ["new", "ordered", "arrived"];
+  // A plain YYYY-MM-DD, same shape as a plan's date — no time of day, so
+  // there is no timezone to get wrong. Only meaningful once ordered; set
+  // it once, the app clears it if the status ever moves off "ordered", so
+  // a later re-order can't inherit a stale date left over from a first one.
+  var SHOP_ETA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   var ROTA_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   var ROTA_DEFAULT_HOURS = 6;
@@ -5390,6 +5395,15 @@
       // own "Mark as bought" / "Put it back" pattern.
       statusLabel: { "new": "New", ordered: "Ordered", arrived: "Arrived" },
       statusNext: { "new": "Mark as ordered", ordered: "Mark as arrived", arrived: "Mark as new" },
+      etaFieldLabel: "Expected arrival",
+      etaLabel: function (days) {
+        if (days === null) return "";
+        if (days === 0) return "today";
+        if (days === 1) return "tomorrow";
+        if (days === -1) return "overdue by a day";
+        if (days > 1) return "in " + days + " days";
+        return "overdue by " + (-days) + " days";
+      },
       add: "Add",
       save: "Save",
       cancel: "Cancel",
@@ -5433,6 +5447,16 @@
       statusLabel: { "new": "Новое", ordered: "Заказано", arrived: "Приехало" },
       statusNext: { "new": "Отметить заказанным", ordered: "Отметить прибывшим",
         arrived: "Вернуть в «новое»" },
+      etaFieldLabel: "Ожидаемая дата",
+      etaLabel: function (days) {
+        if (days === null) return "";
+        if (days === 0) return "сегодня";
+        if (days === 1) return "завтра";
+        if (days === -1) return "просрочено на день";
+        if (days > 1) return "через " + pluralRu(days, days + " день", days + " дня", days + " дней");
+        var n = -days;
+        return "просрочено на " + pluralRu(n, n + " день", n + " дня", n + " дней");
+      },
       add: "Добавить",
       save: "Сохранить",
       cancel: "Отмена",
@@ -5506,6 +5530,15 @@
     return /^https?:\/\/\S+$/i.test(text) ? text : "";
   }
 
+  // A bare YYYY-MM-DD, and nothing that merely looks like one — a native
+  // date input can only ever hand back this shape, but an incoming sync or
+  // a pasted backup gets no such guarantee.
+  function safeEtaDate(raw) {
+    var text = String(raw || "").trim();
+    if (!SHOP_ETA_RE.test(text)) return "";
+    return isNaN(new Date(text + "T00:00:00").getTime()) ? "" : text;
+  }
+
   // Anything arriving from another phone or a file, made safe to store.
   function normaliseShopItem(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -5530,6 +5563,11 @@
     // Absent or unrecognised reads as "new" — the same thing an item added
     // before this existed should read as.
     item.status = SHOP_STATUSES.indexOf(String(raw.status)) >= 0 ? String(raw.status) : "new";
+    // Only kept alongside "ordered" — see the comment on SHOP_ETA_RE.
+    if (item.status === "ordered") {
+      var eta = safeEtaDate(raw.eta);
+      if (eta) item.eta = eta;
+    }
     return item;
   }
 
@@ -5587,6 +5625,7 @@
       delete item.done;
       delete item.doneAt;
       delete item.status;
+      delete item.eta;
       item.deleted = true;
       touch(item);
       changed++;
@@ -5658,9 +5697,36 @@
     var target = shopping.filter(function (item) { return item.id === id; })[0];
     if (!target) return;
     target.status = status;
+    // Only "ordered" has an expected-arrival date to lose — moving off it
+    // (arrived, or a mis-tap wrapping back to new) drops any date already
+    // set, so a later re-order does not inherit a stale one.
+    if (status !== "ordered") delete target.eta;
     touch(target);
     if (!saveShopping(shopping)) return;
     renderShopping();
+  }
+
+  function setShopEta(id, value) {
+    var target = shopping.filter(function (item) { return item.id === id; })[0];
+    if (!target || shopStatusOf(target) !== "ordered") return;
+    var eta = safeEtaDate(value);
+    if (eta) target.eta = eta; else delete target.eta;
+    touch(target);
+    if (!saveShopping(shopping)) return;
+    renderShopping();
+  }
+
+  // Calendar-day difference, not epoch arithmetic — the same reason the
+  // rota and the immunisation dates work this way. Adding milliseconds
+  // across a clock change is how an ETA would read a day early or late.
+  function shopEtaDays(dateStr) {
+    var parts = String(dateStr || "").split("-");
+    if (parts.length !== 3) return null;
+    var at = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    if (isNaN(at.getTime())) return null;
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return Math.round((+at - +midnight) / MS_DAY);
   }
 
   function setShopDone(id, done) {
@@ -5683,13 +5749,14 @@
     if (!target) return;
     var carried = {
       title: target.title, link: target.link, done: target.done, doneAt: target.doneAt,
-      status: target.status
+      status: target.status, eta: target.eta
     };
     target.title = "";
     delete target.link;
     delete target.done;
     delete target.doneAt;
     delete target.status;
+    delete target.eta;
     target.deleted = true;
     touch(target);
     if (!saveShopping(shopping)) return;
@@ -5704,6 +5771,7 @@
         target.doneAt = carried.doneAt;
       }
       target.status = carried.status || "new";
+      if (carried.eta && target.status === "ordered") target.eta = carried.eta;
       touch(target);
       if (!saveShopping(shopping)) return;
       renderShopping();
@@ -5825,6 +5893,25 @@
       pill.setAttribute("aria-label", T.statusNext[status]);
       pill.addEventListener("click", function () { setShopStatus(item.id, nextShopStatus(status)); });
       actions.appendChild(pill);
+
+      // Only once ordered — an expected date means nothing before that,
+      // and once it has arrived the pill already says so on its own.
+      if (status === "ordered") {
+        var etaInput = document.createElement("input");
+        etaInput.type = "date";
+        etaInput.className = "shop-eta";
+        etaInput.setAttribute("aria-label", T.etaFieldLabel);
+        etaInput.value = item.eta || "";
+        etaInput.addEventListener("change", function () { setShopEta(item.id, etaInput.value); });
+        actions.appendChild(etaInput);
+
+        if (item.eta) {
+          var etaNote = document.createElement("span");
+          etaNote.className = "shop-eta-note";
+          etaNote.textContent = T.etaLabel(shopEtaDays(item.eta));
+          actions.appendChild(etaNote);
+        }
+      }
     }
 
     // A real anchor rather than a scripted open, so the phone treats it as an
