@@ -71,7 +71,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "56";
+    var fallback = "57";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1051,6 +1051,8 @@
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
+    statsMeasures: document.getElementById("statsMeasures"),
+    statsMeasureCharts: document.getElementById("statsMeasureCharts"),
     statsSleepSummary: document.getElementById("statsSleepSummary")
   };
 
@@ -1839,6 +1841,156 @@
       "Average " + (totalDiapers / n).toFixed(1) + " a day · " + totalDiapers + " over " + n + " days";
     el.statsSleepSummary.textContent =
       "Average " + formatDuration(totalSleepMs / n) + " a day · " + formatDuration(totalSleepMs) + " over " + n + " days";
+
+    // Its own scale, and drawn after the three above so the two axes are
+    // never read as one: the chips overhead do not apply to it.
+    renderStatsMeasures();
+  }
+
+  // Every measurement worth drawing a trend for: one series per thing that
+  // has been read more than once, since a single dot is not a trend and the
+  // card on the main screen already says what it was.
+  function statsMeasureSeries() {
+    var out = [];
+    var add = function (type, label, list) {
+      if (list.length < 2) return;
+      var meta = MEASURES[type];
+      out.push({
+        type: type,
+        icon: meta.icon,
+        heading: label || meta.label,
+        unit: label ? measureUnitOf(list[list.length - 1]) : meta.unit,
+        points: list.map(function (e) {
+          return { at: new Date(e.time).getTime(), value: measureValueOf(e) };
+        })
+      });
+    };
+    MEASURE_ORDER.forEach(function (type) {
+      if (MEASURES[type].freeform) {
+        knownMeasureLabels().forEach(function (known) {
+          add(type, known.label, measurementsOf(type, known.label));
+        });
+        return;
+      }
+      add(type, "", measurementsOf(type));
+    });
+    return out;
+  }
+
+  // Just the figure, for the value axis: the unit is stated once in the
+  // heading instead, since a long one ("µmol/L") is wider than the gutter
+  // and would be clipped against the edge of the chart.
+  function measureAxisNumber(type, value) {
+    if (type === "weight") return String(Math.round(value) / 1000);
+    if (type === "other") return String(Number(value.toFixed(2)));
+    var meta = MEASURES[type];
+    return meta ? value.toFixed(meta.decimals) : String(value);
+  }
+
+  function measureUnitOfSeries(series) {
+    if (series.type === "weight") return "kg";
+    return series.unit || "";
+  }
+
+  // A reading is a point in time, not a slot in a row of days, so this plots
+  // against the calendar itself: two readings a month apart sit a month
+  // apart, and the gap where nobody weighed anybody is visible as a gap.
+  // That is the whole reason it is not the bar chart above — measurements
+  // are sparse and irregular, and evenly spacing them would draw a growth
+  // curve that never happened.
+  //
+  // The value axis deliberately does not start at zero either. A baby going
+  // from 3.2 to 4.5 kg is the entire story, and against a zero baseline it
+  // is a flat line near the top; both ends are labelled so the scale it
+  // does use is never a guess.
+  function statsLineSvg(series) {
+    var WIDTH = 320, LEFT = 38, RIGHT = 8, TOP = 10, PLOTH = 62, AXIS = 14;
+    var height = TOP + PLOTH + AXIS;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var points = series.points;
+
+    var minV = points[0].value, maxV = points[0].value;
+    var minT = points[0].at, maxT = points[0].at;
+    points.forEach(function (p) {
+      if (p.value < minV) minV = p.value;
+      if (p.value > maxV) maxV = p.value;
+      if (p.at < minT) minT = p.at;
+      if (p.at > maxT) maxT = p.at;
+    });
+    var spanV = maxV - minV;
+    var spanT = maxT - minT;
+    var label = function (v) { return formatMeasure(series.type, v, series.unit); };
+    var axis = function (v) { return measureAxisNumber(series.type, v); };
+    // Everything read at the same value, or all on one day, still has to land
+    // somewhere sensible rather than divide by nothing.
+    var xAt = function (t) { return spanT ? LEFT + ((t - minT) / spanT) * plotW : LEFT + plotW / 2; };
+    var yAt = function (v) { return spanV ? TOP + PLOTH - ((v - minV) / spanV) * PLOTH : TOP + PLOTH / 2; };
+    var round = function (n) { return Math.round(n * 10) / 10; };
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height +
+      '" role="img" aria-label="' + escapeHtml(series.heading) + ' over time, ' +
+      points.length + ' readings, ' + escapeHtml(label(minV)) + ' to ' + escapeHtml(label(maxV)) + '">'];
+
+    out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + (TOP + PLOTH) +
+      '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + PLOTH) + '"/>');
+
+    // The two ends of the value scale, so the shape can be read as figures.
+    out.push('<text class="ho-tick" x="' + (LEFT - 4) + '" y="' + (TOP + 4) +
+      '" text-anchor="end">' + escapeHtml(axis(maxV)) + '</text>');
+    if (spanV) {
+      out.push('<text class="ho-tick" x="' + (LEFT - 4) + '" y="' + (TOP + PLOTH) +
+        '" text-anchor="end">' + escapeHtml(axis(minV)) + '</text>');
+    }
+
+    var line = points.map(function (p) { return round(xAt(p.at)) + "," + round(yAt(p.value)); }).join(" ");
+    out.push('<polyline class="stats-line ' + escapeHtml("m-" + series.type) + '" points="' + line + '"/>');
+
+    points.forEach(function (p) {
+      out.push('<circle class="stats-dot ' + escapeHtml("m-" + series.type) + '" cx="' + round(xAt(p.at)) +
+        '" cy="' + round(yAt(p.value)) + '" r="2.5"><title>' +
+        escapeHtml(formatDateHeader(new Date(p.at)) + ": " + label(p.value)) + '</title></circle>');
+    });
+
+    out.push('<text class="ho-tick" x="' + LEFT + '" y="' + (height - 2) +
+      '">' + escapeHtml(formatDateShort(new Date(minT))) + '</text>');
+    if (spanT) {
+      out.push('<text class="ho-tick" x="' + (LEFT + plotW) + '" y="' + (height - 2) +
+        '" text-anchor="end">' + escapeHtml(formatDateShort(new Date(maxT))) + '</text>');
+    }
+    out.push('</svg>');
+    return out.join("");
+  }
+
+  function statsMeasureSummary(series) {
+    var points = series.points;
+    var first = points[0], last = points[points.length - 1];
+    var span = Math.round((last.at - first.at) / MS_DAY);
+    var shown = function (p) { return formatMeasure(series.type, p.value, series.unit); };
+    // Stated as where it started and where it is now, rather than as a total
+    // change: a weight adds up over months, a temperature does not, and one
+    // sentence has to be true of both.
+    var parts = [points.length + " readings"];
+    parts.push(first.value === last.value ? "unchanged at " + shown(last)
+      : shown(first) + " → " + shown(last));
+    if (span > 0) parts.push("over " + span + (span === 1 ? " day" : " days"));
+    return parts.join(" · ");
+  }
+
+  function renderStatsMeasures() {
+    var series = statsMeasureSeries();
+    el.statsMeasures.hidden = !series.length;
+    el.statsMeasureCharts.innerHTML = "";
+    series.forEach(function (one) {
+      var block = document.createElement("div");
+      block.className = "ho-strip";
+      var unit = measureUnitOfSeries(one);
+      block.innerHTML =
+        '<p class="section-title">' + one.icon + ' ' + escapeHtml(one.heading) +
+          (unit ? ' <span class="stats-unit">(' + escapeHtml(unit) + ')</span>' : '') + '</p>' +
+        statsLineSvg(one) +
+        '<p class="data-hint">' + escapeHtml(statsMeasureSummary(one)) + '</p>';
+      el.statsMeasureCharts.appendChild(block);
+    });
   }
 
   function isDayExpanded(key, index) {
