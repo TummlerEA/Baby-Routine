@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=48">
+<link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
 
@@ -37,6 +37,7 @@
         <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">🤗</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
         <button class="icon-btn icon-btn-badged" id="shopOpen" aria-label="Shopping list">🛒<span class="icon-badge" id="shopBadge" hidden>0</span></button>
+        <button class="icon-btn" id="statsOpen" aria-label="Statistics">📊</button>
         <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
       </div>
@@ -350,6 +351,12 @@
             <p>Once a day is working, two dropdowns appear — hours and a start time — pre-set to 6 hours and 9:00 rather than left blank, since changing a sensible default is quicker than typing one in from nothing. The start time moves in half-hour steps, not one minute at a time.</p>
             <p>Every shift is its own date: how long a day runs and when it starts can differ from one week to the next, and there is no repeating pattern behind any of it to fight with when the real week does not match last week's. The total for the week on screen sits next to the date range.</p>
             <p>A start time buys a quiet line on the main screen while that shift is on — <strong>Carer here until</strong> the time it ends. A shift with no start time has nothing to count down to, so it stays quiet. Nothing here clocks anyone in or out, and there is no separate record of who actually turned up when — it is settled between the carer and the other parent, not by this app, and this just keeps the shape of it in one place, synced like everything else.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Statistics (📊)</h3>
+            <p>Three small charts — feeds, nappies and sleep, one bar per day — over the last <strong>7, 14 or 30 days</strong>. Drawn from the same log as everything else, so there is nothing extra to keep in step. A line under each chart gives the daily average and the total for the range.</p>
+            <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
           </article>
 
           <article class="info-card">
@@ -672,6 +679,47 @@
     </main>
   </div>
 
+  <!-- ============ statistics screen ============ -->
+  <div class="screen" id="screenStats" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="statsBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Statistics</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <div class="ho-chips" id="statsPeriodChips"></div>
+      </section>
+
+      <section id="statsEmpty" class="data-panel" hidden>
+        <p class="data-hint">No entries yet — log a few feeds, nappies and naps and the charts fill in.</p>
+      </section>
+
+      <section id="statsCharts">
+        <div class="ho-strip">
+          <p class="section-title">🍼 Feeds per day</p>
+          <div id="statsFeedChart"></div>
+          <p class="data-hint" id="statsFeedSummary"></p>
+        </div>
+
+        <div class="ho-strip">
+          <p class="section-title">🧷 Nappies per day</p>
+          <div id="statsDiaperChart"></div>
+          <p class="data-hint" id="statsDiaperSummary"></p>
+        </div>
+
+        <div class="ho-strip">
+          <p class="section-title">🌙 Sleep per day</p>
+          <div id="statsSleepChart"></div>
+          <p class="data-hint" id="statsSleepSummary"></p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ ask an AI screen ============ -->
   <div class="screen" id="screenAi" hidden>
 
@@ -873,6 +921,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=48"></script>
+<script src="app.js?v=49"></script>
 </body>
 </html>
