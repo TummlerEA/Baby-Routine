@@ -62,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "52";
+    var fallback = "53";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -94,7 +94,10 @@
   // The gap the wake+change+feed combo button backdates by. Fixed rather
   // than configurable: it stands in for "however long that usually takes",
   // not a schedule anyone is asked to tune.
-  var WAKE_CHANGE_FEED_GAP = 15 * MS_MIN;
+  var WAKE_CHANGE_FEED_GAP = 5 * MS_MIN;
+  // How long the combo button assumes the feed itself took, since nobody
+  // is there to answer the usual "how long did it take?" chip mid-sequence.
+  var WAKE_CHANGE_FEED_MIN = 15;
   var DEFAULT_EXPANDED_DAYS = 2;
   var FORECAST_SAMPLE = 5;
 
@@ -2723,17 +2726,19 @@
 
   // One tap for the sequence that otherwise means three: baby wakes, the
   // nappy gets changed (assumed wee & poo — the common case on waking) a
-  // few minutes later, feeding starts a few minutes after that. Backdated
-  // at fixed fifteen-minute steps ending now, rather than opened as three
-  // separate taps — the "what time did this actually start" card is what
-  // the manual form and each entry's own edit are for if fifteen minutes
-  // was not quite right this time.
+  // few minutes later, feeding starts a few minutes after that and takes
+  // WAKE_CHANGE_FEED_MIN itself. Backdated at fixed five-minute steps
+  // ending now, rather than opened as three separate taps — the "what
+  // time did this actually start" card is what the manual form and each
+  // entry's own edit are for if five minutes or fifteen minutes was not
+  // quite right this time.
   function quickWakeChangeFeed() {
     var now = Date.now();
     var wakeId = addEvent("sleep_end", new Date(now - 2 * WAKE_CHANGE_FEED_GAP).toISOString());
     if (!wakeId) return;
     var nappyId = addEvent("diaper", new Date(now - WAKE_CHANGE_FEED_GAP).toISOString(), "both");
-    var feedId = addEvent("feed", new Date(now).toISOString());
+    var feedId = addEvent("feed", new Date(now).toISOString(), null, undefined, undefined, undefined,
+      WAKE_CHANGE_FEED_MIN);
     var ids = [wakeId, nappyId, feedId].filter(Boolean);
 
     var atWake = eventById(wakeId), atNappy = eventById(nappyId), atFeed = eventById(feedId);
