@@ -52,7 +52,16 @@
   // that sanitiser would strip survives its own first push fine, but comes
   // back stripped on the very next pull and reads as a second, new event —
   // so the two must agree on what "safe" means, not each invent their own.
-  var VOICE_NAME_RE = /^([a-z_]+)__([0-9A-Za-z-]{1,80})(?:__(\d{8}T\d{6}Z))?\.json$/;
+  // Built from the type list itself rather than written out, so the two can
+  // never drift apart. Spelling the types out also settles what used to be
+  // ambiguous: a loose [a-z_]+ is greedy and underscores are letters to it,
+  // so "sleep_start__abc__<time>.json" was read as the type
+  // "sleep_start__abc" - unknown, therefore dropped and deleted unlogged.
+  // Only an id of pure lowercase letters alongside a time segment hit it,
+  // which the Siri recipe's numeric id never produces, but anything else
+  // filling the queue could.
+  var VOICE_NAME_RE = new RegExp("^(" + Object.keys(VOICE_LOG_TYPES).join("|") +
+    ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -62,7 +71,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "55";
+    var fallback = "56";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
