@@ -62,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "53";
+    var fallback = "54";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3254,7 +3254,11 @@
       if (fedMin > 0 && fedMin <= 24 * 60) entry.fedMin = Math.round(fedMin);
       if (feedSource(raw.fedWith)) entry.fedWith = raw.fedWith;
     }
-    if (MEASURES[raw.type]) {
+    // Skipped for a tombstone, which by design carries no reading at all:
+    // deleting a weight strips its value the same way deleting a note strips
+    // its text. Demanding one back here is what used to drop the tombstone on
+    // arrival, so a measurement deleted on one phone stayed on the other.
+    if (MEASURES[raw.type] && !raw.deleted) {
       var measured = Number(raw.value);
       if (!isFinite(measured) || measured <= 0) return null;
       entry.value = measured;
