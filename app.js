@@ -62,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "50";
+    var fallback = "51";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1700,13 +1700,30 @@
     return out;
   }
 
+  // Plain counts, shown as they are; an average gets the one decimal place
+  // the summary line already uses, so a bar and the dashed line it is read
+  // against never disagree about how many places matter.
+  function statsCountLabel(v) {
+    return (v % 1 === 0) ? String(Math.round(v)) : v.toFixed(1);
+  }
+
+  // Minutes would crowd a bar barely wide enough for two digits, so this
+  // stays deliberately rounded — the exact figure is still one tap away, in
+  // the tooltip and in the summary line underneath.
+  function statsHoursLabel(hours) {
+    return Math.round(hours) + "h";
+  }
+
   // A small hand-drawn bar chart, same reasoning as the handover strip a
   // little further down: no charting library, so it is drawn once here and
   // reused for all three counts. valueOf reads the number from a row; cls
   // picks the colour, from the same m-feed/m-diaper/m-sleep set the strip
-  // already defines.
-  function statsBarSvg(rows, valueOf, cls) {
-    var WIDTH = 320, LEFT = 2, RIGHT = 2, TOP = 4, BARH = 64, AXIS = 14;
+  // already defines. avg draws as a dashed reference line — the one thing a
+  // row of bare bars cannot say on its own is which of them are actually
+  // above or below the run's own average. formatLabel turns a number into
+  // the text drawn on a bar and on the average line alike.
+  function statsBarSvg(rows, valueOf, cls, avg, formatLabel) {
+    var WIDTH = 320, LEFT = 2, RIGHT = 2, TOP = 13, BARH = 60, AXIS = 14;
     var height = TOP + BARH + AXIS;
     var plotW = WIDTH - LEFT - RIGHT;
     var n = rows.length;
@@ -1714,15 +1731,30 @@
     var barW = (plotW - gap * (n - 1)) / n;
     var max = 1;
     rows.forEach(function (r) { max = Math.max(max, valueOf(r)); });
+    // An outlier day, or a quiet run sitting well under it, can each put the
+    // average outside the tallest bar's own range — the scale has to fit
+    // whichever of the two reaches further.
+    max = Math.max(max, avg);
 
     var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height +
-      '" role="img" aria-label="' + n + '-day chart">'];
+      '" role="img" aria-label="' + n + '-day chart, average ' + escapeHtml(formatLabel(avg)) + '">'];
     out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + (TOP + BARH) +
       '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + BARH) + '"/>');
+
+    if (avg > 0) {
+      var avgY = TOP + BARH - (avg / max) * BARH;
+      out.push('<line class="stats-avg" x1="' + LEFT + '" y1="' + (Math.round(avgY * 10) / 10) +
+        '" x2="' + (LEFT + plotW) + '" y2="' + (Math.round(avgY * 10) / 10) + '"/>');
+      out.push('<text class="stats-avg-label" x="' + (LEFT + plotW) + '" y="' + (Math.round((avgY - 3) * 10) / 10) +
+        '" text-anchor="end">avg ' + escapeHtml(formatLabel(avg)) + '</text>');
+    }
 
     // Every label would collide past about ten bars, so only enough of
     // them are drawn to still tell roughly where in the range a bar sits.
     var labelEvery = Math.max(1, Math.ceil(n / 6));
+    // A number on every bar is only legible up to the 14-day view; past
+    // that the dashed average line above is what carries the shape.
+    var showValues = n <= 14;
     rows.forEach(function (row, i) {
       var v = valueOf(row);
       var h = (v / max) * BARH;
@@ -1731,7 +1763,12 @@
       out.push('<rect class="' + cls + '" x="' + (Math.round(x * 10) / 10) +
         '" y="' + (Math.round(y * 10) / 10) + '" width="' + (Math.round(Math.max(1, barW) * 10) / 10) +
         '" height="' + (Math.round(Math.max(0, h) * 10) / 10) + '" rx="1">' +
-        '<title>' + escapeHtml(formatDateHeader(row.date) + ': ' + v) + '</title></rect>');
+        '<title>' + escapeHtml(formatDateHeader(row.date) + ': ' + formatLabel(v)) + '</title></rect>');
+      if (showValues && v > 0) {
+        out.push('<text class="stats-bar-label" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (Math.round(Math.max(9, y - 3) * 10) / 10) +
+          '" text-anchor="middle">' + escapeHtml(formatLabel(v)) + '</text>');
+      }
       if (n <= 10 || i % labelEvery === 0 || i === n - 1) {
         out.push('<text class="ho-tick" x="' + (Math.round((x + barW / 2) * 10) / 10) +
           '" y="' + (height - 2) + '" text-anchor="middle">' + row.date.getDate() + '</text>');
@@ -1770,16 +1807,20 @@
     var rows = statsRange(statsPeriod);
     var n = rows.length;
 
-    el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed");
-    el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper");
-    el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep");
-
     var totalFeeds = 0, totalDiapers = 0, totalSleepMs = 0;
     rows.forEach(function (r) {
       totalFeeds += r.feeds;
       totalDiapers += r.diapers;
       totalSleepMs += r.sleepMs;
     });
+
+    el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed",
+      totalFeeds / n, statsCountLabel);
+    el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper",
+      totalDiapers / n, statsCountLabel);
+    el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep",
+      (totalSleepMs / n) / MS_HOUR, statsHoursLabel);
+
     el.statsFeedSummary.textContent =
       "Average " + (totalFeeds / n).toFixed(1) + " a day · " + totalFeeds + " over " + n + " days";
     el.statsDiaperSummary.textContent =

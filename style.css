@@ -1827,6 +1827,9 @@ body {
 .ho-svg .m-feed { fill: var(--accent-feed); }
 .ho-svg .m-diaper { fill: var(--accent-diaper); }
 .ho-svg .m-sleep { fill: var(--accent-sleep); }
+.ho-svg .stats-bar-label { fill: var(--text-dim); font-size: 9px; }
+.ho-svg .stats-avg { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 2; }
+.ho-svg .stats-avg-label { fill: var(--text-faint); font-size: 8px; }
 
 .ho-empty {
   font-size: 14px;
