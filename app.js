@@ -62,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "51";
+    var fallback = "52";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -94,7 +94,7 @@
   // The gap the wake+change+feed combo button backdates by. Fixed rather
   // than configurable: it stands in for "however long that usually takes",
   // not a schedule anyone is asked to tune.
-  var WAKE_CHANGE_FEED_GAP = 5 * MS_MIN;
+  var WAKE_CHANGE_FEED_GAP = 15 * MS_MIN;
   var DEFAULT_EXPANDED_DAYS = 2;
   var FORECAST_SAMPLE = 5;
 
@@ -2722,22 +2722,23 @@
   });
 
   // One tap for the sequence that otherwise means three: baby wakes, the
-  // nappy gets changed a few minutes later, feeding starts a few minutes
-  // after that. Backdated at fixed five-minute steps ending now, rather
-  // than opened as three separate taps — the "what time did this actually
-  // start" card is what the manual form and each entry's own edit are for
-  // if five minutes was not quite right this time.
+  // nappy gets changed (assumed wee & poo — the common case on waking) a
+  // few minutes later, feeding starts a few minutes after that. Backdated
+  // at fixed fifteen-minute steps ending now, rather than opened as three
+  // separate taps — the "what time did this actually start" card is what
+  // the manual form and each entry's own edit are for if fifteen minutes
+  // was not quite right this time.
   function quickWakeChangeFeed() {
     var now = Date.now();
     var wakeId = addEvent("sleep_end", new Date(now - 2 * WAKE_CHANGE_FEED_GAP).toISOString());
     if (!wakeId) return;
-    var nappyId = addEvent("diaper", new Date(now - WAKE_CHANGE_FEED_GAP).toISOString());
+    var nappyId = addEvent("diaper", new Date(now - WAKE_CHANGE_FEED_GAP).toISOString(), "both");
     var feedId = addEvent("feed", new Date(now).toISOString());
     var ids = [wakeId, nappyId, feedId].filter(Boolean);
 
     var atWake = eventById(wakeId), atNappy = eventById(nappyId), atFeed = eventById(feedId);
     var summary = "Logged: woke " + (atWake ? formatClockTime(new Date(atWake.time)) : "") +
-      (atNappy ? " · nappy " + formatClockTime(new Date(atNappy.time)) : "") +
+      (atNappy ? " · nappy (wee & poo) " + formatClockTime(new Date(atNappy.time)) : "") +
       (atFeed ? " · feed " + formatClockTime(new Date(atFeed.time)) : "");
 
     showToast(summary, function () {
