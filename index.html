@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=49">
+<link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
 
@@ -193,6 +193,7 @@
               <option value="temp">Temperature</option>
               <option value="head">Head circumference</option>
               <option value="other">Something else</option>
+              <option value="note">Note</option>
             </select>
           </label>
           <label class="manual-field" id="manualLabelField" hidden>
@@ -234,6 +235,14 @@
               <option value="dry">Dry</option>
             </select>
           </label>
+          <label class="manual-field" id="manualNoteTextField" hidden>
+            <span class="manual-label">What did you notice?</span>
+            <input type="text" id="manualNoteText" class="manual-input" maxlength="200" placeholder="e.g. Rash on left cheek" autocomplete="off">
+          </label>
+          <label class="manual-field" id="manualLinkField" hidden>
+            <span class="manual-label">Photo link <span class="manual-optional">— optional</span></span>
+            <input type="url" id="manualLink" class="manual-input" maxlength="500" autocomplete="off" inputmode="url" placeholder="A shared album link">
+          </label>
           <label class="manual-field">
             <span class="manual-label">Date and time</span>
             <input type="datetime-local" id="manualDateTime" class="manual-input">
@@ -267,9 +276,11 @@
             <button class="data-btn measure-add" data-measure="temp">🌡 Add temperature</button>
             <button class="data-btn measure-add" data-measure="head">🧢 Add head circumference</button>
             <button class="data-btn measure-add" data-measure="other">🔬 Add something else</button>
+            <button class="data-btn" id="addNoteBtn">📝 Add note</button>
           </div>
           <p class="settings-hint"><strong>Something else</strong> takes any reading you are given — a blood result, a bottle volume, anything with a number. Name it once and it is offered back to you next time. Nothing here is interpreted or checked against any range; it is recorded and shown, nothing more.</p>
           <p class="settings-hint">Growth is plotted on centile charts in your baby's own health record — the red book, in the UK — and that is what a health visitor or paediatrician reads. These are just the numbers and how they have changed.</p>
+          <p class="settings-hint"><strong>Note</strong> is for anything worth writing down that isn't a number — a rash, say. A photo never lives in this app; instead, a link points at wherever you actually keep it (a shared Google Drive or iCloud album works well). It starts pre-filled from the album link saved under Settings, so most notes need nothing typed there at all.</p>
         </div>
       </section>
 
@@ -373,6 +384,7 @@
             <p><strong>History</strong> groups entries by day. Today and yesterday are open; older days are one tap away. Each day header totals that day's feeds, nappies — including wet and dirty counts — and sleep.</p>
             <p><strong>Measurements</strong> holds weight, length, head circumference and temperature — the three growth measurements are the ones plotted on centile charts in your baby's health record (the red book, in the UK). They are not on the big buttons because they are not things you log half asleep. Weight shows in kilograms and in pounds and ounces, with the change since last time and against birth weight.</p>
             <p><strong>Something else</strong> takes any other reading you are handed — a bilirubin result, a bottle volume, anything with a number. Name it and give it a unit once, and that name is offered back next time, so each thing builds its own little history. The app records and shows these and interprets nothing: unlike temperature, there is no general safe range for an arbitrary test, and reference ranges differ by laboratory and by age.</p>
+            <p><strong>Note</strong> is for the same drawer, for anything that isn't a number — a rash, say. Say what you noticed and, optionally, paste a link to a photo of it. No photo ever lives in this app; the link points at wherever you actually keep it — a shared Google Drive or iCloud album works well, and Settings can hold that album's link so it is offered on every new note without retyping it. Set to <strong>share the album by link</strong> at the Drive or iCloud end, once, and it works the same for whoever else opens the log. A note syncs and backs up in full, the same as everything else — only a share link leaves it out, since there is no room there for its text.</p>
           </article>
 
           <article class="info-card info-card-urgent">
@@ -804,7 +816,11 @@
               <span class="manual-echo">Only the styles this phone already has are offered — nothing is downloaded. The style travels with the name, so the other phones will show it too.</span>
             </div>
           </div>
-          <p class="settings-hint">Used to show your baby's age, to work out weight change since birth, and to pick the right temperature threshold — under 3 months it is lower.</p>
+          <label class="manual-field">
+            <span class="manual-label">Photo album link <span class="manual-optional">— optional</span></span>
+            <input id="photoAlbum" class="manual-input" type="url" maxlength="500" autocomplete="off" inputmode="url" placeholder="A shared Google Drive or iCloud album">
+          </label>
+          <p class="settings-hint">Used to show your baby's age, to work out weight change since birth, and to pick the right temperature threshold — under 3 months it is lower. The photo album link is offered as a starting point on every new note, so it only needs setting once — this app never stores a photo itself, only this link.</p>
         </div>
       </section>
 
@@ -921,6 +937,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
 </body>
 </html>
