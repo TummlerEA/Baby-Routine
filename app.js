@@ -7,6 +7,11 @@
   var NAME_KEY = "baby-tracker-name";
   var INTERVALS_KEY = "baby-tracker-intervals";
   var DOB_KEY = "baby-tracker-dob";
+  // A shared default: where the photos behind a note (a rash, say) actually
+  // live. Never a photo itself — this app stores no images — just a link to
+  // a folder the parent already shares (Google Drive, iCloud), offered as a
+  // starting point on each new note and editable per entry.
+  var PHOTO_ALBUM_KEY = "baby-tracker-photo-album";
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
@@ -57,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "49";
+    var fallback = "50";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -309,6 +314,7 @@
   var MEASURE_ORDER = ["weight", "height", "head", "temp", "other"];
   var MAX_LABEL = 40;
   var MAX_UNIT = 12;
+  var MAX_NOTE_TEXT = 200;
 
   // Mirrors the guidance already in the app, which follows NHS advice.
   var FEVER_UNDER_3M = 38;
@@ -325,7 +331,12 @@
     height: { label: "Length", icon: "📏" },
     temp: { label: "Temperature", icon: "🌡" },
     head: { label: "Head circumference", icon: "🧢" },
-    other: { label: "Measurement", icon: "🔬" }
+    other: { label: "Measurement", icon: "🔬" },
+    // A rash, or anything else worth writing down that isn't a number and
+    // isn't one of the three big buttons. The photo itself never lives in
+    // the app — text is optional context, link is a pointer to wherever the
+    // photo actually is (a shared album), never fetched or embedded.
+    note: { label: "Note", icon: "📝" }
   };
 
   var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -596,6 +607,34 @@
     }
   }
 
+  function loadPhotoAlbum() {
+    try {
+      return localStorage.getItem(PHOTO_ALBUM_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function savePhotoAlbum(value) {
+    var typed = cleanText(value, MAX_SHOP_LINK);
+    var link = safeLink(typed);
+    if (typed && !link) {
+      showError("A link has to start with http:// or https://");
+      return false;
+    }
+    try {
+      if (link) localStorage.setItem(PHOTO_ALBUM_KEY, link);
+      else localStorage.removeItem(PHOTO_ALBUM_KEY);
+      touchMeta();
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save the photo album link");
+      return false;
+    }
+  }
+
   // Midnight local on the day of birth, or null when it is not set.
   function dobDate() {
     var raw = loadDob();
@@ -724,7 +763,8 @@
   // on top of that.
   function stripToTombstone(event) {
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
-      label: event.label, unit: event.unit, fedMin: event.fedMin, fedWith: event.fedWith };
+      label: event.label, unit: event.unit, fedMin: event.fedMin, fedWith: event.fedWith,
+      text: event.text, link: event.link };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
@@ -732,6 +772,8 @@
     delete event.unit;
     delete event.fedMin;
     delete event.fedWith;
+    delete event.text;
+    delete event.link;
     event.deleted = true;
     return carried;
   }
@@ -745,6 +787,8 @@
     if (carried.unit !== undefined) event.unit = carried.unit;
     if (carried.fedMin !== undefined) event.fedMin = carried.fedMin;
     if (carried.fedWith !== undefined) event.fedWith = carried.fedWith;
+    if (carried.text !== undefined) event.text = carried.text;
+    if (carried.link !== undefined) event.link = carried.link;
   }
 
   function tombstoneExpired(event) {
@@ -809,6 +853,12 @@
     manualLabelSuggest: document.getElementById("manualLabelSuggest"),
     manualUnitField: document.getElementById("manualUnitField"),
     manualMeasureUnit: document.getElementById("manualMeasureUnit"),
+    manualNoteTextField: document.getElementById("manualNoteTextField"),
+    manualNoteText: document.getElementById("manualNoteText"),
+    manualLinkField: document.getElementById("manualLinkField"),
+    manualLink: document.getElementById("manualLink"),
+    addNoteBtn: document.getElementById("addNoteBtn"),
+    photoAlbum: document.getElementById("photoAlbum"),
     babyDob: document.getElementById("babyDob"),
     babyFeeding: document.getElementById("babyFeeding"),
     babyDobEcho: document.getElementById("babyDobEcho"),
@@ -1304,6 +1354,14 @@
     return feedSource(event.fedWith) ? event.fedWith : "";
   }
 
+  function noteTextOf(event) {
+    return (event && event.type === "note") ? cleanText(event.text, MAX_NOTE_TEXT) : "";
+  }
+
+  function noteLinkOf(event) {
+    return (event && event.type === "note") ? safeLink(event.link) : "";
+  }
+
   function defaultFedWith() {
     var regime = feedingOption(loadFeeding());
     return regime ? regime.fallsBackTo : "";
@@ -1794,6 +1852,9 @@
               (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
               (measureValueOf(e) !== null
                 ? '<div class="l-measure">' + escapeHtml(measureLine(e)) + '</div>' : '') +
+              (noteTextOf(e) ? '<div class="l-detail">' + escapeHtml(noteTextOf(e)) + '</div>' : '') +
+              (noteLinkOf(e) ? '<a class="l-link" href="' + escapeHtml(noteLinkOf(e)) +
+                '" target="_blank" rel="noopener">📷 Photo</a>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
             '</div>' +
             '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
@@ -1975,10 +2036,26 @@
     if (!isFeed) el.manualSource.value = "";
   }
 
+  function syncManualNoteField() {
+    var isNote = el.manualType.value === "note";
+    el.manualNoteTextField.hidden = !isNote;
+    el.manualLinkField.hidden = !isNote;
+    if (!isNote) {
+      el.manualNoteText.value = "";
+      el.manualLink.value = "";
+    // A fresh note starts from whatever album link is already saved, so
+    // there is nothing to retype for the common case of one shared album.
+    // Editing an existing note leaves it alone — startEdit fills it in.
+    } else if (!editingId && !el.manualLink.value) {
+      el.manualLink.value = loadPhotoAlbum();
+    }
+  }
+
   function syncManualFields() {
     syncManualFedField();
     syncManualNappyField();
     syncManualValueField();
+    syncManualNoteField();
   }
 
   el.manualType.addEventListener("change", syncManualFields);
@@ -1991,6 +2068,8 @@
     el.manualValue.value = "";
     el.manualMeasureLabel.value = "";
     el.manualMeasureUnit.value = "";
+    el.manualNoteText.value = "";
+    el.manualLink.value = "";
     syncManualFields();
     el.manualTitle.textContent = "New entry";
     el.manualSubmit.textContent = "Add entry";
@@ -2012,6 +2091,8 @@
     el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
     el.manualMeasureLabel.value = measureLabelOf(found);
     el.manualMeasureUnit.value = measureUnitOf(found);
+    el.manualNoteText.value = noteTextOf(found);
+    el.manualLink.value = noteLinkOf(found);
     syncManualFields();
     el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
     el.manualSubmit.textContent = "Save";
@@ -2031,6 +2112,19 @@
     el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
     el.manualValue.focus();
   }
+
+  function startNote() {
+    resetManualForm();
+    openManualPanel();
+    el.manualTitle.textContent = "New note";
+    el.manualType.value = "note";
+    syncManualFields();
+    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+    el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.manualNoteText.focus();
+  }
+
+  el.addNoteBtn.addEventListener("click", startNote);
 
   el.manualDateTime.value = toDateTimeLocalValue(new Date());
 
@@ -2090,6 +2184,22 @@
       }
     }
 
+    var noteText = "";
+    var noteLink = "";
+    if (type === "note") {
+      noteText = cleanText(el.manualNoteText.value, MAX_NOTE_TEXT);
+      if (!noteText) {
+        showManualNotice("Write a few words, so you can tell it apart later");
+        return;
+      }
+      var typedLink = cleanText(el.manualLink.value, MAX_SHOP_LINK);
+      noteLink = safeLink(typedLink);
+      if (typedLink && !noteLink) {
+        showManualNotice("A link has to start with http:// or https://");
+        return;
+      }
+    }
+
     var fedMinutes = parseInt(el.manualFed.value, 10);
     if (!isFinite(fedMinutes) || fedMinutes <= 0) fedMinutes = 0;
 
@@ -2121,6 +2231,10 @@
       else delete target.label;
       if (measureUnit) target.unit = measureUnit;
       else delete target.unit;
+      if (noteText) target.text = noteText;
+      else delete target.text;
+      if (noteLink) target.link = noteLink;
+      else delete target.link;
       touch(target);
       savedId = editingId;
       if (!saveEvents(events)) return;
@@ -2131,7 +2245,7 @@
       savedId = addEvent(type, picked.toISOString(),
         type === "diaper" ? el.manualNappy.value : "", measureValue,
         measureLabel, measureUnit, type === "feed" ? fedMinutes : 0,
-        type === "feed" ? el.manualSource.value : "");
+        type === "feed" ? el.manualSource.value : "", noteText, noteLink);
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       // The form is the one place where the entry vanishes from view the
@@ -2492,7 +2606,7 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
@@ -2505,6 +2619,8 @@
     if (MEASURES[type] && isFinite(value) && value > 0) event.value = value;
     if (label) event.label = label;
     if (unit) event.unit = unit;
+    if (type === "note" && text) event.text = text;
+    if (type === "note" && link) event.link = link;
     touch(event);
     events.push(event);
     if (!saveEvents(events)) return null;
@@ -2629,7 +2745,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -2645,7 +2761,9 @@
         measureValueOf(e) === null ? "" : e.value,
         measureLabelOf(e),
         measureUnitOf(e),
-        updatedAtOf(e)
+        updatedAtOf(e),
+        noteTextOf(e),
+        noteLinkOf(e)
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -2673,11 +2791,16 @@
       sortedByTimeAsc(group.events).forEach(function (e) {
         var duration = analysis.durationById[e.id] ||
           (fedMinutesOf(e) ? fedMinutesOf(e) * MS_MIN : 0);
+        // A pipe in a note's own text would otherwise split the table row.
+        var noteText = noteTextOf(e).replace(/\|/g, "\\|");
+        var noteLink = noteLinkOf(e);
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
           (fedWithOf(e) ? " (" + feedSource(e.fedWith).label.toLowerCase() + ")" : "") +
           (measureValueOf(e) !== null ? " — " + measureLine(e) : "") +
+          (noteText ? " — " + noteText : "") +
+          (noteLink ? " ([photo](" + noteLink + "))" : "") +
           " | " + (duration ? formatDuration(duration) : "—") + " |");
       });
       out.push("");
@@ -2722,6 +2845,7 @@
       dob: loadDob(),
       feeding: loadFeeding(),
       intervals: intervals,
+      photoAlbum: loadPhotoAlbum(),
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
@@ -2790,7 +2914,13 @@
   }
 
   function buildSharePayload(days) {
-    var chosen = eventsToShare(days);
+    // A note's text and any link can run well past the size a share link
+    // stays comfortable at, and there is no column here for them anyway —
+    // left out, rather than shipped as a row missing its own content. Sync
+    // and a full JSON backup still carry it in full.
+    var chosen = eventsToShare(days).filter(function (e) {
+      return SHARE_TYPES.indexOf(e.type) !== -1;
+    });
     return {
       v: SHARE_VERSION,
       n: loadName(),
@@ -3005,6 +3135,10 @@
       renderName();
       renderNameFonts();
     }
+    if (parsed.photoAlbum && (parsed.overwrite || !loadPhotoAlbum())) {
+      savePhotoAlbum(String(parsed.photoAlbum));
+      el.photoAlbum.value = loadPhotoAlbum();
+    }
   }
 
   function applyBackupSettings(text) {
@@ -3019,7 +3153,7 @@
     // date of birth still only fill blanks, so a file never renames a baby.
     applyIncomingSettings({
       name: parsed.name, nameFont: parsed.nameFont, dob: parsed.dob, feeding: parsed.feeding,
-      intervals: parsed.intervals, takeIntervals: true, overwrite: false
+      intervals: parsed.intervals, photoAlbum: parsed.photoAlbum, takeIntervals: true, overwrite: false
     });
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
@@ -3084,6 +3218,15 @@
         var unit = cleanText(raw.unit, MAX_UNIT);
         if (unit) entry.unit = unit;
       }
+    }
+    // A tombstone carries neither — deleting a note strips its text and
+    // link the same way deleting anything else strips its reading.
+    if (raw.type === "note" && !raw.deleted) {
+      var noteText = cleanText(raw.text, MAX_NOTE_TEXT);
+      if (!noteText) return null;
+      entry.text = noteText;
+      var noteLink = safeLink(raw.link);
+      if (noteLink) entry.link = noteLink;
     }
     if (raw.deleted) entry.deleted = true;
 
@@ -3632,6 +3775,7 @@
         dob: loadDob(),
         feeding: loadFeeding(),
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
+        photoAlbum: loadPhotoAlbum(),
         updatedAt: metaStamp()
       },
       events: events,
@@ -3781,6 +3925,7 @@
               dob: remoteMeta.dob,
               feeding: remoteMeta.feeding,
               intervals: remoteMeta.intervals,
+              photoAlbum: remoteMeta.photoAlbum,
               takeIntervals: remoteNewer,
               overwrite: remoteNewer
             });
@@ -4090,6 +4235,11 @@
     saveDob(el.babyDob.value);
     renderDobEcho();
     renderAll();
+  });
+
+  el.photoAlbum.value = loadPhotoAlbum();
+  el.photoAlbum.addEventListener("change", function () {
+    if (savePhotoAlbum(el.photoAlbum.value)) el.photoAlbum.value = loadPhotoAlbum();
   });
 
   el.babyName.value = loadName();

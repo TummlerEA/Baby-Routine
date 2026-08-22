@@ -1070,6 +1070,15 @@ body {
   margin-top: 2px;
 }
 
+.log-item .l-link {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--accent-sleep);
+  text-decoration: underline;
+}
+
 /* ---------- measurements ---------- */
 
 .banner-fever {
