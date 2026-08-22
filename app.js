@@ -57,7 +57,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "47";
+    var fallback = "48";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -6566,7 +6566,9 @@
   function renderClock() {
     var now = new Date();
     el.topClock.textContent = formatClockTime(now);
-    el.topDate.textContent = formatDateShort(now);
+    var days = ageDaysAt(now);
+    el.topDate.textContent = formatDateShort(now) +
+      (days !== null && days >= 0 ? " · " + formatAge(days) : "");
   }
 
   function renderAll(opts) {
