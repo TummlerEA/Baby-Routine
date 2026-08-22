@@ -1830,6 +1830,20 @@ body {
 .ho-svg .stats-bar-label { fill: var(--text-dim); font-size: 9px; }
 .ho-svg .stats-avg { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 2; }
 .ho-svg .stats-avg-label { fill: var(--text-faint); font-size: 8px; }
+/* A measurement trend: the dots are the readings, the line only joins them.
+   fill:none has to stay unbeaten here - a filled polyline turns a fever
+   spike into a solid triangle - so the colour per type sets stroke and dot
+   fill only, never the line's. */
+.ho-svg .stats-line { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: 0.55; }
+.ho-svg .stats-dot { stroke: none; fill: currentColor; }
+.ho-svg .m-weight { color: var(--accent-feed); }
+.ho-svg .m-height { color: var(--accent-sleep); }
+.ho-svg .m-head   { color: var(--accent-diaper); }
+.ho-svg .m-temp   { color: var(--danger); }
+.ho-svg .m-other  { color: var(--text-dim); }
+.stats-unit { text-transform: none; letter-spacing: 0; color: var(--text-faint); }
+.stats-measure-head { margin-top: 22px; }
+.stats-measure-note { margin-top: -4px; }
 
 .ho-empty {
   font-size: 14px;
