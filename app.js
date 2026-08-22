@@ -62,7 +62,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "54";
+    var fallback = "55";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3664,6 +3664,17 @@
   var syncInFlight = false;
   var applyingRemote = false;
   var syncQueued = false;
+  // The last document a fetch actually brought back, kept with the sha it
+  // had. Before downloading it again, sync asks the cheap question — is the
+  // sha still that one? — and on a match reuses this body instead, so every
+  // line of the merge below runs on identical data having paid almost
+  // nothing for it. Held in memory only: after a reload there is nothing to
+  // compare against, so the next fetch is a plain download.
+  var remoteCache = { repo: "", sha: null, doc: null };
+
+  function forgetRemoteCache() {
+    remoteCache = { repo: "", sha: null, doc: null };
+  }
   var syncState = { kind: "idle", text: "", at: null };
 
   function bytesToBase64(bytes) {
@@ -3683,8 +3694,11 @@
     return new TextDecoder().decode(bytes);
   }
 
+  // An omitted path means the main document; an empty one means the
+  // repository root, which is how the listing asks for it.
   function githubUrl(repo, path) {
-    return "https://api.github.com/repos/" + repo + "/contents/" + (path || SYNC_PATH);
+    var at = (path === undefined || path === null) ? SYNC_PATH : path;
+    return "https://api.github.com/repos/" + repo + "/contents/" + at;
   }
 
   function githubHeaders(token) {
@@ -3704,12 +3718,15 @@
   }
 
   // Reads the stored document. A 404 simply means nothing has been written yet.
-  function fetchRemote(config, path) {
+  function downloadRemote(config, path) {
     return fetch(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
       headers: githubHeaders(config.token),
       cache: "no-store"
     }).then(function (response) {
-      if (response.status === 404) return { doc: null, sha: null };
+      if (response.status === 404) {
+        if (!path) forgetRemoteCache();
+        return { doc: null, sha: null };
+      }
       if (!response.ok) throw { http: response.status };
       return response.json().then(function (body) {
         var doc = null;
@@ -3718,15 +3735,57 @@
         } catch (e) {
           doc = null;
         }
-        return { doc: doc, sha: body.sha || null };
+        var sha = body.sha || null;
+        // Only a document that came back whole may be served from memory
+        // later; anything we could not parse is not worth keeping.
+        if (!path) {
+          if (doc && sha) remoteCache = { repo: config.repo, sha: sha, doc: doc };
+          else forgetRemoteCache();
+        }
+        return { doc: doc, sha: sha };
       });
+    });
+  }
+
+  // Asks what the stored document's sha is without downloading it. The
+  // listing names every file in the repository root with its sha and no
+  // contents, so it stays small however long the log grows — which is the
+  // whole point: a poll that finds the same sha we already hold has learned
+  // everything it needed for a few hundred bytes instead of the lot.
+  function remoteShaOf(config) {
+    return listRemoteDir(config, "").then(function (entries) {
+      var found = null;
+      entries.forEach(function (entry) {
+        if (entry && entry.name === SYNC_PATH) found = entry.sha || null;
+      });
+      return found;
+    });
+  }
+
+  function fetchRemote(config, path) {
+    var cached = !path && remoteCache.doc && remoteCache.sha &&
+      remoteCache.repo === config.repo ? remoteCache : null;
+    if (!cached) return downloadRemote(config, path);
+    // A listing that fails for any reason tells us nothing, so it falls
+    // through to the ordinary download rather than guessing.
+    return remoteShaOf(config).then(function (sha) {
+      if (sha && sha === cached.sha) {
+        return { doc: cached.doc, sha: cached.sha, unchanged: true };
+      }
+      return downloadRemote(config, path);
+    }, function () {
+      return downloadRemote(config, path);
     });
   }
 
   function putRemote(config, doc, sha, path) {
     var payload = {
       message: "Update baby log (" + new Date().toISOString() + ")",
-      content: textToBase64(JSON.stringify(doc, null, 1))
+      // Sent without the indentation it used to carry: this file is a
+      // transport between two phones, read only by the app, and the spaces
+      // were about a fifth of every upload. The backup a person actually
+      // opens is a separate export and is still laid out to be read.
+      content: textToBase64(JSON.stringify(doc))
     };
     if (sha) payload.sha = sha;
     return fetch(githubUrl(config.repo, path), {
@@ -4015,6 +4074,9 @@
         if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
         return putRemote(config, localDocument(), found.sha).then(function (sha) {
+          // What is up there is ours now, and carries an ETag we have never
+          // seen; the next fetch asks plainly and caches the answer afresh.
+          forgetRemoteCache();
           syncConfig.sha = sha;
           saveSyncConfig(syncConfig);
           return { pulled: pulled + pulledVoice, pushed: 1 };
@@ -4077,6 +4139,9 @@
     // once connected, and correcting a token there must not throw away a
     // setting changed a minute earlier.
     var joining = !syncConfig;
+    // A different repository, or the same one reached with a different
+    // token, has nothing to do with the body we were holding.
+    forgetRemoteCache();
     syncConfig = { repo: repo, token: token, sha: null };
     if (!saveSyncConfig(syncConfig)) return;
     renderSyncState();
@@ -4089,6 +4154,7 @@
   el.syncNow.addEventListener("click", function () { syncNow("manual"); });
 
   el.syncDisconnect.addEventListener("click", function () {
+    forgetRemoteCache();
     syncConfig = null;
     saveSyncConfig(null);
     clearTimeout(syncTimer);
