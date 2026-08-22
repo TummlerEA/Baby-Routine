@@ -57,7 +57,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "48";
+    var fallback = "49";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -977,7 +977,19 @@
     settingsZone: document.getElementById("settingsZone"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
-    toastAction: document.getElementById("toastAction")
+    toastAction: document.getElementById("toastAction"),
+    screenStats: document.getElementById("screenStats"),
+    statsOpenBtn: document.getElementById("statsOpen"),
+    statsBack: document.getElementById("statsBack"),
+    statsPeriodChips: document.getElementById("statsPeriodChips"),
+    statsEmpty: document.getElementById("statsEmpty"),
+    statsCharts: document.getElementById("statsCharts"),
+    statsFeedChart: document.getElementById("statsFeedChart"),
+    statsFeedSummary: document.getElementById("statsFeedSummary"),
+    statsDiaperChart: document.getElementById("statsDiaperChart"),
+    statsDiaperSummary: document.getElementById("statsDiaperSummary"),
+    statsSleepChart: document.getElementById("statsSleepChart"),
+    statsSleepSummary: document.getElementById("statsSleepSummary")
   };
 
   var logOpen = false;
@@ -986,6 +998,8 @@
   var editingId = null;
   var expandedDays = {};
   var lastLogDayKey = null;
+  var STATS_PERIODS = [7, 14, 30];
+  var statsPeriod = 7;
 
   // ---------- helpers ----------
 
@@ -1591,6 +1605,129 @@
     var feedLabel = "🍼 " + feeds;
     if (fedMs) feedLabel += " (" + formatDuration(fedMs) + ")";
     return feedLabel + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
+  }
+
+  // ---------- statistics ----------
+
+  // One row per calendar day, oldest first, so the chart reads left to
+  // right the same way the clock does. Feeds and diapers come from a
+  // single pass over the log; sleep reuses the same range math the sleep
+  // banner and handover strip already use, so a nap that crosses
+  // midnight is split the same way everywhere in the app.
+  function statsRange(days) {
+    var byDay = {};
+    liveEvents().forEach(function (e) {
+      var key = dayKeyOf(new Date(e.time));
+      if (!byDay[key]) byDay[key] = { feeds: 0, diapers: 0 };
+      if (e.type === "feed") byDay[key].feeds++;
+      else if (e.type === "diaper") byDay[key].diapers++;
+    });
+    var analysis = analyzeSleep();
+    var now = Date.now();
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var out = [];
+    for (var i = days - 1; i >= 0; i--) {
+      var dayStart = new Date(today);
+      dayStart.setDate(dayStart.getDate() - i);
+      var key = dayKeyOf(dayStart);
+      var counts = byDay[key] || { feeds: 0, diapers: 0 };
+      out.push({
+        date: dayStart,
+        feeds: counts.feeds,
+        diapers: counts.diapers,
+        sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
+      });
+    }
+    return out;
+  }
+
+  // A small hand-drawn bar chart, same reasoning as the handover strip a
+  // little further down: no charting library, so it is drawn once here and
+  // reused for all three counts. valueOf reads the number from a row; cls
+  // picks the colour, from the same m-feed/m-diaper/m-sleep set the strip
+  // already defines.
+  function statsBarSvg(rows, valueOf, cls) {
+    var WIDTH = 320, LEFT = 2, RIGHT = 2, TOP = 4, BARH = 64, AXIS = 14;
+    var height = TOP + BARH + AXIS;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var n = rows.length;
+    var gap = n > 14 ? 1 : 3;
+    var barW = (plotW - gap * (n - 1)) / n;
+    var max = 1;
+    rows.forEach(function (r) { max = Math.max(max, valueOf(r)); });
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height +
+      '" role="img" aria-label="' + n + '-day chart">'];
+    out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + (TOP + BARH) +
+      '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + BARH) + '"/>');
+
+    // Every label would collide past about ten bars, so only enough of
+    // them are drawn to still tell roughly where in the range a bar sits.
+    var labelEvery = Math.max(1, Math.ceil(n / 6));
+    rows.forEach(function (row, i) {
+      var v = valueOf(row);
+      var h = (v / max) * BARH;
+      var x = LEFT + i * (barW + gap);
+      var y = TOP + BARH - h;
+      out.push('<rect class="' + cls + '" x="' + (Math.round(x * 10) / 10) +
+        '" y="' + (Math.round(y * 10) / 10) + '" width="' + (Math.round(Math.max(1, barW) * 10) / 10) +
+        '" height="' + (Math.round(Math.max(0, h) * 10) / 10) + '" rx="1">' +
+        '<title>' + escapeHtml(formatDateHeader(row.date) + ': ' + v) + '</title></rect>');
+      if (n <= 10 || i % labelEvery === 0 || i === n - 1) {
+        out.push('<text class="ho-tick" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (height - 2) + '" text-anchor="middle">' + row.date.getDate() + '</text>');
+      }
+    });
+    out.push('</svg>');
+    return out.join("");
+  }
+
+  function renderStatsPeriodChips() {
+    el.statsPeriodChips.innerHTML = "";
+    STATS_PERIODS.forEach(function (days) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "ho-chip" + (days === statsPeriod ? " on" : "");
+      chip.textContent = days + " days";
+      chip.addEventListener("click", function () {
+        statsPeriod = days;
+        renderStats();
+      });
+      el.statsPeriodChips.appendChild(chip);
+    });
+  }
+
+  function renderStats() {
+    renderStatsPeriodChips();
+
+    if (!liveEvents().length) {
+      el.statsEmpty.hidden = false;
+      el.statsCharts.hidden = true;
+      return;
+    }
+    el.statsEmpty.hidden = true;
+    el.statsCharts.hidden = false;
+
+    var rows = statsRange(statsPeriod);
+    var n = rows.length;
+
+    el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed");
+    el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper");
+    el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep");
+
+    var totalFeeds = 0, totalDiapers = 0, totalSleepMs = 0;
+    rows.forEach(function (r) {
+      totalFeeds += r.feeds;
+      totalDiapers += r.diapers;
+      totalSleepMs += r.sleepMs;
+    });
+    el.statsFeedSummary.textContent =
+      "Average " + (totalFeeds / n).toFixed(1) + " a day · " + totalFeeds + " over " + n + " days";
+    el.statsDiaperSummary.textContent =
+      "Average " + (totalDiapers / n).toFixed(1) + " a day · " + totalDiapers + " over " + n + " days";
+    el.statsSleepSummary.textContent =
+      "Average " + formatDuration(totalSleepMs / n) + " a day · " + formatDuration(totalSleepMs) + " over " + n + " days";
   }
 
   function isDayExpanded(key, index) {
@@ -3075,6 +3212,7 @@
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
     el.screenRota.hidden = name !== "rota";
+    el.screenStats.hidden = name !== "stats";
     window.scrollTo(0, 0);
   }
 
@@ -3093,6 +3231,11 @@
   el.infoOpenBtn.addEventListener("click", function () { showScreen("info"); });
   el.infoBack.addEventListener("click", showMain);
   el.gsMore.addEventListener("click", function () { showScreen("info"); });
+  el.statsOpenBtn.addEventListener("click", function () {
+    showScreen("stats");
+    renderStats();
+  });
+  el.statsBack.addEventListener("click", showMain);
 
   // ---------- sharing: sending ----------
 
