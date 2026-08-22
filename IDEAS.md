@@ -268,6 +268,16 @@ actually confirmed working, and both attempts are done for now:
   Shortcuts' own error output action by action. That is where it stopped:
   workable in principle, too much back-and-forth over screenshots to see
   through to a working state.
+
+  Since read back rather than re-tried: the "Logged" meant nothing either
+  way. "Get Contents of URL" does not treat an HTTP error as a failure — it
+  hands back the error body as an ordinary result and the Shortcut carries
+  on speaking — and the recipe never looked at the answer. So the attempt
+  had no way to tell a rejected request from an accepted one, and the thing
+  to do first is make GitHub's reply visible rather than rebuild anything.
+  README's voice section now carries that step and what each likely reply
+  means; whether the underlying cause was the token, the path or the body
+  is still unknown, and still needs a phone to find out.
 - *IFTTT*, as the Google Assistant route, was never built at all. It needs
   something that changes on every run to keep queue filenames unique, and
   free IFTTT has no confirmed way to produce that — would have meant either

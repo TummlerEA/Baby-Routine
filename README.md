@@ -76,7 +76,7 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## Voice logging (Siri Shortcuts)
 
-**Unverified.** The queue this writes into is built and tested (see "How data is stored" below); this particular recipe for filling it was built by hand on a real phone and got as far as a Shortcut that runs without error and says "Logged" — but the file was never confirmed to actually reach the repository, and finding out why was not finished. Treat the steps below as a starting point to debug from, not a working recipe. IFTTT, as a Google Assistant alternative, was considered but never built at all — it needs something that changes on every run to keep filenames unique, and free IFTTT has no confirmed way to produce that.
+**Unverified.** The queue this writes into is built and tested (see "How data is stored" below); this particular recipe for filling it was built by hand on a real phone and got as far as a Shortcut that runs without error and says "Logged" — but the file was never confirmed to actually reach the repository. Treat the steps below as a starting point to debug from, not a working recipe. "Runs without error" turns out to mean very little here, and "Why it says Logged even when nothing arrived" below is where to start: it explains why the Shortcut cannot report a failure as written, and what each of GitHub's likely answers means. IFTTT, as a Google Assistant alternative, was considered but never built at all — it needs something that changes on every run to keep filenames unique, and free IFTTT has no confirmed way to produce that.
 
 Needs sync already connected (Settings → private repository) — the Shortcut writes into that same repository, so it needs a token with Contents write access to it. The app never shows a saved token back once connected, so generate a fresh fine-grained PAT for the Shortcut instead: github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token, repository access limited to the one private repository, permission Contents: Read and write. Paste it straight into the Shortcut — never send it anywhere else, including here.
 
@@ -90,7 +90,19 @@ Build one helper Shortcut that does the actual work, then one tiny trigger Short
 4. **Text**: `voice-queue/[Shortcut Input]__[Id]__[Stamp].json` → save as `Path`.
 5. **Text**: `https://api.github.com/repos/OWNER/REPO/contents/[Path]` (your own owner/repo) → save as `Url`.
 6. **Get Contents of URL**: `[Url]`, method **PUT**, headers `Authorization: Bearer YOUR_TOKEN` and `Accept: application/vnd.github+json`, request body **JSON** with `message` = `voice: [Shortcut Input]` and `content` = `e30=` (a fixed, harmless placeholder — sync reads the filename, never the file's contents, so nothing else needs to be built here).
-7. Optionally **Speak Text**: "Logged" — Siri reads it back out loud, so you get confirmation without looking at the phone at all.
+7. Optionally **Speak Text**: "Logged" — Siri reads it back out loud, so you get confirmation without looking at the phone at all. Read the next section before trusting it: on its own, this line says "Logged" whether or not anything was.
+
+**Why it says "Logged" even when nothing arrived.** "Get Contents of URL" does not treat an HTTP error as a failure. GitHub answers 401, 404 or 422, the action takes that error body as its perfectly ordinary result, and the Shortcut carries on to step 7 and speaks. Nothing in the recipe above ever looks at the answer, which is exactly the symptom this was left on: it runs, it says "Logged", and the repository stays empty.
+
+So before anything else, make the answer visible. Add a **Quick Look** (or **Show Result**) action straight after step 6, run the helper by hand once with a type typed in, and read what comes back:
+
+- **A block of JSON with `"content"` and `"commit"` in it** — it worked. See the note below about the file then disappearing.
+- **`"Not Found"`** — the token cannot see the repository. GitHub answers 404 rather than 403 when a token lacks access, so this usually means "not allowed", not "not there": a fine-grained PAT without **Contents: Read and write** on that repository, one still waiting on approval, or `OWNER/REPO` mistyped in step 5.
+- **`"Bad credentials"`** — the token is wrong, expired, or pasted with a stray space.
+- **`"Invalid request"`, naming `content` or `message`** — the request body is not going out as JSON. In step 6 the body has to be set to **JSON** with two separate fields, not typed out as text.
+- **`"... sha wasn't supplied"`** — a file of that name is already there, which means the id in step 3 is not changing between runs.
+
+**A file that vanishes is the success case, not a failure.** Once the app next syncs, it turns each queue file into a real entry and deletes it — that is the design. So an empty `voice-queue/` shortly after a successful run means it worked, and the place to confirm is the app's own history, not the repository. Only look for the file itself in the seconds before a sync picks it up.
 
 **Trigger Shortcuts**, one each, every one just a single **Run Shortcut** action calling "Log to Baby Tracker" with a fixed text input:
 
