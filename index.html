@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=59">
+<link rel="stylesheet" href="style.css?v=60">
 </head>
 <body>
 
@@ -377,6 +377,12 @@
             <p>Above them, <strong>Nights</strong> — the longest unbroken stretch and how many times you were up, one bar per night. This is the only part of the app that measures a night rather than a day, and the difference matters: a night starts in the evening and ends the next morning, so midnight falls in the middle of it and a calendar day cuts it in half. Where exactly to cut is set under ⚙️ Settings, beside the planned intervals — cluster feeding until nine is one family's evening and another's night, so the app does not guess. A night still in progress is left out rather than drawn as a short bar.</p>
             <p>Below them, <strong>measurements over time</strong> — weight, length, head circumference, temperature, and anything you have named yourself — one chart each, as soon as there are two readings of it to join up. These keep their own timeline and the buttons at the top do not apply to them: readings are weeks apart rather than daily, so each one sits where it actually falls on the calendar and a month with no weighing shows as a month-wide gap. The value scale runs from the lowest reading to the highest rather than from zero, because a baby going from 3.2 to 5.2 kg is the whole story and against a zero line it would be a flat line near the top; both ends are labelled, and the unit is in the heading. Tap and hold a dot to see its date and reading.</p>
             <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Weight</h3>
+            <p>The card shows the latest weight in kilos and in pounds and ounces, what it changed by since the weighing before, and where that sits against birth weight — the figure watched closely in the first fortnight, when a newborn normally dips before climbing back.</p>
+            <p>It also gives <strong>grams a day</strong> between the last two weighings, which is what a midwife or health visitor asks for and is not something you can work out in your head from "+300 g" and two dates. It needs about a day between the weighings to mean anything, so a baby weighed twice in one afternoon is not reported as gaining a kilo a day. Weight only — nobody quotes a daily rate for a head circumference.</p>
           </article>
 
           <article class="info-card">
@@ -984,6 +990,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=59"></script>
+<script src="app.js?v=60"></script>
 </body>
 </html>
