@@ -591,6 +591,11 @@ body {
   cursor: pointer;
 }
 
+.log-item .l-gap {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-top: 2px;
+}
 .log-item .l-warn {
   color: var(--overdue);
   font-size: 12px;
