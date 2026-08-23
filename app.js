@@ -12,6 +12,13 @@
   // a folder the parent already shares (Google Drive, iCloud), offered as a
   // starting point on each new note and editable per entry.
   var PHOTO_ALBUM_KEY = "baby-tracker-photo-album";
+  var NIGHT_KEY = "baby-tracker-night";
+  // When the night starts and ends, as local hours. A household decision, not
+  // a fact about babies: cluster feeding until nine is one family's evening
+  // and another's night, and every night figure below is only as right as
+  // this is. Kept with the other settings so both phones cut the night in
+  // the same place and cannot quote different numbers off the same log.
+  var NIGHT_DEFAULT = { start: 19, end: 7 };
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
@@ -71,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "57";
+    var fallback = "58";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -619,6 +626,45 @@
     }
   }
 
+  function loadNightWindow() {
+    var raw = null;
+    try { raw = JSON.parse(localStorage.getItem(NIGHT_KEY) || "null"); } catch (e) { raw = null; }
+    return sanitiseNightWindow(raw);
+  }
+
+  // An hour has to be a whole 0-23, and a window that starts and ends at the
+  // same hour is not a window - either would divide the day into nothing.
+  function sanitiseNightWindow(raw) {
+    if (!raw) return { start: NIGHT_DEFAULT.start, end: NIGHT_DEFAULT.end };
+    var s = Number(raw.start), e = Number(raw.end);
+    if (!isFinite(s) || !isFinite(e)) return { start: NIGHT_DEFAULT.start, end: NIGHT_DEFAULT.end };
+    s = Math.round(s); e = Math.round(e);
+    if (s < 0 || s > 23 || e < 0 || e > 23 || s === e) {
+      return { start: NIGHT_DEFAULT.start, end: NIGHT_DEFAULT.end };
+    }
+    return { start: s, end: e };
+  }
+
+  function saveNightWindow(next) {
+    var clean = sanitiseNightWindow(next);
+    try {
+      localStorage.setItem(NIGHT_KEY, JSON.stringify(clean));
+      nightWindow = clean;
+      touchMeta();
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save when the night starts");
+      return false;
+    }
+  }
+
+  // How many hours the night runs for, wrapping past midnight.
+  function nightLengthHours(win) {
+    return (win.end - win.start + 24) % 24;
+  }
+
   function loadPhotoAlbum() {
     try {
       return localStorage.getItem(PHOTO_ALBUM_KEY) || "";
@@ -836,6 +882,7 @@
     if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
   }
   var intervals = loadIntervals();
+  var nightWindow = loadNightWindow();
 
   // ---------- dom ----------
 
@@ -1051,6 +1098,14 @@
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
+    statsNights: document.getElementById("statsNights"),
+    statsNightWindow: document.getElementById("statsNightWindow"),
+    statsLongestChart: document.getElementById("statsLongestChart"),
+    statsLongestSummary: document.getElementById("statsLongestSummary"),
+    statsWakingsChart: document.getElementById("statsWakingsChart"),
+    statsWakingsSummary: document.getElementById("statsWakingsSummary"),
+    nightStart: document.getElementById("nightStart"),
+    nightEnd: document.getElementById("nightEnd"),
     statsMeasures: document.getElementById("statsMeasures"),
     statsMeasureCharts: document.getElementById("statsMeasureCharts"),
     statsSleepSummary: document.getElementById("statsSleepSummary")
@@ -1759,8 +1814,17 @@
       var avgY = TOP + BARH - (avg / max) * BARH;
       out.push('<line class="stats-avg" x1="' + LEFT + '" y1="' + (Math.round(avgY * 10) / 10) +
         '" x2="' + (LEFT + plotW) + '" y2="' + (Math.round(avgY * 10) / 10) + '"/>');
-      out.push('<text class="stats-avg-label" x="' + (LEFT + plotW) + '" y="' + (Math.round((avgY - 3) * 10) / 10) +
-        '" text-anchor="end">avg ' + escapeHtml(formatLabel(avg)) + '</text>');
+      // On a small plate of the panel's own colour: the average sits wherever
+      // the numbers put it, which is sometimes exactly where the last bar's
+      // own label already is, and two figures on top of each other are worse
+      // than either alone.
+      var avgText = "avg " + formatLabel(avg);
+      var plateW = avgText.length * 4.2 + 4;
+      var plateY = Math.round((avgY - 11) * 10) / 10;
+      out.push('<rect class="stats-avg-plate" x="' + (Math.round((LEFT + plotW - plateW) * 10) / 10) +
+        '" y="' + plateY + '" width="' + (Math.round(plateW * 10) / 10) + '" height="10" rx="2"/>');
+      out.push('<text class="stats-avg-label" x="' + (LEFT + plotW - 2) + '" y="' + (Math.round((avgY - 3) * 10) / 10) +
+        '" text-anchor="end">' + escapeHtml(avgText) + '</text>');
     }
 
     // Every label would collide past about ten bars, so only enough of
@@ -1790,6 +1854,98 @@
     });
     out.push('</svg>');
     return out.join("");
+  }
+
+  // One row per night, newest last, for the same period the chips above pick.
+  //
+  // A night is named for the evening it begins, runs from nightWindow.start
+  // that evening to nightWindow.end the next morning, and is only counted
+  // once it has finished - a night still in progress would otherwise draw a
+  // short bar that reads as a terrible night rather than an unfinished one.
+  //
+  // This is the whole point of the section: everything else on this screen is
+  // measured in calendar days, and a night is not one. It starts in the
+  // evening and ends the next morning, so midnight falls in the middle of it.
+  function nightsRange(days) {
+    var analysis = analyzeSleep();
+    var now = Date.now();
+    var lengthMs = nightLengthHours(nightWindow) * MS_HOUR;
+    var feeds = liveEvents().filter(function (e) { return e.type === "feed"; })
+      .map(function (e) { return +new Date(e.time); });
+
+    var rows = [];
+    for (var back = days; back >= 0; back--) {
+      var evening = new Date();
+      evening.setHours(nightWindow.start, 0, 0, 0);
+      evening.setDate(evening.getDate() - back);
+      var from = +evening;
+      var to = from + lengthMs;
+      if (to > now) continue;
+
+      var longest = 0;
+      var wakings = 0;
+      var sleepMs = 0;
+      analysis.sessions.forEach(function (s) {
+        var overlap = Math.min(s.endMs, to) - Math.max(s.startMs, from);
+        if (overlap <= 0) return;
+        sleepMs += overlap;
+        wakings++;
+        if (overlap > longest) longest = overlap;
+      });
+
+      var fed = 0;
+      feeds.forEach(function (t) { if (t >= from && t < to) fed++; });
+
+      rows.push({
+        date: new Date(from), from: from, to: to,
+        sleepMs: sleepMs, longestMs: longest,
+        // Stretches and wakings are the same count seen from either end: three
+        // separate sleeps in a night is a baby who surfaced twice inside it
+        // plus the morning. "Times up" is what the person who was up counts.
+        wakings: Math.max(0, wakings - 1),
+        stretches: wakings, feeds: fed
+      });
+    }
+    return rows;
+  }
+
+  function statsNightLabel(hours) {
+    return formatDuration(hours * MS_HOUR);
+  }
+
+  function renderStatsNights() {
+    var rows = nightsRange(statsPeriod);
+    var complete = rows.length;
+    el.statsNights.hidden = !complete;
+    if (!complete) return;
+
+    var totalLongest = 0, totalSleep = 0, totalWakings = 0;
+    rows.forEach(function (r) {
+      totalLongest += r.longestMs;
+      totalSleep += r.sleepMs;
+      totalWakings += r.wakings;
+    });
+
+    el.statsNightWindow.textContent = "Night counted from " +
+      pad2(nightWindow.start) + ":00 to " + pad2(nightWindow.end) + ":00" +
+      (complete === 1 ? " · 1 night so far" : " · " + complete + " nights");
+
+    el.statsLongestChart.innerHTML = statsBarSvg(rows,
+      function (r) { return r.longestMs / MS_HOUR; }, "m-sleep",
+      (totalLongest / complete) / MS_HOUR, statsNightLabel);
+    el.statsWakingsChart.innerHTML = statsBarSvg(rows,
+      function (r) { return r.wakings; }, "m-feed",
+      totalWakings / complete, statsCountLabel);
+
+    var best = rows[0];
+    rows.forEach(function (r) { if (r.longestMs > best.longestMs) best = r; });
+
+    el.statsLongestSummary.textContent =
+      "Average " + formatDuration(totalLongest / complete) + " unbroken · best " +
+      formatDuration(best.longestMs) + " on " + formatDateShort(best.date);
+    el.statsWakingsSummary.textContent =
+      "Average " + (totalWakings / complete).toFixed(1) + " a night · " +
+      formatDuration(totalSleep / complete) + " asleep across the night";
   }
 
   function renderStatsPeriodChips() {
@@ -1842,6 +1998,8 @@
     el.statsSleepSummary.textContent =
       "Average " + formatDuration(totalSleepMs / n) + " a day · " + formatDuration(totalSleepMs) + " over " + n + " days";
 
+    renderStatsNights();
+
     // Its own scale, and drawn after the three above so the two axes are
     // never read as one: the chips overhead do not apply to it.
     renderStatsMeasures();
@@ -1881,7 +2039,9 @@
   // heading instead, since a long one ("µmol/L") is wider than the gutter
   // and would be clipped against the edge of the chart.
   function measureAxisNumber(type, value) {
-    if (type === "weight") return String(Math.round(value) / 1000);
+    // Both ends of the axis to the same precision: "3.52" above "3.165" reads
+    // as a mistake even though both are right.
+    if (type === "weight") return (Math.round(value) / 1000).toFixed(2);
     if (type === "other") return String(Number(value.toFixed(2)));
     var meta = MEASURES[type];
     return meta ? value.toFixed(meta.decimals) : String(value);
@@ -3054,6 +3214,7 @@
       feeding: loadFeeding(),
       intervals: intervals,
       photoAlbum: loadPhotoAlbum(),
+      night: nightWindow,
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
@@ -3343,6 +3504,18 @@
       renderName();
       renderNameFonts();
     }
+    // Same rule as the intervals beside it: taken when the incoming settings
+    // are the newer ones, ignored otherwise.
+    if (parsed.night && parsed.takeIntervals) {
+      var incomingNight = sanitiseNightWindow(parsed.night);
+      if (incomingNight.start !== nightWindow.start || incomingNight.end !== nightWindow.end) {
+        try {
+          localStorage.setItem(NIGHT_KEY, JSON.stringify(incomingNight));
+          nightWindow = incomingNight;
+        } catch (e) { /* a full store is reported elsewhere */ }
+        if (el.nightStart.options.length) syncNightSelects();
+      }
+    }
     if (parsed.photoAlbum && (parsed.overwrite || !loadPhotoAlbum())) {
       savePhotoAlbum(String(parsed.photoAlbum));
       el.photoAlbum.value = loadPhotoAlbum();
@@ -3361,7 +3534,8 @@
     // date of birth still only fill blanks, so a file never renames a baby.
     applyIncomingSettings({
       name: parsed.name, nameFont: parsed.nameFont, dob: parsed.dob, feeding: parsed.feeding,
-      intervals: parsed.intervals, photoAlbum: parsed.photoAlbum, takeIntervals: true, overwrite: false
+      intervals: parsed.intervals, photoAlbum: parsed.photoAlbum, night: parsed.night,
+      takeIntervals: true, overwrite: false
     });
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
@@ -4047,6 +4221,7 @@
         feeding: loadFeeding(),
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         photoAlbum: loadPhotoAlbum(),
+        night: nightWindow,
         updatedAt: metaStamp()
       },
       events: events,
@@ -4197,6 +4372,7 @@
               feeding: remoteMeta.feeding,
               intervals: remoteMeta.intervals,
               photoAlbum: remoteMeta.photoAlbum,
+              night: remoteMeta.night,
               takeIntervals: remoteNewer,
               overwrite: remoteNewer
             });
@@ -4514,6 +4690,43 @@
     renderDobEcho();
     renderAll();
   });
+
+  function fillNightSelects() {
+    [el.nightStart, el.nightEnd].forEach(function (sel) {
+      sel.innerHTML = "";
+      for (var h = 0; h < 24; h++) {
+        var opt = document.createElement("option");
+        opt.value = String(h);
+        opt.textContent = pad2(h) + ":00";
+        sel.appendChild(opt);
+      }
+    });
+    syncNightSelects();
+  }
+
+  function syncNightSelects() {
+    el.nightStart.value = String(nightWindow.start);
+    el.nightEnd.value = String(nightWindow.end);
+  }
+
+  function onNightChange() {
+    var next = { start: Number(el.nightStart.value), end: Number(el.nightEnd.value) };
+    // Refused rather than quietly reset, so what is on screen never disagrees
+    // with what is stored.
+    if (next.start === next.end) {
+      showError("The night has to start and end at different times");
+      syncNightSelects();
+      return;
+    }
+    if (saveNightWindow(next)) {
+      syncNightSelects();
+      renderStats();
+    }
+  }
+
+  fillNightSelects();
+  el.nightStart.addEventListener("change", onNightChange);
+  el.nightEnd.addEventListener("change", onNightChange);
 
   el.photoAlbum.value = loadPhotoAlbum();
   el.photoAlbum.addEventListener("change", function () {
