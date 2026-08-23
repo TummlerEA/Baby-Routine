@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "60";
+    var fallback = "61";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2225,6 +2225,36 @@
       : index < DEFAULT_EXPANDED_DAYS;
   }
 
+  // How long since the last one of the same kind, per entry.
+  //
+  // Measured start to start, which is what "every three hours" means to
+  // anybody saying it: a feed at nine that ran twenty minutes and the next at
+  // ten is an hour apart, not forty minutes. The gap therefore includes the
+  // feed itself, and is the same quantity the forecast is built from.
+  //
+  // Only feeds and nappies. A sleep already carries its own length on the
+  // row, and the gap between one sleep and the next is time awake, which is a
+  // different thing that would read as the same one here. Measurements are
+  // weeks apart and have the chart on the statistics screen for that.
+  var GAP_TYPES = { feed: true, diaper: true };
+
+  function gapsByEventId() {
+    var previous = {};
+    var out = {};
+    sortedByTimeAsc(liveEvents()).forEach(function (e) {
+      if (!GAP_TYPES[e.type]) return;
+      var at = +new Date(e.time);
+      if (previous[e.type] !== undefined) {
+        var gap = at - previous[e.type];
+        // Two taps in the same minute are a slip, not a gap worth quoting;
+        // the card that follows a tap already counts those out loud.
+        if (gap >= MS_MIN) out[e.id] = gap;
+      }
+      previous[e.type] = at;
+    });
+    return out;
+  }
+
   function renderLog() {
     var visible = liveEvents();
     el.logToggleText.textContent =
@@ -2244,6 +2274,7 @@
     }
 
     var analysis = analyzeSleep();
+    var gaps = gapsByEventId();
     var groups = groupByDay(sortedByTimeDesc(visible));
 
     groups.forEach(function (group, i) {
@@ -2279,6 +2310,8 @@
               (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
               (fedMinutesOf(e) ? '<div class="l-duration">took ' +
                 formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
+              (gaps[e.id] ? '<div class="l-gap">' +
+                escapeHtml(formatDuration(gaps[e.id])) + ' since the one before</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
               (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
               (measureValueOf(e) !== null
