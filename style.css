@@ -1830,6 +1830,7 @@ body {
 .ho-svg .stats-bar-label { fill: var(--text-dim); font-size: 9px; }
 .ho-svg .stats-avg { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 2; }
 .ho-svg .stats-avg-label { fill: var(--text-faint); font-size: 8px; }
+.ho-svg .stats-avg-plate { fill: var(--bg-elevated); }
 /* A measurement trend: the dots are the readings, the line only joins them.
    fill:none has to stay unbeaten here - a filled polyline turns a fever
    spike into a solid triangle - so the colour per type sets stroke and dot
