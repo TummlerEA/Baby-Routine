@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=58">
+<link rel="stylesheet" href="style.css?v=59">
 </head>
 <body>
 
@@ -255,6 +255,13 @@
         </div>
       </section>
 
+      <section class="fixups" id="fixUps" hidden>
+        <div class="gs-head">⚠️ Sleep entries with no pair</div>
+        <p class="fixup-why">A "fell asleep" with no "woke up", or a "woke up" with nothing before it. Neither can be given a length, so both are left out of every sleep total — including the nights above. Tap one to correct its time, or to delete it if it was a mis-tap.</p>
+        <div class="fixup-list" id="fixUpList"></div>
+        <p class="fixup-more" id="fixUpMore" hidden></p>
+      </section>
+
       <section class="log">
         <button class="log-toggle" id="logToggle">
           <span class="log-icon">🕐</span>
@@ -370,6 +377,12 @@
             <p>Above them, <strong>Nights</strong> — the longest unbroken stretch and how many times you were up, one bar per night. This is the only part of the app that measures a night rather than a day, and the difference matters: a night starts in the evening and ends the next morning, so midnight falls in the middle of it and a calendar day cuts it in half. Where exactly to cut is set under ⚙️ Settings, beside the planned intervals — cluster feeding until nine is one family's evening and another's night, so the app does not guess. A night still in progress is left out rather than drawn as a short bar.</p>
             <p>Below them, <strong>measurements over time</strong> — weight, length, head circumference, temperature, and anything you have named yourself — one chart each, as soon as there are two readings of it to join up. These keep their own timeline and the buttons at the top do not apply to them: readings are weeks apart rather than daily, so each one sits where it actually falls on the calendar and a month with no weighing shows as a month-wide gap. The value scale runs from the lowest reading to the highest rather than from zero, because a baby going from 3.2 to 5.2 kg is the whole story and against a zero line it would be a flat line near the top; both ends are labelled, and the unit is in the heading. Tap and hold a dot to see its date and reading.</p>
             <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>Sleep entries with no pair</h3>
+            <p>A sleep needs both halves to have a length — "fell asleep" and "woke up". If one is missing, that entry cannot be measured and is left out of every sleep total, including the nights on 📊. It happens: the wake-up gets logged twice, or not at all, or Sleep is tapped by accident.</p>
+            <p>When there are any, a panel above the history lists them, newest first, with what is missing from each. Tap one to open it — correct its time if it was right but mistimed, or delete it if it was a mis-tap. Add the entry that was missing and the panel goes away on its own. A sleep that is simply still going is not listed: it has no wake-up yet because your baby has not woken up yet.</p>
           </article>
 
           <article class="info-card">
@@ -971,6 +984,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=58"></script>
+<script src="app.js?v=59"></script>
 </body>
 </html>
