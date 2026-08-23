@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "58";
+    var fallback = "59";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1098,6 +1098,9 @@
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
+    fixUps: document.getElementById("fixUps"),
+    fixUpList: document.getElementById("fixUpList"),
+    fixUpMore: document.getElementById("fixUpMore"),
     statsNights: document.getElementById("statsNights"),
     statsNightWindow: document.getElementById("statsNightWindow"),
     statsLongestChart: document.getElementById("statsLongestChart"),
@@ -1657,6 +1660,53 @@
     el.measureToggleText.textContent = measureOpen ? "Hide measurements" : "Measurements";
     el.measurePanel.hidden = !measureOpen;
     if (measureOpen) renderMeasureCards();
+  }
+
+  // The sleeps that could not be paired off. analyzeSleep already spots them
+  // one by one for the history; this is only about being able to find them,
+  // which until now meant scrolling the whole log looking for a warning.
+  //
+  // The sleep in progress is deliberately not here: an unclosed sleep that is
+  // simply still going is not a mistake, and the banner above already says so
+  // once it has run improbably long.
+  var FIXUPS_SHOWN = 5;
+
+  function unpairedSleeps() {
+    var warnings = analyzeSleep().warningById;
+    return sortedByTimeDesc(liveEvents().filter(function (e) {
+      return Object.prototype.hasOwnProperty.call(warnings, e.id);
+    })).map(function (e) {
+      return { id: e.id, type: e.type, time: e.time, warning: warnings[e.id] };
+    });
+  }
+
+  function renderFixUps() {
+    var list = unpairedSleeps();
+    el.fixUps.hidden = !list.length;
+    el.fixUpList.innerHTML = "";
+    if (!list.length) return;
+
+    list.slice(0, FIXUPS_SHOWN).forEach(function (item) {
+      var when = new Date(item.time);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fixup-item";
+      btn.setAttribute("data-fix", item.id);
+      btn.innerHTML =
+        '<span class="fixup-icon">' + eventTypeIcon(item.type) + '</span>' +
+        '<span class="fixup-body">' +
+          '<span class="fixup-when">' + escapeHtml(formatDateShort(when) + " · " + formatClockTime(when)) + '</span>' +
+          '<span class="fixup-what">' + escapeHtml(item.warning) + '</span>' +
+        '</span>';
+      el.fixUpList.appendChild(btn);
+    });
+
+    var hidden = list.length - FIXUPS_SHOWN;
+    el.fixUpMore.hidden = hidden <= 0;
+    if (hidden > 0) {
+      el.fixUpMore.textContent = "and " + hidden + (hidden === 1 ? " more" : " more") +
+        " further back in the history";
+    }
   }
 
   function renderGettingStarted() {
@@ -2249,6 +2299,11 @@
 
     var row = ev.target.closest(".log-item");
     if (row) startEdit(row.getAttribute("data-id"));
+  });
+
+  el.fixUpList.addEventListener("click", function (ev) {
+    var btn = ev.target.closest(".fixup-item");
+    if (btn) startEdit(btn.getAttribute("data-fix"));
   });
 
   el.logToggle.addEventListener("click", function () {
@@ -7363,6 +7418,7 @@
     renderSleepButton();
     renderForecast();
     renderGettingStarted();
+    renderFixUps();
     renderTempBanner();
     renderMeasurements();
     renderPlanSoon();

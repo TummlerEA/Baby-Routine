@@ -1831,6 +1831,44 @@ body {
 .ho-svg .stats-avg { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 2; }
 .ho-svg .stats-avg-label { fill: var(--text-faint); font-size: 8px; }
 .ho-svg .stats-avg-plate { fill: var(--bg-elevated); }
+
+/* Sleeps that could not be paired off. Quiet rather than alarming: nothing is
+   lost, the totals are just short until somebody says what happened. */
+.fixups {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-top: 12px;
+}
+.fixup-why {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 6px 0 10px;
+}
+.fixup-list { display: flex; flex-direction: column; gap: 8px; }
+.fixup-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.fixup-item:active { background: var(--bg-elevated); }
+.fixup-icon { font-size: 18px; flex: 0 0 auto; }
+.fixup-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fixup-when { font-size: 14px; }
+.fixup-what { font-size: 12px; color: var(--overdue); }
+.fixup-more { color: var(--text-faint); font-size: 12px; margin: 8px 0 0; }
 /* A measurement trend: the dots are the readings, the line only joins them.
    fill:none has to stay unbeaten here - a filled polyline turns a fever
    spike into a solid triangle - so the colour per type sets stroke and dot
