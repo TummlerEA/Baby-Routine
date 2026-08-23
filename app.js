@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "59";
+    var fallback = "60";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -334,6 +334,8 @@
   var MAX_LABEL = 40;
   var MAX_UNIT = 12;
   var MAX_NOTE_TEXT = 200;
+  // Two weighings closer together than this say nothing about a daily rate.
+  var WEIGHT_RATE_MIN_GAP = 20 * 60 * 60 * 1000;
 
   // Mirrors the guidance already in the app, which follows NHS advice.
   var FEVER_UNDER_3M = 38;
@@ -1633,6 +1635,20 @@
       var unit = type === "weight" ? " g" : (freeUnit ? " " + freeUnit : (meta.unit ? " " + meta.unit : ""));
       var cls = delta >= 0 ? "m-up" : "m-down";
       subParts.push('<span class="' + cls + '">' + escapeHtml(signed(delta, digits, unit)) + '</span> since last');
+
+      // Grams a day is the figure a midwife or health visitor actually asks
+      // for, and it is not something you can do in your head from "+300 g"
+      // and two dates. Weight only: nobody quotes a daily rate for a head.
+      //
+      // Needs about a day between the two weighings to mean anything - the
+      // same baby weighed twice in an afternoon would otherwise be reported
+      // as gaining a kilo a day.
+      var previousAt = +new Date(list[list.length - 2].time);
+      var gapMs = when.getTime() - previousAt;
+      if (type === "weight" && gapMs >= WEIGHT_RATE_MIN_GAP) {
+        var perDay = delta / (gapMs / MS_DAY);
+        subParts.push(escapeHtml(signed(perDay, 0, " g")) + " a day");
+      }
     }
 
     // Weight against birth weight is what gets watched in the first weeks.
