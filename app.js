@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "61";
+    var fallback = "62";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2237,6 +2237,7 @@
   // different thing that would read as the same one here. Measurements are
   // weeks apart and have the chart on the statistics screen for that.
   var GAP_TYPES = { feed: true, diaper: true };
+  var GAP_LABEL = { feed: "feed", diaper: "nappy" };
 
   function gapsByEventId() {
     var previous = {};
@@ -2311,7 +2312,7 @@
               (fedMinutesOf(e) ? '<div class="l-duration">took ' +
                 formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
               (gaps[e.id] ? '<div class="l-gap">' +
-                escapeHtml(formatDuration(gaps[e.id])) + ' since the one before</div>' : '') +
+                escapeHtml(formatDuration(gaps[e.id])) + ' since the last ' + GAP_LABEL[e.type] + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
               (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
               (measureValueOf(e) !== null
