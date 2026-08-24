@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=61">
+<link rel="stylesheet" href="style.css?v=62">
 </head>
 <body>
 
@@ -393,7 +393,7 @@
 
           <article class="info-card">
             <h3>How long since the last one</h3>
-            <p>Every feed and every nappy in the history says how long it had been since the one before it of the same kind — "2h 14m since the one before". Feeds count from feeds and nappies from nappies, so a nappy change in between does not reset a feed's gap.</p>
+            <p>Every feed and every nappy in the history says how long it had been since the last one of the same kind — "2h 14m since the last feed" or "45 mins since the last nappy". Feeds count from feeds and nappies from nappies, so a nappy change in between does not reset a feed's gap.</p>
             <p>It is measured start to start, which is what "every three hours" means to anybody saying it: a feed at nine that ran twenty minutes and the next at ten are an hour apart, not forty minutes. The gap is counted across the whole log rather than within a day, so the long overnight stretch — the one that actually matters — is measured properly instead of being cut in half at midnight. Two taps inside the same minute are treated as the slip they usually are and get no figure.</p>
             <p>Sleep is left out: it already carries how long it lasted, and the gap between one sleep and the next is time awake, which is a different thing that would read as the same one.</p>
           </article>
@@ -997,6 +997,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=61"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>
