@@ -11,6 +11,7 @@
   --accent-feed: #ff9f5a;
   --accent-diaper: #6fd68a;
   --accent-sleep: #9b8cf2;
+  --accent-awake: #ffd166;
   --danger: #ff6b6b;
   --danger-bg: #3a1f1f;
   --overdue: #ff8a65;
@@ -605,6 +606,11 @@ body {
 .log-item .l-duration {
   font-size: 12px;
   color: var(--accent-sleep);
+  margin-top: 2px;
+}
+.log-item .l-awake {
+  font-size: 12px;
+  color: var(--accent-awake);
   margin-top: 2px;
 }
 
@@ -1832,6 +1838,7 @@ body {
 .ho-svg .m-feed { fill: var(--accent-feed); }
 .ho-svg .m-diaper { fill: var(--accent-diaper); }
 .ho-svg .m-sleep { fill: var(--accent-sleep); }
+.ho-svg .m-awake { fill: var(--accent-awake); }
 .ho-svg .stats-bar-label { fill: var(--text-dim); font-size: 9px; }
 .ho-svg .stats-avg { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 2; }
 .ho-svg .stats-avg-label { fill: var(--text-faint); font-size: 8px; }
