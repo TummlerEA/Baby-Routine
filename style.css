@@ -438,8 +438,8 @@ body {
 }
 
 .log-item .l-icon {
-  font-size: 18px;
-  width: 26px;
+  font-size: 22px;
+  width: 30px;
   text-align: center;
   flex-shrink: 0;
 }
@@ -449,14 +449,24 @@ body {
   min-width: 0;
 }
 
+/* Name and time on one line — "Fell asleep · 13:50" — so a card that used
+   to spend a whole line on the clock alone can fit its other lines below
+   the fold instead. */
 .log-item .l-type {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  color: var(--text);
+}
+
+.log-item .l-sep {
+  color: var(--text-faint);
+  font-weight: 400;
 }
 
 .log-item .l-time {
-  font-size: 12px;
-  color: var(--text-faint);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
 }
 
 .log-item .l-delete {
@@ -592,27 +602,23 @@ body {
   cursor: pointer;
 }
 
-.log-item .l-gap {
-  color: var(--text-faint);
-  font-size: 12px;
-  margin-top: 2px;
-}
 .log-item .l-warn {
   color: var(--overdue);
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 2px;
 }
 
-.log-item .l-duration {
-  font-size: 12px;
-  color: var(--accent-sleep);
+/* Everything that used to be its own line — "slept", "awake", "took", the
+   gap since the last one of its kind — reads as one line instead, each
+   part keeping the colour it always had so the line stays scannable. */
+.log-item .l-metrics {
+  font-size: 13px;
+  color: var(--text-faint);
   margin-top: 2px;
 }
-.log-item .l-awake {
-  font-size: 12px;
-  color: var(--accent-awake);
-  margin-top: 2px;
-}
+.log-item .l-metrics .l-duration { color: var(--accent-sleep); }
+.log-item .l-metrics .l-awake { color: var(--accent-awake); }
+.log-item .l-metrics .l-gap { color: var(--text-faint); }
 
 /* ---------- data export / import ---------- */
 
@@ -1076,7 +1082,7 @@ body {
 }
 
 .log-item .l-detail {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent-feed);
   margin-top: 2px;
 }
@@ -1182,7 +1188,7 @@ body {
 .measure-add { text-align: left; }
 
 .log-item .l-measure {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent-diaper);
   margin-top: 2px;
 }

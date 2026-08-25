@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "63";
+    var fallback = "64";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2344,20 +2344,24 @@
           var duration = analysis.durationById[e.id];
           var awake = analysis.awakeMsById[e.id];
           var warning = analysis.warningById[e.id];
+          // Everything that used to be its own line reads as one metrics
+          // line instead, each part keeping the colour it always had.
+          var metrics = [];
+          if (duration) metrics.push('<span class="l-duration">slept ' + formatDuration(duration) + '</span>');
+          if (awake) metrics.push('<span class="l-awake">awake ' + formatDuration(awake) + '</span>');
+          if (fedMinutesOf(e)) metrics.push('<span class="l-duration">took ' +
+            formatDuration(fedMinutesOf(e) * MS_MIN) + '</span>');
+          if (gaps[e.id]) metrics.push('<span class="l-gap">' +
+            formatDuration(gaps[e.id]) + ' since the last ' + GAP_LABEL[e.type] + '</span>');
           var row = document.createElement("div");
           row.className = "log-item";
           row.setAttribute("data-id", e.id);
           row.innerHTML =
             '<span class="l-icon">' + eventTypeIcon(e.type) + '</span>' +
             '<div class="l-body">' +
-              '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) + '</div>' +
-              '<div class="l-time">' + formatClockTime(d) + '</div>' +
-              (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
-              (awake ? '<div class="l-awake">awake ' + formatDuration(awake) + '</div>' : '') +
-              (fedMinutesOf(e) ? '<div class="l-duration">took ' +
-                formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
-              (gaps[e.id] ? '<div class="l-gap">' +
-                escapeHtml(formatDuration(gaps[e.id])) + ' since the last ' + GAP_LABEL[e.type] + '</div>' : '') +
+              '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) +
+                '<span class="l-sep"> · </span><span class="l-time">' + formatClockTime(d) + '</span></div>' +
+              (metrics.length ? '<div class="l-metrics">' + metrics.join(' · ') + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
               (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
               (measureValueOf(e) !== null
