@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "62";
+    var fallback = "63";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1113,7 +1113,9 @@
     nightEnd: document.getElementById("nightEnd"),
     statsMeasures: document.getElementById("statsMeasures"),
     statsMeasureCharts: document.getElementById("statsMeasureCharts"),
-    statsSleepSummary: document.getElementById("statsSleepSummary")
+    statsSleepSummary: document.getElementById("statsSleepSummary"),
+    statsAwakeChart: document.getElementById("statsAwakeChart"),
+    statsAwakeSummary: document.getElementById("statsAwakeSummary")
   };
 
   var logOpen = false;
@@ -1352,12 +1354,28 @@
     var sessions = [];
     var durationById = {};
     var warningById = {};
+    // The mirror of a sleep session: the stretch between a "woke up" and
+    // the "fell asleep" that follows it, kept on the same walk since the
+    // two are opposite sides of the same alternating timeline. Recorded
+    // against the fell-asleep entry, which is where it is shown.
+    var awakeSessions = [];
+    var awakeMsById = {};
     var open = null;
+    var lastWoke = null;
 
     asc.forEach(function (e) {
       if (e.type === "sleep_start") {
         if (open) warningById[open.id] = "No matching \u2018Woke up\u2019 entry";
+        if (lastWoke) {
+          var awakeStart = +new Date(lastWoke.time);
+          var awakeEnd = +new Date(e.time);
+          if (awakeEnd > awakeStart) {
+            awakeSessions.push({ startMs: awakeStart, endMs: awakeEnd });
+            awakeMsById[e.id] = awakeEnd - awakeStart;
+          }
+        }
         open = e;
+        lastWoke = null;
       } else {
         if (!open) {
           warningById[e.id] = "No matching \u2018Fell asleep\u2019 entry";
@@ -1369,10 +1387,14 @@
           durationById[e.id] = endMs - startMs;
           open = null;
         }
+        lastWoke = e;
       }
     });
 
-    return { sessions: sessions, active: open, durationById: durationById, warningById: warningById };
+    return {
+      sessions: sessions, active: open, durationById: durationById, warningById: warningById,
+      awakeSessions: awakeSessions, awakeActive: lastWoke, awakeMsById: awakeMsById
+    };
   }
 
   function isSleepingNow() {
@@ -1387,6 +1409,21 @@
     if (analysis.active) {
       var aStart = +new Date(analysis.active.time);
       total += Math.max(0, Math.min(nowMs, toMs) - Math.max(aStart, fromMs));
+    }
+    return total;
+  }
+
+  // Same clipping as sleepMsInRange, over the awake sessions instead — so a
+  // stretch that runs past midnight is split correctly between the two
+  // days rather than counted whole against one of them.
+  function awakeMsInRange(analysis, fromMs, toMs, nowMs) {
+    var total = 0;
+    analysis.awakeSessions.forEach(function (s) {
+      total += Math.max(0, Math.min(s.endMs, toMs) - Math.max(s.startMs, fromMs));
+    });
+    if (analysis.awakeActive) {
+      var wStart = +new Date(analysis.awakeActive.time);
+      total += Math.max(0, Math.min(nowMs, toMs) - Math.max(wStart, fromMs));
     }
     return total;
   }
@@ -1829,7 +1866,8 @@
         date: dayStart,
         feeds: counts.feeds,
         diapers: counts.diapers,
-        sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
+        sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now),
+        awakeMs: awakeMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
       });
     }
     return out;
@@ -2043,11 +2081,12 @@
     var rows = statsRange(statsPeriod);
     var n = rows.length;
 
-    var totalFeeds = 0, totalDiapers = 0, totalSleepMs = 0;
+    var totalFeeds = 0, totalDiapers = 0, totalSleepMs = 0, totalAwakeMs = 0;
     rows.forEach(function (r) {
       totalFeeds += r.feeds;
       totalDiapers += r.diapers;
       totalSleepMs += r.sleepMs;
+      totalAwakeMs += r.awakeMs;
     });
 
     el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed",
@@ -2056,6 +2095,8 @@
       totalDiapers / n, statsCountLabel);
     el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep",
       (totalSleepMs / n) / MS_HOUR, statsHoursLabel);
+    el.statsAwakeChart.innerHTML = statsBarSvg(rows, function (r) { return r.awakeMs / MS_HOUR; }, "m-awake",
+      (totalAwakeMs / n) / MS_HOUR, statsHoursLabel);
 
     el.statsFeedSummary.textContent =
       "Average " + (totalFeeds / n).toFixed(1) + " a day · " + totalFeeds + " over " + n + " days";
@@ -2063,6 +2104,8 @@
       "Average " + (totalDiapers / n).toFixed(1) + " a day · " + totalDiapers + " over " + n + " days";
     el.statsSleepSummary.textContent =
       "Average " + formatDuration(totalSleepMs / n) + " a day · " + formatDuration(totalSleepMs) + " over " + n + " days";
+    el.statsAwakeSummary.textContent =
+      "Average " + formatDuration(totalAwakeMs / n) + " a day · " + formatDuration(totalAwakeMs) + " over " + n + " days";
 
     renderStatsNights();
 
@@ -2299,6 +2342,7 @@
         group.events.forEach(function (e) {
           var d = new Date(e.time);
           var duration = analysis.durationById[e.id];
+          var awake = analysis.awakeMsById[e.id];
           var warning = analysis.warningById[e.id];
           var row = document.createElement("div");
           row.className = "log-item";
@@ -2309,6 +2353,7 @@
               '<div class="l-type">' + escapeHtml(eventTypeLabel(e.type)) + '</div>' +
               '<div class="l-time">' + formatClockTime(d) + '</div>' +
               (duration ? '<div class="l-duration">slept ' + formatDuration(duration) + '</div>' : '') +
+              (awake ? '<div class="l-awake">awake ' + formatDuration(awake) + '</div>' : '') +
               (fedMinutesOf(e) ? '<div class="l-duration">took ' +
                 formatDuration(fedMinutesOf(e) * MS_MIN) + '</div>' : '') +
               (gaps[e.id] ? '<div class="l-gap">' +
