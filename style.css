@@ -1049,11 +1049,17 @@ body {
 }
 .nextup-time-now:active { opacity: 0.7; }
 
-/* Six choices never fit one row on a phone, and a 5-then-1 wrap reads as an
-   accident. Two even rows of three is deliberate, and holds at any width. */
+/* Neither the three feed sources nor seven duration choices fit one row on
+   a phone, and a lone chip stranded on its own last row reads as an
+   accident. Three even columns holds the sources; the durations get their
+   own four, closing at 4-then-3 instead of 3-then-3-then-1. */
 .feed-chips {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+}
+
+#feedChips {
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .nextup-chip.source-chip.selected {

@@ -78,7 +78,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "64";
+    var fallback = "65";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -141,7 +141,7 @@
   // Denser at the short end because that is where feeds actually land; a
   // parent who needs 35 minutes exactly has the manual form. Absent means
   // nobody answered, the same as the nappy detail, and never means zero.
-  var FEED_MINUTES = [10, 15, 20, 30, 45, 60];
+  var FEED_MINUTES = [10, 15, 20, 25, 30, 45, 60];
   // Only until the log can suggest the parent's own figure instead.
   var FEED_MINUTES_DEFAULT = 20;
   // Index 0 is "not recorded", so a share link that predates this column
@@ -4807,7 +4807,7 @@
       : "Today: " + formatAge(days) + " old";
   }
 
-  // The same six the card offers, so the two never disagree about what a
+  // The same options the card offers, so the two never disagree about what a
   // recordable feed length is.
   function buildFedOptions() {
     FEED_MINUTES.forEach(function (mins) {
