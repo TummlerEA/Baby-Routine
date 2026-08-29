@@ -54,6 +54,22 @@
   // than merely stating: past it a baby is not a little late for a nap, she
   // is overtired, which is the thing this whole screen exists to prevent.
   var ROUTINE_LATE_MS = 15 * 60 * 1000;
+  // How far the awake stretch may pull a sleep away from the hour in the
+  // table before the app stops quoting that hour. Inside it the routine's own
+  // time is named, so the same clock times are heard day after day and a
+  // household learns them; outside it the honest time is named instead,
+  // because a table nobody can follow teaches nothing. Fixed rather than
+  // configurable: it is the width of "near enough", not a preference.
+  var ROUTINE_HOLD_MS = 30 * 60 * 1000;
+  // How far from its planned hour something logged may be and still be taken
+  // as that step of the routine rather than an extra. Wide enough for a nap
+  // that started three quarters of an hour late, narrower than the gap
+  // between one sleep in the suggested routine and the next.
+  var ROUTINE_MATCH_MS = 90 * 60 * 1000;
+  // How much of the day the strip on the main screen shows: the step just
+  // gone, the one in hand, and the two after it.
+  var ROUTINE_STRIP_BACK = 1;
+  var ROUTINE_STRIP_ON = 3;
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
@@ -113,7 +129,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "66";
+    var fallback = "67";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -910,15 +926,72 @@
       return status;
     }
     status.windowMs = routineWakeWindowMs(nextSleep);
+    status.planned = nextSleep ? nextSleep.at : null;
     if (analysis.awakeActive) {
       status.awakeSince = new Date(analysis.awakeActive.time);
       if (status.windowMs !== null) status.dueAt = new Date(+status.awakeSince + status.windowMs);
     }
+    // Near enough to the table, the table wins: naming the same hour every
+    // day is how a routine is learned, and a quarter of an hour either way is
+    // not a difference a baby notices. Far from it, the stretch awake wins —
+    // a nap the table wants at noon cannot be taken by a baby who woke at ten
+    // to, and quoting noon anyway would only teach that the app is wrong.
+    if (status.dueAt && status.planned) {
+      status.driftMs = status.dueAt - status.planned;
+      status.anchored = Math.abs(status.driftMs) <= ROUTINE_HOLD_MS;
+      if (status.anchored) status.dueAt = status.planned;
+      // Off the table, the way back onto it is the wake-up the plan had in
+      // mind for this sleep — worth naming, since it is a single decision
+      // that puts the rest of the day straight.
+      else if (nextSleep && nextSleep.until) status.recoverBy = nextSleep.until;
+    }
     // With no wake-up logged there is no stretch to measure, so the plan is
     // all there is to go on.
-    if (!status.dueAt && nextSleep) status.dueAt = nextSleep.at;
+    if (!status.dueAt && nextSleep) {
+      status.dueAt = nextSleep.at;
+      status.anchored = true;
+    }
     if (status.dueAt) status.lateBy = Math.max(0, now - status.dueAt);
     return status;
+  }
+
+  // What the day actually did against what the routine asked of it. Each
+  // logged sleep and feed is claimed by the step it lands nearest, so a nap
+  // three quarters of an hour late still reads as that nap rather than as an
+  // extra one alongside a step nobody kept.
+  function routineDay(now) {
+    var analysis = analyzeSleep();
+    var sessions = analysis.sessions.slice();
+    if (analysis.active) {
+      sessions.push({ startMs: +new Date(analysis.active.time), endMs: null });
+    }
+    var feeds = eventsOfKind("feed").map(function (e) { return +new Date(e.time); });
+    var rows = routineOccurrences(now).filter(function (o) {
+      return Math.abs(o.at - now) <= 12 * MS_HOUR;
+    }).map(function (o) {
+      return { at: o.at, until: o.until, kind: o.kind, slot: o.slot, doneAt: null, sleptMs: null };
+    });
+
+    function claim(times, kind, onClaim) {
+      times.forEach(function (t) {
+        var best = null;
+        rows.forEach(function (row) {
+          if (row.kind !== kind || row.doneAt) return;
+          var off = Math.abs(row.at - t);
+          if (off <= ROUTINE_MATCH_MS && (!best || off < Math.abs(best.at - t))) best = row;
+        });
+        if (best) onClaim(best, t);
+      });
+    }
+
+    claim(sessions.map(function (s) { return s.startMs; }), "sleep", function (row, t) {
+      row.doneAt = new Date(t);
+      sessions.forEach(function (s) {
+        if (s.startMs === t && s.endMs) row.sleptMs = s.endMs - s.startMs;
+      });
+    });
+    claim(feeds, "feed", function (row, t) { row.doneAt = new Date(t); });
+    return rows;
   }
 
   function loadPhotoAlbum() {
@@ -1309,6 +1382,10 @@
     routineAddFeed: document.getElementById("routineAddFeed"),
     routineReset: document.getElementById("routineReset"),
     routineNow: document.getElementById("routineNow"),
+    routineStrip: document.getElementById("routineStrip"),
+    routineStripNote: document.getElementById("routineStripNote"),
+    routineStripList: document.getElementById("routineStripList"),
+    routineStripMore: document.getElementById("routineStripMore"),
     routineIcon: document.getElementById("routineIcon"),
     routineLine: document.getElementById("routineLine"),
     routineSub: document.getElementById("routineSub"),
@@ -1907,24 +1984,38 @@
       icon = "🌙";
       state = status.lateBy > ROUTINE_LATE_MS ? "late" : "due";
       line = "Time to put her down";
-      sub = status.awakeSince
-        ? "awake " + formatDuration(now - status.awakeSince) +
-          (status.windowMs ? " — " + formatDuration(status.lateBy) + " past the " +
-            formatDuration(status.windowMs) + " this routine allows" : "")
-        : "the routine asked for it at " + formatClockTime(status.dueAt);
-    } else {
-      icon = "🌙";
-      line = "Next sleep " + formatClockTime(status.dueAt) + " · in " + formatDuration(status.dueAt - now);
-      if (status.awakeSince && status.windowMs) {
+      if (status.anchored) {
+        sub = "the routine asked for it at " + formatClockTime(status.dueAt) +
+          (status.awakeSince ? " · awake " + formatDuration(now - status.awakeSince) : "");
+      } else {
         sub = "awake " + formatDuration(now - status.awakeSince) +
-          " of the " + formatDuration(status.windowMs) + " this routine allows";
-      } else if (!status.awakeSince) {
-        sub = "straight from the routine — no wake-up logged to measure from";
+          (status.windowMs ? " — " + formatDuration(status.lateBy) + " past the " +
+            formatDuration(status.windowMs) + " this routine allows" : "");
+        // The way back on: this is exactly the moment it is worth naming.
+        if (status.recoverBy) {
+          sub += " · up by " + formatClockTime(status.recoverBy) + " and the day is back on it";
+        }
       }
-      // Say so when the stretch awake has pulled the nap away from the hour
-      // the routine had in mind, rather than silently quoting a different one.
-      if (status.nextSleep && Math.abs(status.dueAt - status.nextSleep.at) >= MS_MIN) {
-        sub += (sub ? " · " : "") + "the routine plans " + formatClockTime(status.nextSleep.at);
+    } else if (status.anchored) {
+      // On the table, quote the table. Hearing the same hour every day is the
+      // whole of how a routine is learned.
+      icon = "🌙";
+      line = "Sleep at " + formatClockTime(status.dueAt) + " by the routine · in " +
+        formatDuration(status.dueAt - now);
+      sub = status.awakeSince
+        ? "awake " + formatDuration(now - status.awakeSince)
+        : "straight from the routine — no wake-up logged to measure from";
+    } else {
+      // Off the table by more than the app is willing to pretend: the honest
+      // time, what the routine had wanted, and the one wake-up that puts the
+      // rest of the day back on it.
+      icon = "🌙";
+      line = "Put her down at " + formatClockTime(status.dueAt) + " · in " +
+        formatDuration(status.dueAt - now);
+      sub = "awake " + formatDuration(now - status.awakeSince) +
+        " · the routine had " + formatClockTime(status.planned);
+      if (status.recoverBy) {
+        sub += " · up by " + formatClockTime(status.recoverBy) + " and the day is back on it";
       }
     }
 
@@ -1941,6 +2032,80 @@
     el.routineTally.textContent = parts.join(" · ");
     el.routineNow.className = "banner banner-routine" + (state ? " " + state : "");
     el.routineNow.hidden = false;
+  }
+
+  // The day either side of this minute: the step just gone, the one in hand,
+  // and the two after it. Enough to see the shape being kept to without the
+  // main screen turning into a timetable — the whole of it is one tap away.
+  function routineStripRows(now) {
+    var rows = routineDay(now);
+    var at = 0;
+    while (at < rows.length && rows[at].at <= now) at++;
+    var from = Math.max(0, at - ROUTINE_STRIP_BACK);
+    return rows.slice(from, from + ROUTINE_STRIP_BACK + ROUTINE_STRIP_ON);
+  }
+
+  // How far behind or ahead of its own table the day is running, taken from
+  // the most recent step that actually happened.
+  function routineDrift(now) {
+    var done = routineDay(now).filter(function (r) { return r.doneAt && r.at <= now; });
+    if (!done.length) return null;
+    var last = done[done.length - 1];
+    return last.doneAt - last.at;
+  }
+
+  function renderRoutineStrip() {
+    if (!routine.on) {
+      el.routineStrip.hidden = true;
+      return;
+    }
+    var now = new Date();
+    var rows = routineStripRows(now);
+    var drift = routineDrift(now);
+    var heading = "on plan";
+    if (drift !== null && Math.abs(drift) >= ROUTINE_LATE_MS) {
+      heading = "running " + formatDuration(Math.abs(drift)) + (drift > 0 ? " late" : " early");
+    }
+    el.routineStripNote.textContent = heading;
+    el.routineStripNote.className = "routine-strip-note" +
+      (heading === "on plan" ? "" : " adrift");
+
+    // Exactly one step is the one in hand: the earliest that is neither done
+    // nor gone for good. An hour that has only just passed wins it over the
+    // hour still to come, since that is the one somebody is in the middle of.
+    var claimed = false;
+    el.routineStripList.innerHTML = rows.map(function (r) {
+      // A step whose hour has just passed has not been missed — it is the one
+      // being done. It only reads as missed once it is too late to count.
+      var overdue = !r.doneAt && r.at <= now;
+      var missed = overdue && (now - r.at) > ROUTINE_MATCH_MS;
+      var current = !r.doneAt && !missed && !claimed;
+      if (current) claimed = true;
+      var mark = r.doneAt ? "✅" : (overdue ? (missed ? "—" : "▶") : "○");
+      var detail = "";
+      if (r.doneAt) {
+        var off = r.doneAt - r.at;
+        detail = r.kind === "sleep" && r.sleptMs
+          ? "slept " + formatDuration(r.sleptMs)
+          : formatClockTime(r.doneAt);
+        if (Math.abs(off) >= ROUTINE_LATE_MS) {
+          detail += " · " + formatDuration(Math.abs(off)) + (off > 0 ? " late" : " early");
+        }
+      } else if (r.at > now) {
+        detail = "in " + formatDuration(r.at - now);
+      } else {
+        detail = missed ? "not logged" : "due now";
+      }
+      return '<div class="routine-step' + (current ? " next" : "") +
+          (missed ? " missed" : "") + '">' +
+        '<span class="rst-mark">' + mark + '</span>' +
+        '<span class="rst-time">' + formatClockTime(r.at) + '</span>' +
+        '<span class="rst-what">' + (r.kind === "sleep"
+          ? (isNightClock(clockMinutes(r.slot.time)) ? "Night sleep" : "Nap") : "Feed") + '</span>' +
+        '<span class="rst-detail">' + escapeHtml(detail) + '</span>' +
+        '</div>';
+    }).join("");
+    el.routineStrip.hidden = false;
   }
 
   // ---------- the routine screen ----------
@@ -2010,6 +2175,7 @@
     if (!saveRoutine(next)) return;
     renderRoutineScreen();
     renderRoutineNow();
+    renderRoutineStrip();
   }
 
   // ---------- measurements ----------
@@ -3538,6 +3704,7 @@
 
   el.routineOpenBtn.addEventListener("click", openRoutine);
   el.routineNow.addEventListener("click", openRoutine);
+  el.routineStripMore.addEventListener("click", openRoutine);
   el.routineBack.addEventListener("click", function () { showScreen("main"); });
 
   el.routineEnabled.addEventListener("change", function () {
@@ -3546,6 +3713,7 @@
       return;
     }
     renderRoutineNow();
+    renderRoutineStrip();
     showToast(routine.on ? "Following the routine" : "Routine switched off");
   });
 
@@ -3568,6 +3736,7 @@
     if (!saveRoutine({ on: routine.on, slots: slots })) return;
     renderRoutineScreen();
     renderRoutineNow();
+    renderRoutineStrip();
   });
 
   // A new step lands on the current hour rather than at midnight: nearer to
@@ -3584,6 +3753,7 @@
     if (!saveRoutine({ on: routine.on, slots: routine.slots.concat([slot]) })) return;
     renderRoutineScreen();
     renderRoutineNow();
+    renderRoutineStrip();
   }
 
   el.routineAddSleep.addEventListener("click", function () { addRoutineSlot("sleep"); });
@@ -3612,6 +3782,7 @@
     if (!saveRoutine({ on: routine.on, slots: ROUTINE_DEFAULT_SLOTS })) return;
     renderRoutineScreen();
     renderRoutineNow();
+    renderRoutineStrip();
     showToast("Routine reset");
   });
 
@@ -4178,6 +4349,7 @@
         } catch (e) { /* a full store is reported elsewhere */ }
         if (!el.screenRoutine.hidden) renderRoutineScreen();
         renderRoutineNow();
+        renderRoutineStrip();
       }
     }
   }
@@ -8033,6 +8205,7 @@
     renderShopBadge();
     renderRotaBanner();
     renderRoutineNow();
+    renderRoutineStrip();
     // Only while it is being looked at: it reads the whole log, and nobody is
     // served by rebuilding it behind a screen nobody is on.
     if (!el.screenHandover.hidden) renderHandover();
