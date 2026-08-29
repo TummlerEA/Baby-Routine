@@ -19,6 +19,41 @@
   // this is. Kept with the other settings so both phones cut the night in
   // the same place and cannot quote different numbers off the same log.
   var NIGHT_DEFAULT = { start: 19, end: 7 };
+  // The shape of the day, as clock times rather than gaps: when each sleep is
+  // meant to start and when it is meant to end, and when each feed falls
+  // between them. Intervals answer "how long since the last one"; this
+  // answers "what should be happening now", which is the question a day that
+  // has slid needs. Off until somebody turns it on, so nothing about the app
+  // changes for a household that never asked for a routine.
+  var ROUTINE_KEY = "baby-tracker-routine";
+  // The routine the app suggests, and the one it resets to. Seven sleeps and
+  // seven feeds: three sleeps overnight, four naps through the day. A sleep
+  // carries the time it is expected to end as well as the time it starts,
+  // which is what makes the awake stretch between two naps a number the app
+  // can hold the day to rather than a setting somebody has to guess at.
+  var ROUTINE_DEFAULT_SLOTS = [
+    { time: "21:00", until: "01:30", kind: "sleep" },
+    { time: "01:30", kind: "feed" },
+    { time: "02:00", until: "04:30", kind: "sleep" },
+    { time: "04:30", kind: "feed" },
+    { time: "05:00", until: "08:00", kind: "sleep" },
+    { time: "08:00", kind: "feed" },
+    { time: "09:00", until: "11:00", kind: "sleep" },
+    { time: "11:00", kind: "feed" },
+    { time: "12:00", until: "14:00", kind: "sleep" },
+    { time: "14:00", kind: "feed" },
+    { time: "15:00", until: "17:00", kind: "sleep" },
+    { time: "17:00", kind: "feed" },
+    { time: "18:00", until: "19:00", kind: "sleep" },
+    { time: "20:00", kind: "feed" }
+  ];
+  // A routine with more steps than this is not a routine any more, and the
+  // screen that edits it stops being readable on a phone.
+  var MAX_ROUTINE_SLOTS = 24;
+  // A gap this far past the planned wake window is worth colouring rather
+  // than merely stating: past it a baby is not a little late for a nap, she
+  // is overtired, which is the thing this whole screen exists to prevent.
+  var ROUTINE_LATE_MS = 15 * 60 * 1000;
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
@@ -78,7 +113,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "65";
+    var fallback = "66";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -667,6 +702,225 @@
     return (win.end - win.start + 24) % 24;
   }
 
+  // ---------- the daily routine ----------
+
+  function isClockTime(value) {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+  }
+
+  // Minutes past midnight, which is the only form worth comparing two clock
+  // times in. Times never carry a date here: a routine is the same every day.
+  function clockMinutes(value) {
+    var parts = String(value).split(":");
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  }
+
+  // A slot has to name a time and a kind; a sleep may also name when it is
+  // meant to end. Anything else in the stored object is dropped rather than
+  // carried, so a hand-edited or half-synced routine cannot smuggle fields
+  // the rest of the app would then have to guard against.
+  function sanitiseRoutineSlot(raw) {
+    if (!raw) return null;
+    var kind = raw.kind === "sleep" ? "sleep" : (raw.kind === "feed" ? "feed" : null);
+    if (!kind || !isClockTime(raw.time)) return null;
+    var slot = { time: String(raw.time), kind: kind };
+    // An end time on a feed would mean nothing, and a sleep that ends the
+    // minute it starts is a typo rather than a nap.
+    if (kind === "sleep" && isClockTime(raw.until) && String(raw.until) !== slot.time) {
+      slot.until = String(raw.until);
+    }
+    return slot;
+  }
+
+  function sanitiseRoutine(raw) {
+    var slots = [];
+    if (raw && Array.isArray(raw.slots)) {
+      raw.slots.forEach(function (item) {
+        var slot = sanitiseRoutineSlot(item);
+        if (slot && slots.length < MAX_ROUTINE_SLOTS) slots.push(slot);
+      });
+    }
+    // An empty routine would leave the screen with nothing to edit and the
+    // main line with nothing to say, so fall back to the suggested one and
+    // let the switch decide whether any of it is used.
+    if (!slots.length) slots = ROUTINE_DEFAULT_SLOTS.map(function (s) { return sanitiseRoutineSlot(s); });
+    slots.sort(function (a, b) { return clockMinutes(a.time) - clockMinutes(b.time); });
+    return { on: !!(raw && raw.on), slots: slots };
+  }
+
+  function loadRoutine() {
+    var raw = null;
+    try { raw = JSON.parse(localStorage.getItem(ROUTINE_KEY) || "null"); } catch (e) { raw = null; }
+    return sanitiseRoutine(raw);
+  }
+
+  function saveRoutine(next) {
+    var clean = sanitiseRoutine(next);
+    try {
+      localStorage.setItem(ROUTINE_KEY, JSON.stringify(clean));
+      routine = clean;
+      touchMeta();
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save the routine");
+      return false;
+    }
+  }
+
+  function routineSleepSlots() {
+    return routine.slots.filter(function (s) { return s.kind === "sleep"; });
+  }
+
+  // Which side of the household's own night a clock time falls on. Derived
+  // rather than stored per slot, so moving the night under Settings moves
+  // what counts as a nap with it instead of leaving the two disagreeing.
+  function isNightClock(mins) {
+    var start = nightWindow.start * 60, end = nightWindow.end * 60;
+    return start < end ? (mins >= start && mins < end) : (mins >= start || mins < end);
+  }
+
+  function routineTargets() {
+    var day = 0, night = 0;
+    routineSleepSlots().forEach(function (s) {
+      if (isNightClock(clockMinutes(s.time))) night++; else day++;
+    });
+    return { day: day, night: night };
+  }
+
+  // Every slot laid out on real dates across yesterday, today and tomorrow,
+  // so the stretch that wraps past midnight has both of its ends present and
+  // "the next one" never falls off the end of the day.
+  function routineOccurrences(now) {
+    var midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    var out = [];
+    routine.slots.forEach(function (slot) {
+      for (var d = -1; d <= 1; d++) {
+        var at = new Date(midnight.getTime() + d * MS_DAY);
+        at.setHours(0, 0, 0, 0);
+        at.setMinutes(clockMinutes(slot.time));
+        var item = { at: at, kind: slot.kind, slot: slot };
+        if (slot.until) {
+          var until = new Date(at);
+          until.setMinutes(until.getMinutes() + ((clockMinutes(slot.until) - clockMinutes(slot.time) + 1440) % 1440));
+          item.until = until;
+        }
+        out.push(item);
+      }
+    });
+    out.sort(function (a, b) { return a.at - b.at; });
+    return out;
+  }
+
+  function nextOccurrence(list, now, kind) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].at > now && (!kind || list[i].kind === kind)) return list[i];
+    }
+    return null;
+  }
+
+  function lastOccurrence(list, now, kind) {
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].at <= now && (!kind || list[i].kind === kind)) return list[i];
+    }
+    return null;
+  }
+
+  // How long the routine expects the baby to be awake before a given sleep:
+  // from the end of the sleep before it to the start of this one. Taken from
+  // the routine's own times rather than asked for as a separate setting,
+  // because the two would only ever drift apart — and it is why the evening
+  // stretch is allowed to run longer than the ones between daytime naps.
+  function routineWakeWindowMs(occurrence) {
+    if (!occurrence) return null;
+    var sleeps = routineSleepSlots();
+    if (sleeps.length < 2) return null;
+    var startMins = clockMinutes(occurrence.slot.time);
+    var best = null;
+    sleeps.forEach(function (s) {
+      if (s === occurrence.slot || !s.until) return;
+      var gap = (startMins - clockMinutes(s.until) + 1440) % 1440;
+      if (gap > 0 && (best === null || gap < best)) best = gap;
+    });
+    return best === null ? null : best * MS_MIN;
+  }
+
+  // The night that is either running now or, in the middle of the day, the
+  // one that has just finished — the same window the Nights charts use.
+  function currentNightRange(now) {
+    var evening = new Date(now);
+    evening.setHours(nightWindow.start, 0, 0, 0);
+    if (now < evening) evening = new Date(evening.getTime() - MS_DAY);
+    return { from: +evening, to: +evening + nightLengthHours(nightWindow) * MS_HOUR };
+  }
+
+  // What the day has actually managed against what the routine asks for.
+  // Counted by when each sleep began: a nap belongs to the day it started on
+  // and a night sleep to the night it started in, so the one that runs past
+  // midnight is not counted twice or lost.
+  function routineTally(analysis, now) {
+    var targets = routineTargets();
+    var night = currentNightRange(now);
+    var dayFrom = new Date(now); dayFrom.setHours(0, 0, 0, 0);
+    var starts = analysis.sessions.map(function (s) { return s.startMs; });
+    if (analysis.active) starts.push(+new Date(analysis.active.time));
+    var dayDone = 0, nightDone = 0;
+    starts.forEach(function (startMs) {
+      var at = new Date(startMs);
+      if (isNightClock(at.getHours() * 60 + at.getMinutes())) {
+        if (startMs >= night.from && startMs < night.to) nightDone++;
+      } else if (startMs >= +dayFrom && startMs < +dayFrom + MS_DAY) {
+        dayDone++;
+      }
+    });
+    return { dayDone: dayDone, dayTarget: targets.day, nightDone: nightDone, nightTarget: targets.night };
+  }
+
+  // Everything the main line and the routine screen both need, worked out
+  // once. The plan says when a sleep is meant to start; the awake stretch
+  // says when this particular baby has had enough, measured from when she
+  // actually woke. The prompt follows the awake stretch, because a nap the
+  // plan wants at noon cannot be taken by a baby who woke at ten to.
+  function routineStatus(now) {
+    var analysis = analyzeSleep();
+    var list = routineOccurrences(now);
+    var sleeping = !!analysis.active;
+    var nextSleep = nextOccurrence(list, now, "sleep");
+    var nextFeed = nextOccurrence(list, now, "feed");
+    var status = {
+      on: routine.on,
+      sleeping: sleeping,
+      nextSleep: nextSleep,
+      nextFeed: nextFeed,
+      awakeSince: null,
+      windowMs: null,
+      dueAt: null,
+      lateBy: 0,
+      wakeDue: null,
+      tally: routineTally(analysis, now)
+    };
+    if (sleeping) {
+      // Asleep: the useful figure is when the routine has her up again, taken
+      // from the sleep slot she was actually put down for.
+      var startedAt = new Date(analysis.active.time);
+      var began = lastOccurrence(list, startedAt, "sleep");
+      if (began && began.until && began.until > startedAt) status.wakeDue = began.until;
+      return status;
+    }
+    status.windowMs = routineWakeWindowMs(nextSleep);
+    if (analysis.awakeActive) {
+      status.awakeSince = new Date(analysis.awakeActive.time);
+      if (status.windowMs !== null) status.dueAt = new Date(+status.awakeSince + status.windowMs);
+    }
+    // With no wake-up logged there is no stretch to measure, so the plan is
+    // all there is to go on.
+    if (!status.dueAt && nextSleep) status.dueAt = nextSleep.at;
+    if (status.dueAt) status.lateBy = Math.max(0, now - status.dueAt);
+    return status;
+  }
+
   function loadPhotoAlbum() {
     try {
       return localStorage.getItem(PHOTO_ALBUM_KEY) || "";
@@ -885,6 +1139,7 @@
   }
   var intervals = loadIntervals();
   var nightWindow = loadNightWindow();
+  var routine = loadRoutine();
 
   // ---------- dom ----------
 
@@ -1044,6 +1299,20 @@
     planCancel: document.getElementById("planCancel"),
     planList: document.getElementById("planList"),
     planJabs: document.getElementById("planJabs"),
+    screenRoutine: document.getElementById("screenRoutine"),
+    routineOpenBtn: document.getElementById("routineOpen"),
+    routineBack: document.getElementById("routineBack"),
+    routineEnabled: document.getElementById("routineEnabled"),
+    routineProgress: document.getElementById("routineProgress"),
+    routineSlots: document.getElementById("routineSlots"),
+    routineAddSleep: document.getElementById("routineAddSleep"),
+    routineAddFeed: document.getElementById("routineAddFeed"),
+    routineReset: document.getElementById("routineReset"),
+    routineNow: document.getElementById("routineNow"),
+    routineIcon: document.getElementById("routineIcon"),
+    routineLine: document.getElementById("routineLine"),
+    routineSub: document.getElementById("routineSub"),
+    routineTally: document.getElementById("routineTally"),
     screenRota: document.getElementById("screenRota"),
     rotaOpenBtn: document.getElementById("rotaOpen"),
     rotaBack: document.getElementById("rotaBack"),
@@ -1604,6 +1873,143 @@
     var sleeping = isSleepingNow();
     el.sleepLabel.textContent = sleeping ? "Wake up" : "Sleep";
     el.btnSleep.classList.toggle("sleeping", sleeping);
+  }
+
+  // ---------- the routine on the main screen ----------
+
+  // One line for the thing to do next, one for the reasoning behind it, and
+  // one for how the day is going against the plan. Everything a parent at
+  // three in the morning should have to read before acting.
+  function renderRoutineNow() {
+    if (!routine.on) {
+      el.routineNow.hidden = true;
+      return;
+    }
+    var now = new Date();
+    var status = routineStatus(now);
+    var line, sub = "", icon = "⏰", state = "";
+
+    if (status.sleeping) {
+      icon = "😴";
+      line = status.wakeDue
+        ? "Asleep · the routine has her up at " + formatClockTime(status.wakeDue)
+        : "Asleep";
+      if (status.wakeDue && now > status.wakeDue) {
+        sub = formatDuration(now - status.wakeDue) + " past the planned wake-up";
+      } else if (status.wakeDue) {
+        sub = "in " + formatDuration(status.wakeDue - now);
+      }
+    } else if (!status.dueAt) {
+      icon = "⏰";
+      line = "No sleeps in this routine";
+      sub = "Add one under ⏰ Daily routine and this line will have something to say.";
+    } else if (status.lateBy > 0) {
+      icon = "🌙";
+      state = status.lateBy > ROUTINE_LATE_MS ? "late" : "due";
+      line = "Time to put her down";
+      sub = status.awakeSince
+        ? "awake " + formatDuration(now - status.awakeSince) +
+          (status.windowMs ? " — " + formatDuration(status.lateBy) + " past the " +
+            formatDuration(status.windowMs) + " this routine allows" : "")
+        : "the routine asked for it at " + formatClockTime(status.dueAt);
+    } else {
+      icon = "🌙";
+      line = "Next sleep " + formatClockTime(status.dueAt) + " · in " + formatDuration(status.dueAt - now);
+      if (status.awakeSince && status.windowMs) {
+        sub = "awake " + formatDuration(now - status.awakeSince) +
+          " of the " + formatDuration(status.windowMs) + " this routine allows";
+      } else if (!status.awakeSince) {
+        sub = "straight from the routine — no wake-up logged to measure from";
+      }
+      // Say so when the stretch awake has pulled the nap away from the hour
+      // the routine had in mind, rather than silently quoting a different one.
+      if (status.nextSleep && Math.abs(status.dueAt - status.nextSleep.at) >= MS_MIN) {
+        sub += (sub ? " · " : "") + "the routine plans " + formatClockTime(status.nextSleep.at);
+      }
+    }
+
+    var tally = status.tally;
+    var parts = [];
+    if (status.nextFeed) parts.push("🍼 " + formatClockTime(status.nextFeed.at));
+    parts.push("naps " + tally.dayDone + " of " + tally.dayTarget);
+    parts.push("nights " + tally.nightDone + " of " + tally.nightTarget);
+
+    el.routineIcon.textContent = icon;
+    el.routineLine.textContent = line;
+    el.routineSub.textContent = sub;
+    el.routineSub.hidden = !sub;
+    el.routineTally.textContent = parts.join(" · ");
+    el.routineNow.className = "banner banner-routine" + (state ? " " + state : "");
+    el.routineNow.hidden = false;
+  }
+
+  // ---------- the routine screen ----------
+
+  function renderRoutineProgress() {
+    var status = routineStatus(new Date());
+    var t = status.tally;
+    var rows = [
+      { label: "Naps through the day", done: t.dayDone, target: t.dayTarget },
+      { label: "Sleeps overnight", done: t.nightDone, target: t.nightTarget }
+    ];
+    el.routineProgress.innerHTML = rows.map(function (r) {
+      var full = r.target > 0 && r.done >= r.target;
+      return '<div class="routine-progress-row">' +
+        '<span class="rp-label">' + escapeHtml(r.label) + '</span>' +
+        '<span class="rp-count' + (full ? " done" : "") + '">' + r.done + ' of ' + r.target + '</span>' +
+        '</div>';
+    }).join("");
+  }
+
+  // Each step edits in place: a time, an end time for a sleep, and a way to
+  // remove it. A form would be one more screen to cross at the exact moment
+  // somebody is trying to nudge a nap fifteen minutes earlier.
+  function renderRoutineSlots() {
+    el.routineSlots.innerHTML = "";
+    routine.slots.forEach(function (slot, index) {
+      var row = document.createElement("div");
+      row.className = "routine-slot" + (slot.kind === "sleep" ? " is-sleep" : " is-feed");
+      var night = slot.kind === "sleep" && isNightClock(clockMinutes(slot.time));
+      row.innerHTML =
+        '<span class="rs-icon">' + (slot.kind === "sleep" ? (night ? "🌙" : "☁️") : "🍼") + '</span>' +
+        '<div class="rs-body">' +
+          '<div class="rs-head">' +
+            '<input type="time" class="rs-time" data-index="' + index + '" data-field="time" value="' +
+              escapeHtml(slot.time) + '" aria-label="Start time">' +
+            (slot.kind === "sleep"
+              ? '<span class="rs-until">' +
+                  '<span class="rs-dash">–</span>' +
+                  '<input type="time" class="rs-time" data-index="' + index + '" data-field="until" value="' +
+                    escapeHtml(slot.until || "") + '" aria-label="Expected wake-up">' +
+                '</span>'
+              : '') +
+          '</div>' +
+          '<div class="rs-label">' + (slot.kind === "sleep"
+            ? (night ? "Night sleep" : "Nap") : "Feed") + '</div>' +
+        '</div>' +
+        '<button class="rs-delete" data-index="' + index + '" aria-label="Remove this step">✕</button>';
+      el.routineSlots.appendChild(row);
+    });
+  }
+
+  function renderRoutineScreen() {
+    disarmRoutineReset();
+    el.routineEnabled.checked = routine.on;
+    renderRoutineProgress();
+    renderRoutineSlots();
+  }
+
+  function updateRoutineSlot(index, field, value) {
+    var next = { on: routine.on, slots: routine.slots.map(function (s) {
+      return { time: s.time, until: s.until, kind: s.kind };
+    }) };
+    if (!next.slots[index]) return;
+    if (field === "until" && !value) delete next.slots[index].until;
+    else if (!isClockTime(value)) return;
+    else next.slots[index][field] = value;
+    if (!saveRoutine(next)) return;
+    renderRoutineScreen();
+    renderRoutineNow();
   }
 
   // ---------- measurements ----------
@@ -3123,6 +3529,92 @@
     });
   });
 
+  // ---------- routine handlers ----------
+
+  function openRoutine() {
+    showScreen("routine");
+    renderRoutineScreen();
+  }
+
+  el.routineOpenBtn.addEventListener("click", openRoutine);
+  el.routineNow.addEventListener("click", openRoutine);
+  el.routineBack.addEventListener("click", function () { showScreen("main"); });
+
+  el.routineEnabled.addEventListener("change", function () {
+    if (!saveRoutine({ on: el.routineEnabled.checked, slots: routine.slots })) {
+      el.routineEnabled.checked = routine.on;
+      return;
+    }
+    renderRoutineNow();
+    showToast(routine.on ? "Following the routine" : "Routine switched off");
+  });
+
+  el.routineSlots.addEventListener("change", function (ev) {
+    var input = ev.target.closest ? ev.target.closest(".rs-time") : null;
+    if (!input) return;
+    updateRoutineSlot(parseInt(input.getAttribute("data-index"), 10),
+      input.getAttribute("data-field"), input.value);
+  });
+
+  el.routineSlots.addEventListener("click", function (ev) {
+    var btn = ev.target.closest ? ev.target.closest(".rs-delete") : null;
+    if (!btn) return;
+    var index = parseInt(btn.getAttribute("data-index"), 10);
+    var slots = routine.slots.filter(function (s, i) { return i !== index; });
+    if (!slots.length) {
+      showError("A routine needs at least one step");
+      return;
+    }
+    if (!saveRoutine({ on: routine.on, slots: slots })) return;
+    renderRoutineScreen();
+    renderRoutineNow();
+  });
+
+  // A new step lands on the current hour rather than at midnight: nearer to
+  // whatever prompted adding it, and a shorter drag from there to the time
+  // actually wanted.
+  function addRoutineSlot(kind) {
+    if (routine.slots.length >= MAX_ROUTINE_SLOTS) {
+      showError("That is as long as a routine can get");
+      return;
+    }
+    var now = new Date();
+    var slot = { time: pad2(now.getHours()) + ":00", kind: kind };
+    if (kind === "sleep") slot.until = pad2((now.getHours() + 2) % 24) + ":00";
+    if (!saveRoutine({ on: routine.on, slots: routine.slots.concat([slot]) })) return;
+    renderRoutineScreen();
+    renderRoutineNow();
+  }
+
+  el.routineAddSleep.addEventListener("click", function () { addRoutineSlot("sleep"); });
+  el.routineAddFeed.addEventListener("click", function () { addRoutineSlot("feed"); });
+
+  // Throwing away a routine somebody has tuned deserves a second thought, and
+  // this app has no dialogs — so the button asks for the second tap itself,
+  // the same way the main buttons say what they logged on their own faces.
+  var resetArmed = null;
+
+  function disarmRoutineReset() {
+    clearTimeout(resetArmed);
+    resetArmed = null;
+    el.routineReset.textContent = "\u21a9\ufe0f Back to the suggested routine";
+    el.routineReset.classList.remove("armed");
+  }
+
+  el.routineReset.addEventListener("click", function () {
+    if (!resetArmed) {
+      el.routineReset.textContent = "\u21a9\ufe0f Tap again to replace this routine";
+      el.routineReset.classList.add("armed");
+      resetArmed = setTimeout(disarmRoutineReset, 5000);
+      return;
+    }
+    disarmRoutineReset();
+    if (!saveRoutine({ on: routine.on, slots: ROUTINE_DEFAULT_SLOTS })) return;
+    renderRoutineScreen();
+    renderRoutineNow();
+    showToast("Routine reset");
+  });
+
   // ---------- actions ----------
 
   function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link) {
@@ -3369,6 +3861,7 @@
       intervals: intervals,
       photoAlbum: loadPhotoAlbum(),
       night: nightWindow,
+      routine: routine,
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
@@ -3674,6 +4167,19 @@
       savePhotoAlbum(String(parsed.photoAlbum));
       el.photoAlbum.value = loadPhotoAlbum();
     }
+    // Same rule again: a routine is a household decision, so it travels with
+    // the intervals and the night rather than being merged step by step.
+    if (parsed.routine && parsed.takeIntervals) {
+      var incomingRoutine = sanitiseRoutine(parsed.routine);
+      if (JSON.stringify(incomingRoutine) !== JSON.stringify(routine)) {
+        try {
+          localStorage.setItem(ROUTINE_KEY, JSON.stringify(incomingRoutine));
+          routine = incomingRoutine;
+        } catch (e) { /* a full store is reported elsewhere */ }
+        if (!el.screenRoutine.hidden) renderRoutineScreen();
+        renderRoutineNow();
+      }
+    }
   }
 
   function applyBackupSettings(text) {
@@ -3689,7 +4195,7 @@
     applyIncomingSettings({
       name: parsed.name, nameFont: parsed.nameFont, dob: parsed.dob, feeding: parsed.feeding,
       intervals: parsed.intervals, photoAlbum: parsed.photoAlbum, night: parsed.night,
-      takeIntervals: true, overwrite: false
+      routine: parsed.routine, takeIntervals: true, overwrite: false
     });
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
@@ -3895,6 +4401,7 @@
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
     el.screenRota.hidden = name !== "rota";
+    el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
     window.scrollTo(0, 0);
   }
@@ -4376,6 +4883,7 @@
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         photoAlbum: loadPhotoAlbum(),
         night: nightWindow,
+        routine: routine,
         updatedAt: metaStamp()
       },
       events: events,
@@ -4527,6 +5035,7 @@
               intervals: remoteMeta.intervals,
               photoAlbum: remoteMeta.photoAlbum,
               night: remoteMeta.night,
+              routine: remoteMeta.routine,
               takeIntervals: remoteNewer,
               overwrite: remoteNewer
             });
@@ -7523,6 +8032,7 @@
     renderPlanSoon();
     renderShopBadge();
     renderRotaBanner();
+    renderRoutineNow();
     // Only while it is being looked at: it reads the whole log, and nobody is
     // served by rebuilding it behind a screen nobody is on.
     if (!el.screenHandover.hidden) renderHandover();
@@ -7531,6 +8041,9 @@
     // focused selects and time inputs mid-edit, and a periodic rebuild
     // would drop whatever was half-chosen.
     if (!el.screenRota.hidden) renderRotaWeek();
+    // The progress panel only: the list below it holds time inputs somebody
+    // may be part-way through setting, and a periodic rebuild would drop them.
+    if (!el.screenRoutine.hidden) renderRoutineProgress();
     if (withLog) renderLog();
   }
 

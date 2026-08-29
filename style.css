@@ -2219,3 +2219,181 @@ body {
 
 .rota-hours-select { min-width: 56px; }
 .rota-start-select { min-width: 84px; }
+
+/* ---------- the daily routine ---------- */
+
+/* A banner that is also a button: the one line worth reading before acting,
+   and tapping it lands on the screen that can change what it says. */
+.banner-routine {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.banner-routine:active { opacity: 0.8; }
+
+/* Due, then late. An overtired baby is the thing this screen exists to
+   prevent, so the second state is loud enough to catch at arm's length. */
+.banner-routine.due {
+  background: linear-gradient(135deg, #3a2f18, #24211a);
+  border-color: #6a5320;
+}
+
+.banner-routine.late {
+  background: linear-gradient(135deg, #3d2320, #2a1a1a);
+  border-color: #6d3b30;
+}
+
+.banner-routine .routine-line {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.banner-routine.due .routine-line { color: var(--accent-awake); }
+.banner-routine.late .routine-line { color: var(--overdue); }
+
+.banner-routine .routine-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.banner-routine .routine-tally {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.routine-progress {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.routine-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.routine-progress-row:last-child { border-bottom: 0; }
+
+.rp-label { font-size: 15px; }
+
+.rp-count {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-count.done { color: var(--accent-diaper); }
+
+.routine-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.routine-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.routine-slot.is-sleep { border-left-color: var(--accent-sleep); }
+.routine-slot.is-feed { border-left-color: var(--accent-feed); }
+
+.routine-slot .rs-icon {
+  font-size: 20px;
+  width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.routine-slot .rs-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.routine-slot .rs-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Two native time inputs, their separator and a delete button do not fit
+     one line on the narrowest phone once a locale spells the hour out with
+     am/pm, so the pair drops to a second line rather than being sat on. */
+  flex-wrap: wrap;
+}
+
+.routine-slot .rs-time {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px;
+  min-height: 44px;
+  min-width: 0;
+}
+
+/* The dash belongs to the end time, not to the line break between them —
+   kept together so a wrapped row never leaves a dash dangling on its own. */
+.routine-slot .rs-until {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.routine-slot .rs-dash { color: var(--text-faint); }
+
+.routine-slot .rs-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.routine-slot .rs-delete {
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font-size: 18px;
+  padding: 10px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.routine-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.data-btn.danger { border-color: #4a2626; }
+
+.data-btn.danger.armed {
+  border-color: var(--danger);
+  color: var(--overdue);
+}
