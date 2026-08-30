@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=67">
+<link rel="stylesheet" href="style.css?v=68">
 </head>
 <body>
 
@@ -36,11 +36,24 @@
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
         <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">🤗</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
-        <button class="icon-btn icon-btn-badged" id="shopOpen" aria-label="Shopping list">🛒<span class="icon-badge" id="shopBadge" hidden>0</span></button>
         <button class="icon-btn" id="routineOpen" aria-label="Daily routine">⏰</button>
         <button class="icon-btn" id="statsOpen" aria-label="Statistics">📊</button>
-        <button class="icon-btn" id="infoOpen" aria-label="Help">ℹ️</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
+        <div class="more-wrap">
+          <button class="icon-btn icon-btn-badged" id="moreOpen" aria-label="More" aria-haspopup="true" aria-expanded="false">⋯<span class="icon-badge" id="shopBadge" hidden>0</span></button>
+          <div class="more-backdrop" id="moreBackdrop" hidden></div>
+          <div class="more-menu" id="moreMenu" hidden>
+            <button type="button" class="more-item" id="shopOpen">
+              <span class="more-icon">🛒</span>
+              <span class="more-label" id="shopMenuLabel">Shopping list</span>
+              <span class="more-count" id="shopMenuCount" hidden>0</span>
+            </button>
+            <button type="button" class="more-item" id="infoOpen">
+              <span class="more-icon">ℹ️</span>
+              <span class="more-label">Help</span>
+            </button>
+          </div>
+        </div>
       </div>
       <div class="topbar-status">
         <div class="topbar-date" id="topDate">—</div>
@@ -377,7 +390,7 @@
             <p>Before something is bought, a small pill shows where it stands: <strong>New</strong>, <strong>Ordered</strong> or <strong>Arrived</strong>. Tapping it moves it on a step, wrapping back to New so a mis-tap is one more tap from undone. Buying does not depend on it — tick something off from any status, New included.</p>
             <p>Once something is <strong>Ordered</strong>, a date field appears beside the pill for when it is expected — optional, and only there while it is on order. Set it and everyone who opens the list sees it too, the same way as everything else here. Moving off Ordered, either way, clears it, so a later re-order never inherits a date left over from the first one.</p>
             <p>Tick something off when it is bought. It stays crossed out under <strong>Bought</strong> for a day, so a mis-tap is easy to undo, then it clears itself.</p>
-            <p>The number on the top-bar icon is how many are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
+            <p>The list lives behind the ⋯ at the end of the top row, along with this help screen — the two screens opened least often, tucked away so the row of buttons holds one line on a small phone. The number on ⋯ is how many items are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
             <p>Reads in English or Russian, the same choice and the same button as the handover screen above. Whatever anybody types stays exactly as typed.</p>
           </article>
 
@@ -1084,6 +1097,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=67"></script>
+<script src="app.js?v=68"></script>
 </body>
 </html>
