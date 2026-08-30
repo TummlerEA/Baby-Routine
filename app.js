@@ -129,7 +129,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "67";
+    var fallback = "68";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1303,6 +1303,9 @@
     syncDisconnect: document.getElementById("syncDisconnect"),
     infoOpenBtn: document.getElementById("infoOpen"),
     infoBack: document.getElementById("infoBack"),
+    moreOpen: document.getElementById("moreOpen"),
+    moreMenu: document.getElementById("moreMenu"),
+    moreBackdrop: document.getElementById("moreBackdrop"),
     gettingStarted: document.getElementById("gettingStarted"),
     gsMore: document.getElementById("gsMore"),
     sharedIn: document.getElementById("sharedIn"),
@@ -1342,6 +1345,8 @@
     shopLinkLabel: document.getElementById("shopLinkLabel"),
     shopLink: document.getElementById("shopLink"),
     shopBadge: document.getElementById("shopBadge"),
+    shopMenuLabel: document.getElementById("shopMenuLabel"),
+    shopMenuCount: document.getElementById("shopMenuCount"),
     shopSubmit: document.getElementById("shopSubmit"),
     shopCancel: document.getElementById("shopCancel"),
     shopList: document.getElementById("shopList"),
@@ -4564,7 +4569,32 @@
 
   // ---------- screens ----------
 
+  // The ⋯ list. Opening any screen shuts it, so it can never be left hanging
+  // over a screen it does not belong to.
+  function closeMoreMenu() {
+    el.moreMenu.hidden = true;
+    el.moreBackdrop.hidden = true;
+    el.moreOpen.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleMoreMenu() {
+    if (el.moreMenu.hidden) {
+      el.moreMenu.hidden = false;
+      el.moreBackdrop.hidden = false;
+      el.moreOpen.setAttribute("aria-expanded", "true");
+    } else {
+      closeMoreMenu();
+    }
+  }
+
+  el.moreOpen.addEventListener("click", toggleMoreMenu);
+  el.moreBackdrop.addEventListener("click", closeMoreMenu);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !el.moreMenu.hidden) closeMoreMenu();
+  });
+
   function showScreen(name) {
+    closeMoreMenu();
     el.screenMain.hidden = name !== "main";
     el.screenSettings.hidden = name !== "settings";
     el.screenInfo.hidden = name !== "info";
@@ -7589,13 +7619,20 @@
     el.shopAmazonNote.textContent = T.amazonNote;
   }
 
-  // A small count on the top-bar icon, so the list is visible without opening
-  // it — the only way this app can hint that something needs doing, having no
-  // server to send a real notification from.
+  // A small count on the ⋯ the list now lives behind, so being tucked away
+  // costs it no visibility, and the same count on its row once that is open.
+  // Both are the only way this app can hint that something needs doing,
+  // having no server to send a real notification from. The row's name is set
+  // here too rather than with the rest of the screen's chrome: it is on show
+  // whether or not the screen has ever been opened.
   function renderShopBadge() {
     var n = outstandingShopping().length;
-    el.shopBadge.textContent = sh().badge(n);
+    var T = sh();
+    el.shopBadge.textContent = T.badge(n);
     el.shopBadge.hidden = n === 0;
+    el.shopMenuLabel.textContent = T.screenTitle;
+    el.shopMenuCount.textContent = T.badge(n);
+    el.shopMenuCount.hidden = n === 0;
   }
 
   function renderShopping() {

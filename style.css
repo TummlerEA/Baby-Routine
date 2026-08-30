@@ -64,11 +64,16 @@ body {
   gap: 6px;
   padding-bottom: 10px;
 }
+/* Seven 44px targets and the gaps between them are what a 360px phone has
+   room for, so the row is pulled a little past the header's padding and the
+   gaps kept tight. Narrower than that it wraps rather than shrink a button —
+   a target small enough to miss at 3am costs more than a second line. */
 .topbar-icons {
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
+  margin: 0 -4px;
 }
 .topbar-status {
   display: flex;
@@ -978,6 +983,71 @@ body {
   font-size: 11px;
   font-weight: 700;
   line-height: 16px;
+  text-align: center;
+}
+
+/* The ⋯ list: the screens opened once in a while, named in words rather than
+   left as bare emoji, hanging from the button under a backdrop that catches
+   the tap beside it. */
+.more-wrap {
+  position: relative;
+  display: flex;
+}
+/* Three dim dots beside a row of colour emoji read as nothing at all, so the
+   one plain glyph in the row is given the size and brightness the emoji get
+   for free. */
+.more-wrap > .icon-btn {
+  color: var(--text);
+  font-size: 26px;
+}
+.more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.more-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 31;
+  min-width: 210px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated-2);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.more-item:active { background: var(--bg-elevated); }
+.more-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.more-label { flex: 1; }
+.more-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-feed);
+  color: #1a0f00;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
   text-align: center;
 }
 
