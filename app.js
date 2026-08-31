@@ -1345,7 +1345,6 @@
     shopLinkLabel: document.getElementById("shopLinkLabel"),
     shopLink: document.getElementById("shopLink"),
     shopBadge: document.getElementById("shopBadge"),
-    shopMenuLabel: document.getElementById("shopMenuLabel"),
     shopMenuCount: document.getElementById("shopMenuCount"),
     shopSubmit: document.getElementById("shopSubmit"),
     shopCancel: document.getElementById("shopCancel"),
@@ -7671,15 +7670,18 @@
   // A small count on the ⋯ the list now lives behind, so being tucked away
   // costs it no visibility, and the same count on its row once that is open.
   // Both are the only way this app can hint that something needs doing,
-  // having no server to send a real notification from. The row's name is set
-  // here too rather than with the rest of the screen's chrome: it is on show
-  // whether or not the screen has ever been opened.
+  // having no server to send a real notification from.
+  //
+  // The row's own name is left in English in the markup and never set from
+  // here. The shopping screen reads in whichever language is chosen, but the
+  // ⋯ list is main-screen furniture, and the main screen is English by the
+  // same scoping that keeps the rest of it English — a Russian line in the
+  // top bar would be the one translated thing on a screen that is not.
   function renderShopBadge() {
     var n = outstandingShopping().length;
     var T = sh();
     el.shopBadge.textContent = T.badge(n);
     el.shopBadge.hidden = n === 0;
-    el.shopMenuLabel.textContent = T.screenTitle;
     el.shopMenuCount.textContent = T.badge(n);
     el.shopMenuCount.hidden = n === 0;
   }
