@@ -129,7 +129,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "68";
+    var fallback = "69";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1882,6 +1882,38 @@
     };
   }
 
+  // A sleep step's name in the same words the day strip uses, so the same nap
+  // is not a "nap" in one place and a "sleep" in the other.
+  function routineSleepLabel(occurrence) {
+    if (!occurrence) return "Sleep";
+    return isNightClock(clockMinutes(occurrence.slot.time)) ? "Night sleep" : "Nap";
+  }
+
+  function routineForecastBody(status, now) {
+    var label = routineSleepLabel(status.nextSleep);
+    if (status.sleeping) {
+      return '<div class="f-type">Sleep</div>' +
+        '<div class="f-time">asleep right now</div>' +
+        '<div class="f-note">' + (status.wakeDue
+          ? 'the routine has her up at ' + escapeHtml(formatClockTime(status.wakeDue))
+          : 'by the daily routine') + '</div>';
+    }
+    var diff = status.dueAt - now;
+    var timeHtml = diff < 0
+      ? '<span class="f-time overdue">overdue by ' + formatDuration(-diff) + '</span>'
+      : '<span class="f-time">in ' + formatDuration(diff) + '</span>';
+    // When the routine is quoting its own hour there is nothing more to say.
+    // When it is not, the hour it wanted is the one thing this card would
+    // otherwise hide, and the banner above is already naming it.
+    var note = "by the daily routine";
+    if (!status.anchored && status.planned) {
+      note += ' · its own table says ' + escapeHtml(formatClockTime(status.planned));
+    }
+    return '<div class="f-type">' + label + ' · expected ' + escapeHtml(formatWhen(status.dueAt)) + '</div>' +
+      '<div>' + timeHtml + '</div>' +
+      '<div class="f-note">' + note + '</div>';
+  }
+
   function renderForecast() {
     var now = new Date();
     var items = [
@@ -1890,11 +1922,25 @@
       { kind: "sleep", icon: "🌙", label: "Sleep" }
     ];
     var sleeping = isSleepingNow();
+    // With a routine on, the next sleep is the routine's business, not the
+    // interval's: an interval counts three hours from whenever the last one
+    // happened, so a day that has slipped keeps being told it is overdue
+    // against a time the routine has already moved past. Take the same
+    // instant the banner leads with, so nothing on the screen disagrees.
+    var rs = routine.on ? routineStatus(now) : null;
 
     el.forecastList.innerHTML = "";
     items.forEach(function (item) {
       var div = document.createElement("div");
       div.className = "forecast-item";
+
+      if (item.kind === "sleep" && rs && (sleeping || rs.dueAt)) {
+        div.innerHTML =
+          '<span class="f-icon">' + item.icon + '</span>' +
+          '<div class="f-body">' + routineForecastBody(rs, now) + '</div>';
+        el.forecastList.appendChild(div);
+        return;
+      }
 
       if (item.kind === "sleep" && sleeping) {
         div.innerHTML =
@@ -3719,6 +3765,9 @@
     }
     renderRoutineNow();
     renderRoutineStrip();
+    // The sleep forecast takes its hour from the routine while it is on, so
+    // it has to change hands the moment this does.
+    renderForecast();
     showToast(routine.on ? "Following the routine" : "Routine switched off");
   });
 
