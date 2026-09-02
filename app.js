@@ -129,7 +129,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "69";
+    var fallback = "70";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -921,6 +921,7 @@
       // Asleep: the useful figure is when the routine has her up again, taken
       // from the sleep slot she was actually put down for.
       var startedAt = new Date(analysis.active.time);
+      status.asleepSince = startedAt;
       var began = lastOccurrence(list, startedAt, "sleep");
       if (began && began.until && began.until > startedAt) status.wakeDue = began.until;
       return status;
@@ -1984,9 +1985,14 @@
 
   // ---------- sleep banner ----------
 
+  // Its own banner only when there is no routine to carry the same sentence.
+  // With one on, its line already opens with how long she has been down and
+  // goes on to say what the routine makes of it — a second banner above that
+  // saying "Asleep for 57m" and nothing else pushed the three buttons this
+  // screen exists for further down it, for no reading anybody gained.
   function renderSleepBanner() {
     var analysis = analyzeSleep();
-    if (!analysis.active) {
+    if (!analysis.active || routine.on) {
       el.sleepBanner.hidden = true;
       return;
     }
@@ -2014,14 +2020,24 @@
     }
     var now = new Date();
     var status = routineStatus(now);
-    var line, sub = "", icon = "⏰", state = "";
+    var line, sub = "", icon = "⏰", state = "", warn = false;
 
     if (status.sleeping) {
       icon = "😴";
-      line = status.wakeDue
-        ? "Asleep · the routine has her up at " + formatClockTime(status.wakeDue)
-        : "Asleep";
-      if (status.wakeDue && now > status.wakeDue) {
+      // How long she has been down goes first and stays first. It is the one
+      // figure here nobody can work out in their head at 3am, and it is why
+      // this line replaced the separate sleep banner rather than sitting
+      // under it saying half the same thing.
+      var slept = now - status.asleepSince;
+      line = "Asleep for " + formatDuration(slept) +
+        (status.wakeDue ? " · the routine has her up at " + formatClockTime(status.wakeDue) : "");
+      if (slept > SUSPICIOUS_SLEEP) {
+        // Past half a day the likeliest reading is that the wake-up was never
+        // logged, and if that is so then "past the planned wake-up" would be
+        // blaming the baby for a gap in the record. Say the likelier thing.
+        sub = "You may have forgotten to log the wake-up";
+        warn = true;
+      } else if (status.wakeDue && now > status.wakeDue) {
         sub = formatDuration(now - status.wakeDue) + " past the planned wake-up";
       } else if (status.wakeDue) {
         sub = "in " + formatDuration(status.wakeDue - now);
@@ -2078,6 +2094,7 @@
     el.routineIcon.textContent = icon;
     el.routineLine.textContent = line;
     el.routineSub.textContent = sub;
+    el.routineSub.className = "routine-sub" + (warn ? " warn" : "");
     el.routineSub.hidden = !sub;
     el.routineTally.textContent = parts.join(" · ");
     el.routineNow.className = "banner banner-routine" + (state ? " " + state : "");
@@ -3764,9 +3781,12 @@
     }
     renderRoutineNow();
     renderRoutineStrip();
-    // The sleep forecast takes its hour from the routine while it is on, so
-    // it has to change hands the moment this does.
+    // The sleep forecast takes its hour from the routine while it is on, and
+    // the sleep banner steps aside for it, so both have to change hands the
+    // moment this does rather than on the next tick — switched off mid-sleep,
+    // a second with no line about the sleep at all reads as a lost entry.
     renderForecast();
+    renderSleepBanner();
     showToast(routine.on ? "Following the routine" : "Routine switched off");
   });
 
