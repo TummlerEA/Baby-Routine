@@ -66,10 +66,13 @@
   // that started three quarters of an hour late, narrower than the gap
   // between one sleep in the suggested routine and the next.
   var ROUTINE_MATCH_MS = 90 * 60 * 1000;
-  // How much of the day the strip on the main screen shows: the step just
-  // gone, the one in hand, and the two after it.
-  var ROUTINE_STRIP_BACK = 1;
-  var ROUTINE_STRIP_ON = 3;
+  // How much of the day the strip on the main screen shows: the four steps
+  // just gone and the two still to come. Weighted backwards on purpose —
+  // what is coming is already named twice over, by the banner above and by
+  // the sleep card below, while how the last few hours actually went against
+  // the plan is said nowhere else on the screen.
+  var ROUTINE_STRIP_BACK = 4;
+  var ROUTINE_STRIP_ON = 2;
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
   var FEEDING_KEY = "baby-tracker-feeding";
@@ -129,7 +132,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "70";
+    var fallback = "71";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
