@@ -114,6 +114,85 @@ part-day warnings that took several attempts to get right in English.
 report may end up in front of a doctor, and stable column headings are worth
 more than a translated one.
 
+## Who logged it, with three tokens on one account
+
+Three people log on three phones: two parents and a nanny. Sync goes through
+one private repository owned by one of them, and the other two hold personal
+access tokens issued from that same account. Nobody has a GitHub account of
+their own here, and nobody needs one. What is wanted is small: at the end of
+a night, knowing who recorded the three o'clock feed.
+
+**The obvious shortcut does not exist.** Every sync write is a commit, and a
+commit carries an author — so it looks as though GitHub is already recording
+this for free. It is not. A token proves which *account* is calling, never
+which token was used: there is no endpoint that reports it and no response
+header that carries it. With three tokens on one account, all three phones
+write commits signed by the same person. Checked before it was designed
+around, and worth writing down because the idea is tempting every time.
+
+**Fingerprinting the token locally works and still should not be done.** The
+phone holds its own token, so it could hash it and use that as an identity
+without asking GitHub anything. `crypto.subtle` is available even with the
+app opened as a `file://` page, which is the objection that first comes to
+mind and is not the real one. The real ones are these. It saves no setting:
+a hash is opaque, so somebody still has to say once that this one is the
+nanny — the same text box, for nothing. Tokens expire, fine-grained ones by
+obligation, and the day the nanny's is replaced her history splits in two and
+she becomes a stranger until she is named again. It would put a value derived
+from the token into the synced document, turning "the token never leaves the
+device" into "the token never leaves the device, except this", which is a
+worse rule to hold in your head than an absolute one. And it identifies the
+wrong thing: one token on two phones is one identity, a new token on one
+phone is two.
+
+**So the phone names itself, not its token.** A random short id, made on
+first run and kept for the life of the install, written onto every entry that
+phone creates. Eight hex characters is ample for a household and this field
+rides in every entry of a document that is uploaded whole, so it should not
+be a UUID. It survives a token being replaced, it exists before sync is set
+up at all, and it never touches the secret.
+
+**The id goes on the entry; the name does not.** Which phone is "Nanny" is a
+lookup kept once in settings, travelling with `nightWindow` and the intervals
+by the same last-write-wins rule. That split is what makes naming work
+backwards: a phone that has been logging for a fortnight before anybody gets
+round to naming it has every one of those entries labelled the moment the
+name is set, because the entries only ever carried the id. Nothing needs
+rewriting and nothing needs a migration.
+
+**Say what it actually knows.** This records the phone an entry was made on.
+If the nanny logs a feed on the mother's phone it will say the mother, and
+that is not a fault to be engineered away — it is what the field means. The
+wording has to match: "logged on Mum's phone", never "Mum did this". It is
+legibility, not permission. Every phone holds the whole file and a token that
+can write it, so nothing here restricts anybody and it must never be
+described as though it does.
+
+**What cannot be recovered.** Everything already logged has no id on it and
+never will; it should read as not recorded rather than be guessed at. The
+information is faintly present in the repository's history — each past commit
+was pushed by somebody, and diffing them would show which entry ids first
+appeared in which push — but that is one API call per commit over hundreds of
+them, and it would attribute an entry to whichever phone first *pushed* it
+rather than the one that made it. Not worth the requests or the wrongness.
+
+**One thing the three-token setup does give, once phones are named.** The
+Contents API takes `author` and `committer` in the body of a write, and
+`putRemote` currently sends neither, which is why every commit is signed by
+the account that owns the repository. Passing the phone's name makes the
+repository's own history readable — "Nanny, 14:03" instead of three identical
+lines — and the email there need not match any GitHub account, so nobody's
+profile is falsely attached to anything. That is the app telling GitHub who
+it is rather than the other way round, and it costs one field.
+
+**Decide before building: where the name is allowed to travel.** Onto the
+handover screen and into exports it plainly belongs — that is the whole
+point. A share link is the one to think about rather than assume: it already
+carries the baby's data and goes only to somebody being trusted with it, so a
+household label is probably fine, but it is a person's role in a URL and that
+should be a decision rather than a side effect. The id itself should never
+appear anywhere a person reads; if there is no name for it yet, say so.
+
 ## A shopping list — built, in v38
 
 Behind 🛒 in the top bar. What it turned out to need beyond the original plan:
@@ -290,9 +369,6 @@ or something else entirely can be dropped in later without another line of
 app.js. The search for a voice route continues on the phone's own terms
 rather than through either of these.
 
-Naming the phones — one setting, "whose phone is this" — is worth doing
-alongside whichever comes first. With three people logging, knowing who
-recorded the three o'clock feed is useful on its own, and it costs a text box.
-It is legibility, not permission: every phone holds the whole file and a token
-that can write it, so nothing here restricts anybody, and it should never be
-described as though it does.
+Naming the phones is worth doing alongside whichever comes first, and is
+written up on its own above — see *Who logged it, with three tokens on one
+account*, which also covers why the token cannot supply the name itself.
