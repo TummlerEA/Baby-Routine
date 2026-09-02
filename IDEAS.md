@@ -193,6 +193,83 @@ household label is probably fine, but it is a person's role in a URL and that
 should be a decision rather than a side effect. The id itself should never
 appear anywhere a person reads; if there is no name for it yet, say so.
 
+## Developmental leaps, and the honest version of them
+
+The Wonder Weeks says a baby passes through ten mental leaps on a fixed
+schedule counted in weeks, each announced by a stretch of clinginess and
+crying and followed by a new ability. The commercial chart puts the first
+year's at weeks 5, 8, 12, 19, 26, 37, 46 and 55. An app that already knows
+the date of birth could obviously put a line on the main screen saying one is
+due, and that is the idea worth thinking about properly rather than either
+adopting or dismissing.
+
+**What the evidence actually is, both ways.** The theory comes from Hetty van
+de Rijt and Frans Plooij, whose 1992 paper in the *Journal of Reproductive
+and Infant Psychology* rested on longitudinal observation of about fifteen
+mother-infant pairs. Plooij's own PhD student then failed to replicate it: de
+Weerth and van Geert, *British Journal of Developmental Psychology* 1998,
+watched four pairs weekly for fifteen months and found the strictly timed
+pattern in one of the four. Plooij pressed her not to publish, replied in
+print when she did, and the dispute cost him his standing in the field. It is
+not one-sided, though, and pretending otherwise would be as sloppy as
+swallowing the marketing: Sadurní and Rostan reported eight regression
+periods in eighteen Catalan infants in 2002, and the ISIRP group published
+supporting work around 2003. Every study on both sides is tiny — four, then
+fifteen, then eighteen. This is a contested hypothesis with thin evidence
+either way, not settled science and not nonsense.
+
+**The chart is not the research.** The week numbers in the published papers —
+5, 8, 12, 17, 26, 36, 44, 53 — are close to but not the same as the ones the
+commercial chart prints. Whichever is quoted, it should not be quoted as
+though it came from the other. (The source page itself could not be opened
+from where this was written up; the numbers above come from secondary
+accounts and should be checked against it before anything ships.)
+
+**The problem is not really the evidence, it is what a fixed calendar does in
+use.** Babies are unsettled often. A window drawn on a chart weeks in advance
+will land on a bad patch a good share of the time whatever is true, and the
+parent reading it has no way to be wrong: a hard week inside the window
+confirms the leap, a calm one means she took it well. Something that cannot
+fail to be right is not telling you anything, and at four in the morning it
+invites a worse move than that — reading a bad night as a scheduled stage to
+be waited out, when it is the night you would otherwise have taken a
+temperature.
+
+**And it would be the first thing this app asserts that it did not measure.**
+Every number on every screen comes from the household's own log, and the one
+place the app speaks with any authority — the Help screen's NHS routing, the
+red flags that mean 999, safer sleep — is guidance that can be checked
+against a source that stands behind it. Putting a contested developmental
+calendar beside that borrows the same voice for something that has not earned
+it. If any of this is built, it must not sit anywhere near the health
+guidance, and it must say plainly whose theory it is and that replication has
+been mixed.
+
+**There is a licence question as well as a scientific one.** The Wonder Weeks
+is a trademark with a paid app behind it. Week numbers are facts and nobody
+owns them, but the leap names and the descriptions of each one are somebody's
+writing, and this repository is MIT. Nothing of theirs should be copied in.
+
+**The version actually worth building inverts it.** The app does not need a
+chart to say when this baby had a hard few days — it has been logging every
+feed, every nappy and every stretch of sleep since she was born, and it
+already knows what her ordinary week looks like. It can mark the stretches
+where her own pattern came apart: nights broken more often than usual, naps
+that stopped holding, feeds bunching. That is measured rather than predicted,
+it is about this baby rather than babies in general, it can be wrong in a way
+the parent can see, and it needs no theory to justify it. Set beside the age
+in weeks it answers the same question a parent actually has — "is this a
+phase or is something wrong?" — without claiming to know the answer in
+advance. If leaps are real they will show up in it. If they are not, nothing
+false was ever said.
+
+**One thing to get right if the ages are ever shown at all.** The weeks are
+counted from the due date, not the birth date, and for a baby born five weeks
+early that is the whole difference between a chart that fits and one that
+does not. The app stores a date of birth and has no notion of a due date, so
+this is a new setting before it is anything else — and a reason on its own to
+prefer the version that reads the log.
+
 ## A shopping list — built, in v38
 
 Behind 🛒 in the top bar. What it turned out to need beyond the original plan:
