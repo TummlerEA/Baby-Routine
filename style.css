@@ -2334,6 +2334,11 @@ body {
   color: var(--text-dim);
 }
 
+/* The one thing this line says that is about the record rather than the baby:
+   a sleep still running after half a day almost certainly means the wake-up
+   was never logged. Same colour it had as its own banner's warning. */
+.banner-routine .routine-sub.warn { color: var(--overdue); }
+
 .banner-routine .routine-tally {
   font-size: 12px;
   color: var(--text-faint);
