@@ -132,7 +132,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "71";
+    var fallback = "72";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -198,6 +198,14 @@
   var FEED_MINUTES = [10, 15, 20, 25, 30, 45, 60];
   // Only until the log can suggest the parent's own figure instead.
   var FEED_MINUTES_DEFAULT = 20;
+  // A bottle is measured, not timed. Nobody stands over one with a stopwatch
+  // when the bottle itself says what went in, and minutes off a bottle say
+  // nothing anyway — the same 90 ml takes five minutes or twenty depending on
+  // the teat. Thirty-millilitre steps because that is an ounce, which is how
+  // bottles are marked; anything else goes through the manual form.
+  var FEED_ML = [30, 60, 90, 120, 150, 180];
+  var FEED_ML_DEFAULT = 60;
+  var MAX_FEED_ML = 1000;
   // Index 0 is "not recorded", so a share link that predates this column
   // reads as absent rather than as breast.
   var FEED_SOURCE_IDS = ["", "breast", "formula", "expressed"];
@@ -1154,14 +1162,15 @@
   // on top of that.
   function stripToTombstone(event) {
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
-      label: event.label, unit: event.unit, fedMin: event.fedMin, fedWith: event.fedWith,
-      text: event.text, link: event.link };
+      label: event.label, unit: event.unit, fedMin: event.fedMin, fedMl: event.fedMl,
+      fedWith: event.fedWith, text: event.text, link: event.link };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
     delete event.label;
     delete event.unit;
     delete event.fedMin;
+    delete event.fedMl;
     delete event.fedWith;
     delete event.text;
     delete event.link;
@@ -1177,6 +1186,7 @@
     if (carried.label !== undefined) event.label = carried.label;
     if (carried.unit !== undefined) event.unit = carried.unit;
     if (carried.fedMin !== undefined) event.fedMin = carried.fedMin;
+    if (carried.fedMl !== undefined) event.fedMl = carried.fedMl;
     if (carried.fedWith !== undefined) event.fedWith = carried.fedWith;
     if (carried.text !== undefined) event.text = carried.text;
     if (carried.link !== undefined) event.link = carried.link;
@@ -1277,12 +1287,14 @@
     sourceChips: document.getElementById("sourceChips"),
     feedBlock: document.getElementById("feedBlock"),
     feedChips: document.getElementById("feedChips"),
+    feedSublabel: document.getElementById("feedSublabel"),
     nappyBlock: document.getElementById("nappyBlock"),
     nappyChips: document.getElementById("nappyChips"),
     manualSourceField: document.getElementById("manualSourceField"),
     manualSource: document.getElementById("manualSource"),
     manualFedField: document.getElementById("manualFedField"),
     manualFed: document.getElementById("manualFed"),
+    manualFedLabel: document.getElementById("manualFedLabel"),
     manualNappyField: document.getElementById("manualNappyField"),
     manualNappy: document.getElementById("manualNappy"),
     nextUpClose: document.getElementById("nextUpClose"),
@@ -1843,6 +1855,20 @@
     return (value > 0 && value <= 24 * 60) ? Math.round(value) : null;
   }
 
+  function fedMlOf(event) {
+    if (!event || event.type !== "feed") return null;
+    var value = Number(event.fedMl);
+    return (value > 0 && value <= MAX_FEED_ML) ? Math.round(value) : null;
+  }
+
+  // Breast is timed, a bottle is measured, and which of the two this was is
+  // already recorded. So the card asks whichever question can be answered
+  // rather than offering both and leaving one of them meaningless.
+  function isBottleFeed(event) {
+    var id = fedWithOf(event);
+    return id === "formula" || id === "expressed";
+  }
+
   // The chip to suggest: the parent's own recent middle, once there is one.
   // Rounded to whichever chip is nearest, so the suggestion is always a chip
   // that exists rather than a seventh option nobody can tap.
@@ -1857,6 +1883,21 @@
     var best = FEED_MINUTES[0];
     FEED_MINUTES.forEach(function (mins) {
       if (Math.abs(mins - middle) < Math.abs(best - middle)) best = mins;
+    });
+    return best;
+  }
+
+  function suggestedFeedMl() {
+    var recorded = [];
+    sortedByTimeDesc(liveEvents()).forEach(function (e) {
+      var ml = fedMlOf(e);
+      if (ml !== null && recorded.length < FORECAST_SAMPLE) recorded.push(ml);
+    });
+    if (!recorded.length) return FEED_ML_DEFAULT;
+    var middle = median(recorded);
+    var best = FEED_ML[0];
+    FEED_ML.forEach(function (ml) {
+      if (Math.abs(ml - middle) < Math.abs(best - middle)) best = ml;
     });
     return best;
   }
@@ -2453,6 +2494,7 @@
   function daySummary(group, analysis) {
     var feeds = 0;
     var fedMs = 0;
+    var fedMl = 0;
     var diapers = 0;
     var wet = 0;
     var dirty = 0;
@@ -2460,6 +2502,7 @@
       if (e.type === "feed") {
         feeds++;
         fedMs += (fedMinutesOf(e) || 0) * MS_MIN;
+        fedMl += fedMlOf(e) || 0;
       }
       if (e.type !== "diaper") return;
       diapers++;
@@ -2475,7 +2518,10 @@
     var nappies = "🧷 " + diapers;
     if (wet || dirty) nappies += " (💧" + wet + " 💩" + dirty + ")";
     var feedLabel = "🍼 " + feeds;
-    if (fedMs) feedLabel += " (" + formatDuration(fedMs) + ")";
+    var fedParts = [];
+    if (fedMs) fedParts.push(formatDuration(fedMs));
+    if (fedMl) fedParts.push(fedMl + " ml");
+    if (fedParts.length) feedLabel += " (" + fedParts.join(" · ") + ")";
     return feedLabel + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
   }
 
@@ -2993,6 +3039,8 @@
           if (awake) metrics.push('<span class="l-awake">awake ' + formatDuration(awake) + '</span>');
           if (fedMinutesOf(e)) metrics.push('<span class="l-duration">took ' +
             formatDuration(fedMinutesOf(e) * MS_MIN) + '</span>');
+          if (fedMlOf(e)) metrics.push('<span class="l-duration">' +
+            fedMlOf(e) + ' ml</span>');
           if (gaps[e.id]) metrics.push('<span class="l-gap">' +
             formatDuration(gaps[e.id]) + ' since the last ' + GAP_LABEL[e.type] + '</span>');
           var row = document.createElement("div");
@@ -3195,7 +3243,13 @@
     if (!isFeed) el.manualFed.value = "";
     el.manualSourceField.hidden = !(isFeed && asksFedWith());
     if (!isFeed) el.manualSource.value = "";
+    if (isFeed) buildFedOptions(parseInt(el.manualFed.value, 10) || 0);
   }
+
+  // Switching between breast and bottle changes the question, and the answer
+  // to the old one does not carry over: 20 does not mean 20 ml because it
+  // meant twenty minutes a moment ago.
+  el.manualSource.addEventListener("change", function () { buildFedOptions(0); });
 
   function syncManualNoteField() {
     var isNote = el.manualType.value === "note";
@@ -3246,8 +3300,10 @@
     openManualPanel();
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
-    el.manualFed.value = fedMinutesOf(found) === null ? "" : String(fedMinutesOf(found));
     el.manualSource.value = fedWithOf(found);
+    buildFedOptions(isBottleFeed(found)
+      ? (fedMlOf(found) || 0)
+      : (fedMinutesOf(found) || 0));
     el.manualNappy.value = nappyOf(found) || "";
     el.manualValue.value = measureValueOf(found) === null ? "" : String(found.value);
     el.manualMeasureLabel.value = measureLabelOf(found);
@@ -3361,8 +3417,11 @@
       }
     }
 
-    var fedMinutes = parseInt(el.manualFed.value, 10);
-    if (!isFinite(fedMinutes) || fedMinutes <= 0) fedMinutes = 0;
+    var fedAmount = parseInt(el.manualFed.value, 10);
+    if (!isFinite(fedAmount) || fedAmount <= 0) fedAmount = 0;
+    var fedIsMl = manualFedIsMl();
+    var fedMinutes = fedIsMl ? 0 : fedAmount;
+    var fedMillilitres = fedIsMl ? fedAmount : 0;
 
     hideManualNotice();
     var savedId;
@@ -3384,6 +3443,8 @@
       else delete target.nappy;
       if (type === "feed" && fedMinutes) target.fedMin = fedMinutes;
       else delete target.fedMin;
+      if (type === "feed" && fedMillilitres) target.fedMl = fedMillilitres;
+      else delete target.fedMl;
       if (type === "feed" && feedSource(el.manualSource.value)) target.fedWith = el.manualSource.value;
       else delete target.fedWith;
       if (measureMeta) target.value = measureValue;
@@ -3406,7 +3467,8 @@
       savedId = addEvent(type, picked.toISOString(),
         type === "diaper" ? el.manualNappy.value : "", measureValue,
         measureLabel, measureUnit, type === "feed" ? fedMinutes : 0,
-        type === "feed" ? el.manualSource.value : "", noteText, noteLink);
+        type === "feed" ? el.manualSource.value : "", noteText, noteLink,
+        type === "feed" ? fedMillilitres : 0);
       if (!savedId) return;
       el.manualDateTime.value = toDateTimeLocalValue(new Date());
       // The form is the one place where the entry vanishes from view the
@@ -3517,19 +3579,26 @@
 
     el.feedBlock.hidden = !isFeed;
     if (isFeed) {
-      var recorded = fedMinutesOf(event);
-      var suggestion = recorded === null ? suggestedFeedMinutes() : recorded;
+      // A bottle gets asked how much, the breast how long. Same row, same
+      // height of card either way: the source above has already been tapped,
+      // so this costs nobody an extra decision.
+      var bottle = isBottleFeed(event);
+      var values = bottle ? FEED_ML : FEED_MINUTES;
+      var recorded = bottle ? fedMlOf(event) : fedMinutesOf(event);
+      var suggestion = recorded !== null ? recorded
+        : (bottle ? suggestedFeedMl() : suggestedFeedMinutes());
+      el.feedSublabel.textContent = bottle ? "How much did she take?" : "How long did it take?";
       el.feedChips.innerHTML = "";
-      FEED_MINUTES.forEach(function (mins) {
+      values.forEach(function (value) {
         var chip = document.createElement("button");
         // Nothing is selected until the parent answers — the suggestion is
         // only marked out, so the card never looks as though it recorded a
         // length on their behalf.
         chip.className = "nextup-chip feed-chip" +
-          (mins === recorded ? " selected" : "") +
-          (recorded === null && mins === suggestion ? " suggested" : "");
-        chip.setAttribute("data-fed", String(mins));
-        chip.textContent = formatDuration(mins * MS_MIN);
+          (value === recorded ? " selected" : "") +
+          (recorded === null && value === suggestion ? " suggested" : "");
+        chip.setAttribute("data-fed", String(value));
+        chip.textContent = bottle ? value + " ml" : formatDuration(value * MS_MIN);
         el.feedChips.appendChild(chip);
       });
     }
@@ -3662,6 +3731,9 @@
     // change of regime would rewrite this feed.
     if (fedWithOf(event) === id) delete event.fedWith;
     else event.fedWith = id;
+    // Changing what it was changes which question is asked below, but never
+    // throws away an answer already given: a length recorded before the
+    // source was tapped stays on the entry and stays in the log.
     touch(event);
 
     if (!saveEvents(events)) return;
@@ -3677,10 +3749,20 @@
     var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
     if (!event) return;
 
-    var mins = parseInt(chip.getAttribute("data-fed"), 10);
-    // Tapping the same answer again clears it, so a mis-tap is undoable.
-    if (fedMinutesOf(event) === mins) delete event.fedMin;
-    else event.fedMin = mins;
+    var value = parseInt(chip.getAttribute("data-fed"), 10);
+    // Tapping the same answer again clears it, so a mis-tap is undoable. One
+    // row asked one question, so recording an amount drops any length and the
+    // other way round — an entry never carries two answers to a question that
+    // was only put once.
+    if (isBottleFeed(event)) {
+      if (fedMlOf(event) === value) delete event.fedMl;
+      else { event.fedMl = value; delete event.fedMin; }
+    } else if (fedMinutesOf(event) === value) {
+      delete event.fedMin;
+    } else {
+      event.fedMin = value;
+      delete event.fedMl;
+    }
     touch(event);
 
     if (!saveEvents(events)) return;
@@ -3864,10 +3946,11 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link, fedMl) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
+    if (type === "feed" && fedMl > 0) event.fedMl = Math.round(fedMl);
     // Stamped now rather than looked up later: the setting is a default for
     // feeds as they happen, not a verdict on ones already logged.
     if (type === "feed") {
@@ -4006,7 +4089,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -4016,6 +4099,7 @@
         formatDateTimeLocal(new Date(e.time)),
         e.time,
         duration ? Math.round(duration / MS_MIN) : (fedMinutesOf(e) || ""),
+        fedMlOf(e) || "",
         customMinutesOf(e) || "",
         fedWithOf(e),
         nappyOf(e) || "",
@@ -4204,7 +4288,8 @@
           measureLabelOf(e),
           measureUnitOf(e),
           fedMinutesOf(e) || 0,
-          FEED_SOURCE_IDS.indexOf(fedWithOf(e))
+          FEED_SOURCE_IDS.indexOf(fedWithOf(e)),
+          fedMlOf(e) || 0
         ];
       })
     };
@@ -4237,6 +4322,9 @@
       // Appended after the fact: an older link simply has no tenth column.
       if (row[10] && type === "feed") entry.fedMin = row[10];
       if (row[11] > 0 && type === "feed") entry.fedWith = FEED_SOURCE_IDS[row[11]];
+      // Appended after the fact in its turn: a link made before bottles were
+      // measured simply has no twelfth column.
+      if (row[12] && type === "feed") entry.fedMl = row[12];
       out.events.push(entry);
     });
     return out;
@@ -4495,6 +4583,8 @@
     if (raw.type === "feed") {
       var fedMin = Number(raw.fedMin);
       if (fedMin > 0 && fedMin <= 24 * 60) entry.fedMin = Math.round(fedMin);
+      var fedMl = Number(raw.fedMl);
+      if (fedMl > 0 && fedMl <= MAX_FEED_ML) entry.fedMl = Math.round(fedMl);
       if (feedSource(raw.fedWith)) entry.fedWith = raw.fedWith;
     }
     // Skipped for a tombstone, which by design carries no reading at all:
@@ -5590,14 +5680,33 @@
   }
 
   // The same options the card offers, so the two never disagree about what a
-  // recordable feed length is.
-  function buildFedOptions() {
-    FEED_MINUTES.forEach(function (mins) {
+  // recordable feed is. Rebuilt whenever the source changes, because a bottle
+  // is asked how much and the breast how long — and it keeps whatever figure
+  // is already on the entry even when that is not one of the offered ones, so
+  // editing a 35-minute feed imported from somewhere else cannot silently
+  // blank it.
+  function buildFedOptions(keep) {
+    var bottle = el.manualSource.value === "formula" || el.manualSource.value === "expressed";
+    var values = (bottle ? FEED_ML : FEED_MINUTES).slice();
+    if (keep > 0 && values.indexOf(keep) === -1) values.push(keep);
+    values.sort(function (a, b) { return a - b; });
+    el.manualFedLabel.textContent = bottle ? "How much did she take?" : "How long did it take?";
+    el.manualFed.innerHTML = "";
+    var blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Not recorded";
+    el.manualFed.appendChild(blank);
+    values.forEach(function (value) {
       var node = document.createElement("option");
-      node.value = String(mins);
-      node.textContent = formatDuration(mins * MS_MIN);
+      node.value = String(value);
+      node.textContent = bottle ? value + " ml" : formatDuration(value * MS_MIN);
       el.manualFed.appendChild(node);
     });
+    el.manualFed.value = keep > 0 ? String(keep) : "";
+  }
+
+  function manualFedIsMl() {
+    return el.manualSource.value === "formula" || el.manualSource.value === "expressed";
   }
 
   function buildFeedingOptions() {
@@ -6358,6 +6467,12 @@
         return "Last " + atAgo + (extras ? " — " + extras : "") + ".";
       },
       feedLength: function (dur) { return dur + " on it"; },
+      feedAmount: function (ml) { return ml + " ml"; },
+      feedTaken: function (ml, bottles, all) {
+        return ml + " ml taken" + (bottles
+          ? ", though only " + bottles + " of the " + all + (bottles === 1 ? " was measured." : " were measured.")
+          : ".");
+      },
       feedSource: function (source) { return source.label.toLowerCase(); },
       nothingLogged: "Nothing has been logged yet.",
       spacing: function (middle, shortest, longest) {
@@ -6479,6 +6594,12 @@
         return "Последнее " + atAgo + (extras ? " — " + extras : "") + ".";
       },
       feedLength: function (dur) { return dur; },
+      feedAmount: function (ml) { return ml + " мл"; },
+      feedTaken: function (ml, bottles, all) {
+        return "Выпито " + ml + " мл" + (bottles
+          ? ", но объём записан только у " + bottles + " из " + all + "."
+          : ".");
+      },
       feedSource: function (source) {
         return { breast: "грудь", formula: "смесь", expressed: "сцеженное" }[source.id] || "";
       },
@@ -6678,6 +6799,8 @@
       var extras = [];
       var mins = fedMinutesOf(last);
       if (mins !== null) extras.push(T.feedLength(T.duration(mins * MS_MIN)));
+      var ml = fedMlOf(last);
+      if (ml !== null) extras.push(T.feedAmount(ml));
       var source = feedSource(fedWithOf(last));
       if (source) {
         var named = T.feedSource(source);
@@ -6695,15 +6818,21 @@
     // count is how "all of them were timed" is asked for.
     var fedMs = 0;
     var timed = 0;
+    var fedMl = 0;
+    var measured = 0;
     feeds.forEach(function (e) {
       var m = fedMinutesOf(e);
-      if (m === null) return;
-      fedMs += m * MS_MIN;
-      timed++;
+      if (m !== null) { fedMs += m * MS_MIN; timed++; }
+      var ml = fedMlOf(e);
+      if (ml !== null) { fedMl += ml; measured++; }
     });
     if (timed) {
       row.details.push(T.feedingTotal(T.duration(fedMs),
         timed < feeds.length ? timed : 0, feeds.length));
+    }
+    if (measured) {
+      row.details.push(T.feedTaken(fedMl,
+        measured < feeds.length ? measured : 0, feeds.length));
     }
     return row;
   }
@@ -8355,7 +8484,7 @@
   pruneOnStartup();
   buildIntervalOptions();
   buildFeedingOptions();
-  buildFedOptions();
+  buildFedOptions(0);
   el.syncRepo.value = syncConfig ? syncConfig.repo : "";
   renderSyncState();
   startSyncPolling();
