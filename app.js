@@ -132,7 +132,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "72";
+    var fallback = "73";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -275,9 +275,12 @@
   // Handing the log to an assistant the parent already pays for, rather than
   // building one in. There is no key, no account and no bill attached to this
   // app, and nothing is sent until they have read the exact text and tapped a
-  // service. `param` carries the question in the URL where it fits; anything
-  // longer goes via the clipboard, which is why the preview box is not
-  // decorative — it is the fallback when both of those fail.
+  // service. Every tap copies the summary; `param` carries it in the URL on top
+  // of that, for the services that read one and where it is short enough to
+  // fit. That order matters — a link tapped on a phone often opens the
+  // company's own app, which keeps the address and drops the question — and it
+  // is why the preview box is not decorative: it is what is left when even the
+  // clipboard is refused.
   var AI_TARGETS = [
     { id: "claude",     label: "Claude",     url: "https://claude.ai/new",            param: "q" },
     { id: "chatgpt",    label: "ChatGPT",    url: "https://chatgpt.com/",             param: "q" },
@@ -7882,7 +7885,8 @@
   // use, so the summary agrees with what the parent can see in the log.
   function aiDayStats(dayStart, analysis) {
     var dayEnd = dayStart + MS_DAY;
-    var out = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {}, nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
+    var out = { feeds: 0, fedMs: 0, fedCount: 0, fedMl: 0, mlCount: 0, bySource: {},
+      nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     liveEvents().forEach(function (e) {
       var t = +new Date(e.time);
       if (t < dayStart || t >= dayEnd) return;
@@ -7892,6 +7896,13 @@
         if (mins !== null) {
           out.fedMs += mins * MS_MIN;
           out.fedCount++;
+        }
+        // A bottle answers in millilitres and the breast in minutes, so the two
+        // are counted apart. Adding them would make a number that means nothing.
+        var ml = fedMlOf(e);
+        if (ml !== null) {
+          out.fedMl += ml;
+          out.mlCount++;
         }
         var source = fedWithOf(e);
         if (source) out.bySource[source] = (out.bySource[source] || 0) + 1;
@@ -8064,8 +8075,8 @@
     // ever complete days, since a rate per day computed over a part day is
     // simply wrong. `everything` is every day shown, for the figures that are
     // per feed or a proportion, which a part day does not distort.
-    var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0, fedMs: 0 };
-    var everything = { feeds: 0, fedMs: 0, fedCount: 0, bySource: {} };
+    var totals = { feeds: 0, nappies: 0, wet: 0, dirty: 0, sleepMs: 0, fedMs: 0, fedMl: 0 };
+    var everything = { feeds: 0, fedMs: 0, fedCount: 0, fedMl: 0, mlCount: 0, bySource: {} };
     var shown = 0;
     var todayStats = { feeds: 0, nappies: 0 };
     for (var i = 0; i < days; i++) {
@@ -8077,6 +8088,8 @@
       everything.feeds += stats.feeds;
       everything.fedMs += stats.fedMs;
       everything.fedCount += stats.fedCount;
+      everything.fedMl += stats.fedMl;
+      everything.mlCount += stats.mlCount;
       FEED_SOURCES.forEach(function (source) {
         if (stats.bySource[source.id]) {
           everything.bySource[source.id] =
@@ -8089,13 +8102,17 @@
         counted++;
         totals.feeds += stats.feeds;
         totals.fedMs += stats.fedMs;
+        totals.fedMl += stats.fedMl;
         totals.nappies += stats.nappies;
         totals.wet += stats.wet;
         totals.dirty += stats.dirty;
         totals.sleepMs += stats.sleepMs;
       }
       var feedPart = stats.feeds + (stats.feeds === 1 ? " feed" : " feeds");
-      if (stats.fedMs) feedPart += " (" + formatDuration(stats.fedMs) + " feeding)";
+      var feedDetail = [];
+      if (stats.fedMs) feedDetail.push(formatDuration(stats.fedMs) + " feeding");
+      if (stats.fedMl) feedDetail.push(stats.fedMl + " ml taken");
+      if (feedDetail.length) feedPart += " (" + feedDetail.join(", ") + ")";
       var parts = [feedPart];
       var nappies = stats.nappies + (stats.nappies === 1 ? " nappy" : " nappies");
       if (stats.wet || stats.dirty) nappies += " (" + stats.wet + " wet, " + stats.dirty + " dirty)";
@@ -8190,7 +8207,26 @@
       // otherwise assume the log simply forgot to mention it.
       out.push("How long each feed took was not recorded.");
     }
-    out.push("How much was taken is never recorded: this app counts feeds, not millilitres.");
+    // This line used to say flatly that volume is never recorded. A bottle can
+    // now be logged in millilitres, so saying so would be a lie about the log
+    // in front of it — and a model told "never" will reason around the figures
+    // it can see rather than from them.
+    if (everything.mlCount) {
+      var mlLine = "Taken by bottle: " + everything.fedMl + " ml";
+      if (everything.mlCount < everything.feeds) {
+        mlLine += ", measured on " + everything.mlCount + " of the " +
+          everything.feeds + " feeds — the rest were at the breast, or the " +
+          "amount was not written down";
+      }
+      if (counted && totals.fedMl) {
+        mlLine += ". Over the complete days that is about " +
+          Math.round(totals.fedMl / counted) + " ml a day";
+      }
+      out.push(mlLine + ".");
+    } else {
+      out.push("How much was taken is not recorded here: a bottle can be logged " +
+        "in millilitres, but none of these were.");
+    }
 
     var measures = aiMeasureLines();
     if (measures.length) {
@@ -8260,8 +8296,8 @@
     var text = aiCurrentPrompt();
     el.aiPreview.value = text;
     el.aiSize.textContent = describeSize(text.length) + " · " + (aiFitsInLink(text)
-      ? "short enough to travel in the link itself"
-      : "too long for a link — it gets copied instead, and you paste it into the chat");
+      ? "copied when you tap, and short enough to ride in the link as well"
+      : "copied when you tap — too long for the link, so paste it into the chat");
   }
 
   function renderAiChips() {
@@ -8279,23 +8315,37 @@
     });
   }
 
-  // Opened straight from the tap, before anything asynchronous: a window
-  // asked for later is a pop-up as far as Safari is concerned.
+  // Copy first, open second, and copy every time.
+  //
+  // The link still carries the question where the service reads it off the
+  // address, but that stopped being something to rely on. Tapped on a phone,
+  // one of these links opens the company's own app rather than a browser tab,
+  // and the app takes the address without the question on the end of it — so
+  // the parent lands in an empty chat with an empty clipboard, having watched
+  // the app promise it was sending something. Nothing here broke; the
+  // assumption underneath it did. The clipboard is now the path that always
+  // works and the parameter is the bonus on top of it.
+  //
+  // The copy goes first because it has to happen while this document still has
+  // focus. Ask for the clipboard after a new window has taken focus and some
+  // browsers refuse outright, and refuse the old selection fallback with it.
+  // Both calls stay in the tap itself: a window asked for later is a pop-up as
+  // far as Safari is concerned.
   function askAi(target) {
     var text = aiCurrentPrompt();
-    var url = aiUrlFor(target, text);
-    var prefilled = url !== target.url;
-    var opened = window.open(url, "_blank", "noopener");
-    if (!prefilled) {
-      copyText(text).then(function (ok) {
+    var copying = copyText(text);
+    var opened = window.open(aiUrlFor(target, text), "_blank", "noopener");
+    copying.then(function (ok) {
+      if (!opened) {
         showToast(ok
-          ? "Too long for a link — it is copied, so paste it into " + target.label
-          : "Too long for a link — copy it from the box above");
-      });
-    }
-    if (!opened) {
-      showToast("Your browser blocked the new tab — open " + target.label + " yourself");
-    }
+          ? "Copied — open " + target.label + " yourself and paste it"
+          : "Your browser blocked the new tab — copy it from the box above");
+      } else {
+        showToast(ok
+          ? "Copied as well — if " + target.label + " opens empty, just paste"
+          : "If " + target.label + " opens empty, copy it from the box above");
+      }
+    });
   }
 
   function renderAiTargets() {
