@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=71">
+<link rel="stylesheet" href="style.css?v=72">
 </head>
 <body>
 
@@ -179,7 +179,7 @@
           <div class="nextup-chips feed-chips" id="sourceChips"></div>
         </div>
         <div class="nextup-block" id="feedBlock" hidden>
-          <div class="nextup-sublabel">How long did it take?</div>
+          <div class="nextup-sublabel" id="feedSublabel">How long did it take?</div>
           <div class="nextup-chips feed-chips" id="feedChips"></div>
         </div>
         <div class="nextup-block" id="nappyBlock" hidden>
@@ -251,7 +251,7 @@
             </select>
           </label>
           <label class="manual-field" id="manualFedField" hidden>
-            <span class="manual-label">How long did it take?</span>
+            <span class="manual-label" id="manualFedLabel">How long did it take?</span>
             <select id="manualFed" class="manual-select">
               <option value="">Not recorded</option>
             </select>
@@ -364,6 +364,7 @@
               <li><strong>When did this happen?</strong> Logging is often a catch-up — the baby woke, a nappy, a feed, back to sleep, and the phone only comes out at the end. This time wheel opens already sitting on the moment just logged; wind it back instead of a trip to the history, and the button itself updates to match. No date on it — it is always today, and correcting something onto a different day is what the manual form below is for. <strong>Waking up</strong> opens this card too, just for this — there is nothing to plan from a wake-up, but it is usually the first thing that needs backdating.</li>
               <li>It shows when the next one is due, with a row of alternatives. Tapping one changes <strong>only that gap</strong> — useful for a long night stretch — and leaves your everyday plan alone.</li>
               <li>After a nappy it also asks what was in it: wee, poo, both or dry. Answering is optional. Tap the same answer twice to clear it if you mis-tap.</li>
+              <li>After a feed it asks what it was — breast, formula or expressed — and then <strong>one question that follows from the answer</strong>. At the breast it asks how long it took; from a bottle it asks how much she took, in millilitres. That is not a preference: minutes off a bottle say nothing, since the same 90 ml takes five minutes or twenty depending on the teat, and millilitres at the breast cannot be known at all. The amounts go up in 30 ml steps because that is an ounce, which is how bottles are marked; an exact figure goes through the manual form below. Everything else works as it did — the everyday answer is marked out but nothing is recorded until you tap, and tapping the same one again clears it. Because the row asks one question, answering it drops any answer to the other: a feed carries a length or an amount, never both.</li>
               <li>If you log the same thing twice within three minutes it says so — "that is the 2nd feed in three minutes" — and offers <strong>Undo</strong>, which removes that entry and leaves everything else alone. It never refuses the entry: two feeds close together is unusual, not impossible.</li>
               <li>It disappears on its own after twenty seconds, or with the ✕.</li>
             </ul>
@@ -1098,6 +1099,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=71"></script>
+<script src="app.js?v=72"></script>
 </body>
 </html>
