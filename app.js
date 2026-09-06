@@ -123,6 +123,23 @@
   // filling the queue could.
   var VOICE_NAME_RE = new RegExp("^(" + Object.keys(VOICE_LOG_TYPES).join("|") +
     ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
+  // What shape of entry this build can hold — not which release it is. Bumped
+  // by one only when a field is added that an older copy has never heard of;
+  // fedMl in v72 was the last, and the releases either side of it leave this
+  // alone.
+  //
+  // It is here to stop an out-of-date phone writing over a newer one's work.
+  // normaliseImported rebuilds every entry field by field and drops whatever it
+  // was not told about — deliberately, since that is what stops a hostile link
+  // putting anything it likes into the log. The price is that a copy running
+  // older code silently strips fields it has never heard of, and a push from
+  // that copy writes the whole document back, stripped fields and all.
+  //
+  // So a copy that meets a document of a newer shape now reads nothing from it
+  // and writes nothing to it, and says why. Half-reading it would put stripped
+  // entries on this phone with their timestamps untouched, which no later
+  // update could tell from the real thing.
+  var DOC_FORMAT = 2;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -132,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "73";
+    var fallback = "74";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -5207,14 +5224,27 @@
     return { id: m[2], type: m[1], time: time };
   }
 
-  // Turns whatever is waiting in the queue into real events (by id, so
-  // seeing the same file twice is harmless) and clears the files out.
-  // Failures here are swallowed by the caller: a stalled voice entry just
-  // waits for the next sync rather than breaking the ordinary one.
-  function processVoiceQueue(config) {
+  // The queue is turned into real events by id, so seeing the same file twice
+  // is harmless, and the files are cleared out once taken. Failures here are
+  // swallowed by the caller: a stalled voice entry waits for the next sync
+  // rather than breaking the ordinary one.
+  //
+  // Listing and claiming are two functions rather than one because they carry
+  // different risks. Listing is a read and costs nothing to be wrong about, so
+  // it rides alongside the document fetch. Claiming deletes the file it took —
+  // and a phone that claimed an entry and then found itself locked out of the
+  // log would be sitting on the only copy left of it.
+  function listVoiceQueue(config) {
     return listRemoteDir(config, VOICE_QUEUE_DIR).then(function (entries) {
-      var files = entries.filter(function (e) { return e && e.type === "file" && e.name && e.sha; });
-      if (!files.length) return 0;
+      return (entries || []).filter(function (e) {
+        return e && e.type === "file" && e.name && e.sha;
+      });
+    });
+  }
+
+  function claimVoiceQueue(config, files) {
+    return Promise.resolve().then(function () {
+      if (!files || !files.length) return 0;
       var byId = {};
       events.forEach(function (e) { byId[e.id] = e; });
       var changed = 0;
@@ -5240,7 +5270,10 @@
   function localDocument() {
     return {
       app: "baby-tracker",
-      version: 1,
+      version: DOC_FORMAT,
+      // Not read by anything — it is for whoever opens the file on GitHub and
+      // wants to know which release last touched it.
+      writtenBy: APP_VERSION,
       meta: {
         name: loadName(),
         nameFont: storedNameFont(),
@@ -5358,104 +5391,137 @@
 
     var attempt = function (remaining) {
       var config = syncConfig;
-      // The voice queue lives in its own file per entry, so reading it runs
+      // The voice queue lives in its own file per entry, so listing it runs
       // alongside the main document rather than blocking on it. A queue
       // hiccup (offline, a bad token) must never fail the sync it rode in
       // on, so it is swallowed here rather than left to reject the pair.
-      var voicePromise = processVoiceQueue(config).catch(function () { return 0; });
+      var voicePromise = listVoiceQueue(config).catch(function () { return []; });
       return Promise.all([fetchRemote(config), voicePromise]).then(function (results) {
         var found = results[0];
-        var pulledVoice = results[1];
+        var queued = results[1];
         var remoteDoc = found.doc || {};
-        var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
-        var pulled = mergeIntoLocal(remoteEvents);
-        var remotePlans = Array.isArray(remoteDoc.plans) ? remoteDoc.plans : [];
-        var pulledPlans = mergePlans(remotePlans);
-        if (pulledPlans) savePlans(plans);
-        var remoteShopping = Array.isArray(remoteDoc.shopping) ? remoteDoc.shopping : [];
-        var pulledShopping = mergeShopping(remoteShopping);
-        if (pulledShopping) saveShopping(shopping);
-        var remoteRotaShifts = Array.isArray(remoteDoc.rotaShifts) ? remoteDoc.rotaShifts : [];
-        var pulledRotaShifts = mergeRotaShifts(remoteRotaShifts);
-        if (pulledRotaShifts) saveRotaShifts(rotaShifts);
-
-        var remoteMeta = remoteDoc.meta;
-        applyingRemote = true;
-        try {
-          if (remoteMeta) {
-            var stampBefore = metaStamp();
-            // Three cases, in order. Connecting is a decision to join the log
-            // that is already there, so on a first connection its settings win
-            // outright however old they are — without that, a phone with a
-            // name typed into it keeps that name and pushes it over everybody
-            // else's on its first commit. After that, genuinely newer settings
-            // replace ours. Failing both we still take what we are missing,
-            // which is how a log written before settings carried a timestamp
-            // still fills in a blank phone.
-            var remoteNewer = joining || (remoteMeta.updatedAt || "") > metaStamp();
-            applyIncomingSettings({
-              name: remoteMeta.name,
-              nameFont: remoteMeta.nameFont,
-              dob: remoteMeta.dob,
-              feeding: remoteMeta.feeding,
-              intervals: remoteMeta.intervals,
-              photoAlbum: remoteMeta.photoAlbum,
-              night: remoteMeta.night,
-              routine: remoteMeta.routine,
-              takeIntervals: remoteNewer,
-              overwrite: remoteNewer
-            });
-            // Adopt their stamp rather than stamping ourselves, or each pull
-            // would look like a local edit and push straight back.
-            // Filling in blanks is not a local edit, so keep our own stamp
-            // where it was rather than claiming to be the newer side.
-            setMetaStamp(remoteNewer ? remoteMeta.updatedAt : stampBefore);
-          }
-          if (pulled || pulledVoice) saveEvents(events);
-        } finally {
-          applyingRemote = false;
+        // Written in a shape this build has never heard of. Read nothing from
+        // it, send nothing to it, claim nothing out of the queue — and hand
+        // the number back so the status line can name it.
+        var remoteFormat = parseInt(remoteDoc.version, 10);
+        if (found.sha && isFinite(remoteFormat) && remoteFormat > DOC_FORMAT) {
+          return { locked: remoteFormat, pulled: 0, pushed: 0 };
         }
-        if (pulledPlans) renderPlans();
-        if (pulledShopping) renderShopping();
-        if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
-        if (pulled || pulledVoice || remoteMeta) renderAll();
-
-        // Drop what has aged out before comparing, so the cleaned-up log is
-        // what gets compared and sent.
-        var pruned = pruneTombstones();
-        if (pruned) saveEvents(events);
-        if (prunePlanTombstones()) savePlans(plans);
-        var shopRetired = retireBoughtShopping();
-        var shopPruned = pruneShopTombstones();
-        if (shopRetired || shopPruned) saveShopping(shopping);
-        if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
-
-        var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
-          remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
-          remoteRotaShifts.some(tombstoneExpired);
-        var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
-          remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
-          remoteMissesOurRotaShifts(remoteRotaShifts) ||
-          metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
-        if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
-
-        return putRemote(config, localDocument(), found.sha).then(function (sha) {
-          // What is up there is ours now, and carries an ETag we have never
-          // seen; the next fetch asks plainly and caches the answer afresh.
-          forgetRemoteCache();
-          syncConfig.sha = sha;
-          saveSyncConfig(syncConfig);
-          return { pulled: pulled + pulledVoice, pushed: 1 };
-        }).catch(function (err) {
-          // Another phone committed between our read and our write.
-          if (err && err.http === 409 && remaining > 0) return attempt(remaining - 1);
-          throw err;
-        });
+        return claimVoiceQueue(config, queued)
+          .catch(function () { return 0; })
+          .then(function (pulledVoice) {
+            return mergeAndPush(config, found, remoteDoc, pulledVoice, remaining);
+          });
       });
     };
 
+    // Everything past the shape check: what came down is merged in, and what
+    // this phone holds goes back up if the copy up there is missing any of it.
+    function mergeAndPush(config, found, remoteDoc, pulledVoice, remaining) {
+      var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
+      var pulled = mergeIntoLocal(remoteEvents);
+      var remotePlans = Array.isArray(remoteDoc.plans) ? remoteDoc.plans : [];
+      var pulledPlans = mergePlans(remotePlans);
+      if (pulledPlans) savePlans(plans);
+      var remoteShopping = Array.isArray(remoteDoc.shopping) ? remoteDoc.shopping : [];
+      var pulledShopping = mergeShopping(remoteShopping);
+      if (pulledShopping) saveShopping(shopping);
+      var remoteRotaShifts = Array.isArray(remoteDoc.rotaShifts) ? remoteDoc.rotaShifts : [];
+      var pulledRotaShifts = mergeRotaShifts(remoteRotaShifts);
+      if (pulledRotaShifts) saveRotaShifts(rotaShifts);
+
+      var remoteMeta = remoteDoc.meta;
+      applyingRemote = true;
+      try {
+        if (remoteMeta) {
+          var stampBefore = metaStamp();
+          // Three cases, in order. Connecting is a decision to join the log
+          // that is already there, so on a first connection its settings win
+          // outright however old they are — without that, a phone with a
+          // name typed into it keeps that name and pushes it over everybody
+          // else's on its first commit. After that, genuinely newer settings
+          // replace ours. Failing both we still take what we are missing,
+          // which is how a log written before settings carried a timestamp
+          // still fills in a blank phone.
+          var remoteNewer = joining || (remoteMeta.updatedAt || "") > metaStamp();
+          applyIncomingSettings({
+            name: remoteMeta.name,
+            nameFont: remoteMeta.nameFont,
+            dob: remoteMeta.dob,
+            feeding: remoteMeta.feeding,
+            intervals: remoteMeta.intervals,
+            photoAlbum: remoteMeta.photoAlbum,
+            night: remoteMeta.night,
+            routine: remoteMeta.routine,
+            takeIntervals: remoteNewer,
+            overwrite: remoteNewer
+          });
+          // Adopt their stamp rather than stamping ourselves, or each pull
+          // would look like a local edit and push straight back.
+          // Filling in blanks is not a local edit, so keep our own stamp
+          // where it was rather than claiming to be the newer side.
+          setMetaStamp(remoteNewer ? remoteMeta.updatedAt : stampBefore);
+        }
+        if (pulled || pulledVoice) saveEvents(events);
+      } finally {
+        applyingRemote = false;
+      }
+      if (pulledPlans) renderPlans();
+      if (pulledShopping) renderShopping();
+      if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
+      if (pulled || pulledVoice || remoteMeta) renderAll();
+
+      // Drop what has aged out before comparing, so the cleaned-up log is
+      // what gets compared and sent.
+      var pruned = pruneTombstones();
+      if (pruned) saveEvents(events);
+      if (prunePlanTombstones()) savePlans(plans);
+      var shopRetired = retireBoughtShopping();
+      var shopPruned = pruneShopTombstones();
+      if (shopRetired || shopPruned) saveShopping(shopping);
+      if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
+
+      var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
+        remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
+        remoteRotaShifts.some(tombstoneExpired);
+      var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
+        remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
+        remoteMissesOurRotaShifts(remoteRotaShifts) ||
+        metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
+      if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
+
+      return putRemote(config, localDocument(), found.sha).then(function (sha) {
+        // What is up there is ours now, and carries an ETag we have never
+        // seen; the next fetch asks plainly and caches the answer afresh.
+        forgetRemoteCache();
+        syncConfig.sha = sha;
+        saveSyncConfig(syncConfig);
+        return { pulled: pulled + pulledVoice, pushed: 1 };
+      }).catch(function (err) {
+        // Another phone committed between our read and our write.
+        if (err && err.http === 409 && remaining > 0) return attempt(remaining - 1);
+        throw err;
+      });
+    }
+
     return attempt(SYNC_RETRIES).then(function (result) {
       syncInFlight = false;
+      if (result.locked) {
+        // Not a fault of the connection, and not something waiting will mend.
+        // This is a phone whose taps are going nowhere until somebody updates
+        // it, so the line says that plainly and keeps saying it.
+        syncQueued = false;
+        setSyncState("bad", "This phone is behind the log — it was last written by a newer " +
+          "version. Nothing is read or sent until you update. What you log meanwhile is " +
+          "safe here and goes up afterwards.");
+        // Being locked out is the one moment the update banner is worth more
+        // than anything else on the screen, so ask now rather than waiting out
+        // the quarter of an hour between the ordinary checks.
+        lastVersionCheck = 0;
+        checkForUpdate();
+        if (reason === "manual") showToast("Update this phone to sync again");
+        return false;
+      }
       setSyncState("ok", "Connected to " + syncConfig.repo);
       if (result.pulled) {
         showToast("Synced — " + result.pulled + (result.pulled === 1 ? " new entry" : " new entries"));
