@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "74";
+    var fallback = "75";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -8478,12 +8478,75 @@
   // never seen is the one thing that reliably defeats the cache. The query is
   // not read by anything, and localStorage is scoped to the origin, so the log
   // is untouched.
+  // The way out of anything the offline copy has got wrong, and the reason it
+  // is safe to keep one at all.
+  //
+  // The ?r= it asks for is the escape: the worker answers that one from the
+  // network and never from what it holds, so getting a fresh copy does not
+  // depend on any of the tidying below finishing, or even starting. The
+  // tidying is the second belt — it clears the store and takes the worker off,
+  // so the fresh page comes up on nothing at all — and it gets a moment to
+  // happen before the reload goes ahead without it.
+  //
+  // Offline it does none of that. The kept copy is then the only copy there
+  // is, and throwing it away because somebody tapped the version number would
+  // leave them nothing to open until the signal came back, which is the
+  // opposite of the favour being asked for.
   function reloadFresh() {
     var base = location.href.split("#")[0].split("?")[0];
-    location.replace(base + "?r=" + Date.now());
+    var done = false;
+    var go = function () {
+      if (done) return;
+      done = true;
+      location.replace(base + "?r=" + Date.now());
+    };
+    if (navigator.onLine === false) return go();
+    var jobs = [];
+    if (window.caches && caches.keys) {
+      jobs.push(caches.keys().then(function (names) {
+        return Promise.all(names.map(function (name) { return caches.delete(name); }));
+      }));
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+      }));
+    }
+    if (!jobs.length) return go();
+    Promise.all(jobs).then(go, go);
+    // Deleting a store the worker still holds open can sit there for a second
+    // or more, and a button that does nothing for a second gets tapped again.
+    setTimeout(go, 400);
   }
 
   el.appVersion.addEventListener("click", reloadFresh);
+
+  // ---------- the offline copy ----------
+
+  // Keeping the app's own three files where the browser can reach them without
+  // a connection. Nothing about the log depends on this and never did: entries
+  // have always been written straight to this browser's storage. What needed
+  // the network was fetching the app itself, every single time — which is why
+  // a phone that loses signal at 3am could find nothing to open.
+  //
+  // Only over http. A copy opened straight off the disk has no origin to
+  // register against and does not need one; it is already as local as it gets.
+  function keepAnOfflineCopy() {
+    if (location.protocol === "file:") return;
+    if (!navigator.serviceWorker || !navigator.serviceWorker.register) return;
+    // The version goes in the URL so that a release replaces the worker rather
+    // than leaving the old one in charge, and updateViaCache keeps the browser
+    // from answering out of its own store — a fix to the caching must never be
+    // the one thing the caching holds back.
+    var start = function () {
+      navigator.serviceWorker.register("sw.js?v=" + APP_VERSION, { updateViaCache: "none" })
+        .catch(function () { /* an app that will not cache still runs */ });
+    };
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start);
+  }
+
+  keepAnOfflineCopy();
 
   // ---------- update check ----------
 
