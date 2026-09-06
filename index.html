@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=74">
+<link rel="stylesheet" href="style.css?v=75">
 </head>
 <body>
 
@@ -517,7 +517,13 @@
           <article class="info-card">
             <h3>Free and open source</h3>
             <p>Baby Tracker is released under the <strong>MIT licence</strong>. You are free to use it, copy it, change it and pass it on — including commercially — as long as the copyright notice and the licence text travel with it. It comes with no warranty of any kind.</p>
-            <p>It is three files of plain HTML, CSS and JavaScript with no build step, short enough to read through in an evening. The source is at <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">github.com/TummlerEA/Baby-Routine</a>.</p>
+            <p>It is four files of plain HTML, CSS and JavaScript with no build step, short enough to read through in an evening — three that make the app and a fourth that keeps a copy of them on your phone. The source is at <a href="https://github.com/TummlerEA/Baby-Routine" target="_blank" rel="noopener">github.com/TummlerEA/Baby-Routine</a>.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>It works with no signal</h3>
+            <p>After the first time you open it, your phone keeps its own copy of the app, so it opens in a lift, on the Tube, or at 3am when the router is in the other room. Your entries never needed a connection anyway — they have always been written straight to this phone.</p>
+            <p>Sync is the only part that waits: what you log offline stays here and goes up on its own within a minute of the signal coming back. If anything ever looks stuck on an old version, tap the version number at the foot of the main screen — that throws the kept copy away and fetches the app afresh.</p>
           </article>
 
           <article class="info-card">
@@ -1101,6 +1107,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=74"></script>
+<script src="app.js?v=75"></script>
 </body>
 </html>
