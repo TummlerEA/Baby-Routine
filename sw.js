@@ -4,7 +4,7 @@
 
 // Bumped together with index.html, version.json and the fallback in app.js.
 // A test fails if the four ever disagree.
-var VERSION = "75";
+var VERSION = "76";
 var CACHE = "baby-tracker-" + VERSION;
 
 // The page is always kept and looked up under this one name, whatever address
