@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "75";
+    var fallback = "76";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2668,31 +2668,50 @@
     return out.join("");
   }
 
+  // How long before its end a night may be counted early. Only the night going
+  // on now can ever be inside this: every other one ended a day or more ago.
+  var NIGHT_EARLY_MS = 90 * MS_MIN;
+
   // One row per night, newest last, for the same period the chips above pick.
   //
-  // A night is named for the evening it begins, runs from nightWindow.start
-  // that evening to nightWindow.end the next morning, and is only counted
-  // once it has finished - a night still in progress would otherwise draw a
-  // short bar that reads as a terrible night rather than an unfinished one.
+  // A night is named for the evening it begins and runs from nightWindow.start
+  // that evening to nightWindow.end the next morning.
   //
   // This is the whole point of the section: everything else on this screen is
   // measured in calendar days, and a night is not one. It starts in the
   // evening and ends the next morning, so midnight falls in the middle of it.
   function nightsRange(days) {
     var analysis = analyzeSleep();
+    var awake = !analysis.active;
     var now = Date.now();
     var lengthMs = nightLengthHours(nightWindow) * MS_HOUR;
+    var grace = Math.min(NIGHT_EARLY_MS, lengthMs / 2);
     var feeds = liveEvents().filter(function (e) { return e.type === "feed"; })
       .map(function (e) { return +new Date(e.time); });
 
     var rows = [];
-    for (var back = days; back >= 0; back--) {
+    // days evenings, not days + 1. A night belongs to the evening it began on,
+    // so the night before the first day of the period began outside it —
+    // counting it made this one section reach back a day further than every
+    // other card on the screen, and let "best night" name a day the chosen
+    // period did not contain.
+    for (var back = days - 1; back >= 0; back--) {
       var evening = new Date();
       evening.setHours(nightWindow.start, 0, 0, 0);
       evening.setDate(evening.getDate() - back);
       var from = +evening;
       var to = from + lengthMs;
-      if (to > now) continue;
+      // A night counts once it is over. The exception is the morning itself:
+      // at ten to eight, of an eleven-hour night ending at eight, ten and a
+      // half hours have happened and the baby is up — and this screen is being
+      // looked at precisely to see how that night went. Holding the last ten
+      // minutes back leaves the chart a night behind at the one moment
+      // somebody wants it.
+      //
+      // Still asleep, though, and the night really is unfinished: a short bar
+      // would then read as a terrible night rather than an unended one, which
+      // is the thing this rule was written to avoid in the first place.
+      if (to > now && !(awake && now >= to - grace)) continue;
 
       var longest = 0;
       var wakings = 0;
