@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "76";
+    var fallback = "77";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3328,8 +3328,37 @@
     el.manualTitle.textContent = "New entry";
     el.manualSubmit.textContent = "Add entry";
     el.manualCancel.hidden = true;
-    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+    setManualTime(null);
     hideManualNotice();
+  }
+
+  // The manual form asks for a time that has already happened, and asking for
+  // it to the minute means dragging a wheel past thirty numbers to say "half an
+  // hour ago". Five-minute steps make that six drags. Nothing recorded through
+  // this form is measured finely enough to miss the other four — a nap is not
+  // four minutes long — and the buttons on the main screen still take the
+  // minute they were tapped, which is where "just now" gets logged anyway.
+  var MANUAL_STEP_MIN = 5;
+
+  // Rounded down, never up. An entry is written after the thing happened, so
+  // the grid line behind is the truthful one; the one ahead would also be an
+  // entry in the future, which this form turns away.
+  function manualNowValue() {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - (now.getMinutes() % MANUAL_STEP_MIN), 0, 0);
+    return toDateTimeLocalValue(now);
+  }
+
+  // Editing an entry that sits between two grid lines is the one case where
+  // the step has to come off. A wheel offering only multiples of five cannot
+  // put 12:43 back where it was, and a picker that moves the value onto the
+  // grid as it opens would shift a time the person came here to leave alone
+  // while they corrected the nappy type. So that entry is edited to the
+  // minute, exactly as it was written; everything else gets the coarse wheel.
+  function setManualTime(date) {
+    var stepped = !date || date.getMinutes() % MANUAL_STEP_MIN === 0;
+    el.manualDateTime.step = stepped ? MANUAL_STEP_MIN * 60 : 60;
+    el.manualDateTime.value = date ? toDateTimeLocalValue(date) : manualNowValue();
   }
 
   function startEdit(id) {
@@ -3350,7 +3379,7 @@
     el.manualNoteText.value = noteTextOf(found);
     el.manualLink.value = noteLinkOf(found);
     syncManualFields();
-    el.manualDateTime.value = toDateTimeLocalValue(new Date(found.time));
+    setManualTime(new Date(found.time));
     el.manualSubmit.textContent = "Save";
     el.manualCancel.hidden = false;
     hideManualNotice();
@@ -3364,7 +3393,7 @@
     el.manualTitle.textContent = "New " + MEASURES[type].label.toLowerCase();
     el.manualType.value = type;
     syncManualFields();
-    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+    setManualTime(null);
     el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
     el.manualValue.focus();
   }
@@ -3375,14 +3404,14 @@
     el.manualTitle.textContent = "New note";
     el.manualType.value = "note";
     syncManualFields();
-    el.manualDateTime.value = toDateTimeLocalValue(new Date());
+    setManualTime(null);
     el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
     el.manualNoteText.focus();
   }
 
   el.addNoteBtn.addEventListener("click", startNote);
 
-  el.manualDateTime.value = toDateTimeLocalValue(new Date());
+  setManualTime(null);
 
   el.manualToggle.addEventListener("click", function () {
     manualOpen = !manualOpen;
@@ -3409,7 +3438,11 @@
       showManualNotice("That date and time isn't valid");
       return;
     }
-    if (picked.getTime() > Date.now() + MS_MIN) {
+    // The grid itself is worth two and a half minutes either way, so turning
+    // away an entry two minutes ahead while accepting the same one at the line
+    // behind would be a distinction without a difference. What this guard is
+    // for — a date set to next week — it still catches.
+    if (picked.getTime() > Date.now() + MANUAL_STEP_MIN * MS_MIN) {
       showManualNotice("You can't add an entry in the future");
       return;
     }
@@ -3509,7 +3542,7 @@
         type === "feed" ? el.manualSource.value : "", noteText, noteLink,
         type === "feed" ? fedMillilitres : 0);
       if (!savedId) return;
-      el.manualDateTime.value = toDateTimeLocalValue(new Date());
+      setManualTime(null);
       // The form is the one place where the entry vanishes from view the
       // moment it is saved — the fields reset and nothing on screen says it
       // worked. Naming the time it went in answers the question the button
