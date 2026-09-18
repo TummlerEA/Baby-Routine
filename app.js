@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "79";
+    var fallback = "80";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1503,10 +1503,15 @@
     leapLine: document.getElementById("leapLine"),
     leapSub: document.getElementById("leapSub"),
     leapPanel: document.getElementById("leapPanel"),
+    leapNoDob: document.getElementById("leapNoDob"),
+    leapUnset: document.getElementById("leapUnset"),
+    leapPast: document.getElementById("leapPast"),
     leapChart: document.getElementById("leapChart"),
     leapSay: document.getElementById("leapSay"),
-    leapExpand: document.getElementById("leapExpand"),
     leapLegend: document.getElementById("leapLegend"),
+    leapOpenBtn: document.getElementById("leapOpen"),
+    leapBack: document.getElementById("leapBack"),
+    screenLeaps: document.getElementById("screenLeaps"),
     screenRoutine: document.getElementById("screenRoutine"),
     routineOpenBtn: document.getElementById("routineOpen"),
     routineBack: document.getElementById("routineBack"),
@@ -4928,6 +4933,7 @@
     el.screenInfo.hidden = name !== "info";
     el.screenAi.hidden = name !== "ai";
     el.screenPlan.hidden = name !== "plan";
+    el.screenLeaps.hidden = name !== "leaps";
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
     el.screenRota.hidden = name !== "rota";
@@ -6133,7 +6139,6 @@
   function renderPlans() {
     renderPlanList();
     renderPlanSoon();
-    renderLeapPanel();
   }
 
   function renderPlanChips() {
@@ -6552,14 +6557,16 @@
 
   // ---------- leaps: the chart ----------
 
-  var leapChartOpen = false;
-
   // One row is seven weeks, the same seven the printed chart uses. Bands,
   // gridlines and markers are placed by percentage across it, so the row is
   // whatever width the phone gives it.
   function leapRowHtml(row, weeksNow) {
     var base = row * LEAP_ROW_WEEKS;
     var top = base + LEAP_ROW_WEEKS;
+    // Rows share their edges, so anything sitting exactly on one would be
+    // drawn by both. It belongs to the row it opens, not the one it closes —
+    // except on the last row, which has nothing after it to hand the edge to.
+    var lastRow = row === LEAP_ROWS - 1;
     function pct(w) { return ((w - base) / LEAP_ROW_WEEKS * 100).toFixed(3) + "%"; }
     var bands = "";
     var marks = "";
@@ -6572,16 +6579,11 @@
             '" style="left:' + pct(a) + ';width:' + ((b - a) / LEAP_ROW_WEEKS * 100).toFixed(3) + '%"></i>';
         }
         if (lp.hatch) return;
-        // Half-open at the top, or a marker sitting exactly on a row boundary
-        // is drawn twice — once closing one row and again opening the next.
-        // Week 21's sun did just that. The last row keeps its closing edge,
-        // since there is no row after it to take one.
-        var last = row === LEAP_ROWS - 1;
-        if (lp.storm >= base && (last ? lp.storm <= top : lp.storm < top)) {
+        if (lp.storm >= base && (lastRow ? lp.storm <= top : lp.storm < top)) {
           marks += '<i class="leap-mark leap-mark-storm" style="left:' + pct(lp.storm) + '">' +
             LEAP_ICONS.storm + '</i>';
         }
-        if (lp.sun >= base && (last ? lp.sun <= top : lp.sun < top)) {
+        if (lp.sun >= base && (lastRow ? lp.sun <= top : lp.sun < top)) {
           marks += '<i class="leap-mark leap-mark-sun" style="left:' + pct(lp.sun) + '">' +
             LEAP_ICONS.sun + '</i>';
         }
@@ -6597,10 +6599,9 @@
       }
     }
     var here = "";
-    if (weeksNow !== null && weeksNow >= base && weeksNow <= top) {
-      here = '<i class="leap-here" style="left:' + pct(weeksNow) + '"></i>';
-    }
-    return '<div class="leap-row">' +
+    var now = weeksNow !== null && weeksNow >= base && (lastRow ? weeksNow <= top : weeksNow < top);
+    if (now) here = '<i class="leap-here" style="left:' + pct(weeksNow) + '"></i>';
+    return '<div class="leap-row' + (now ? " leap-row-now" : "") + '">' +
       '<div class="leap-marks">' + marks + '</div>' +
       '<div class="leap-track">' + bands + ticks + here + '</div>' +
       '<div class="leap-nums">' + labels + '</div>' +
@@ -6644,35 +6645,39 @@
       formatDayMonth(leapDate(dob, next.from)) + "." + tail;
   }
 
+  // All eighty-four weeks at once. On a screen of its own there is nothing to
+  // make room for, so the button that used to unfold them is gone and with it
+  // the state it needed — the chart is worth more whole, and the week you are
+  // in is scrolled to rather than picked out for you.
   function renderLeapPanel() {
     var dob = dobDate();
     var weeks = leapAgeWeeks();
-    el.leapPanel.hidden = !dob || weeks === null;
-    if (el.leapPanel.hidden) return;
+    var ready = !!dob && weeks !== null;
+    el.leapPanel.hidden = !ready;
+    el.leapNoDob.hidden = ready;
+    el.leapUnset.hidden = !!dob;
+    el.leapPast.hidden = !dob;
+    if (!ready) return;
     var html = "";
-    if (leapChartOpen) {
-      for (var r = 0; r < LEAP_ROWS; r++) html += leapRowHtml(r, weeks);
-    } else {
-      html = leapRowHtml(Math.min(Math.floor(weeks / LEAP_ROW_WEEKS), LEAP_ROWS - 1), weeks);
-    }
+    for (var r = 0; r < LEAP_ROWS; r++) html += leapRowHtml(r, weeks);
     el.leapChart.innerHTML = html;
     el.leapSay.textContent = leapSentence(dob, ageDaysAt(Date.now()), weeks);
-    el.leapExpand.textContent = leapChartOpen
-      ? "Show just these seven weeks \u2039"
-      : "Show all " + LEAP_LAST_WEEK + " weeks \u203a";
-    el.leapLegend.hidden = !leapChartOpen;
   }
 
-  el.leapExpand.addEventListener("click", function () {
-    leapChartOpen = !leapChartOpen;
+  function showLeaps() {
     renderLeapPanel();
-  });
+    showScreen("leaps");
+    // After the screen is up and scrolled to the top, or there is nothing laid
+    // out yet to scroll within. An eighteen-month-old's row is eleven rows
+    // down, and nobody should have to go looking for the only line that is
+    // about today.
+    var row = el.leapChart.querySelector(".leap-row-now");
+    if (row) row.scrollIntoView({ block: "center" });
+  }
 
-  el.leapBanner.addEventListener("click", function () {
-    renderPlans();
-    showScreen("plan");
-    el.leapPanel.scrollIntoView({ block: "center" });
-  });
+  el.leapOpenBtn.addEventListener("click", showLeaps);
+  el.leapBack.addEventListener("click", showMain);
+  el.leapBanner.addEventListener("click", showLeaps);
 
   // ---------- the routine schedule ----------
 
@@ -9099,6 +9104,7 @@
     // The calendar only, not the day editor above it — that one holds
     // focused selects and time inputs mid-edit, and a periodic rebuild
     // would drop whatever was half-chosen.
+    if (!el.screenLeaps.hidden) renderLeapPanel();
     if (!el.screenRota.hidden) renderRotaWeek();
     // The progress panel only: the list below it holds time inputs somebody
     // may be part-way through setting, and a periodic rebuild would drop them.

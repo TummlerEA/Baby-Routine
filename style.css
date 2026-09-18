@@ -2767,3 +2767,21 @@ body {
   background: repeating-linear-gradient(135deg,
     rgba(168, 173, 186, 0.34) 0 3px, transparent 3px 8px);
 }
+
+/* The week the baby is actually in. The screen scrolls to it, and this is
+   what it lands on — enough to find at a glance, not enough to fight the
+   white dot already standing on the day. */
+.leap-row-now .leap-track {
+  border-color: #454b58;
+  box-shadow: 0 0 0 3px rgba(168, 173, 186, 0.07);
+}
+
+/* On a screen of its own the sentence is the answer and the chart is the
+   working, so it leads rather than sitting under the strip. */
+#screenLeaps .leap-say {
+  margin: 0 0 4px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+#screenLeaps .leap-chart { padding: 0 10px; }
