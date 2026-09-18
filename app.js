@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "78";
+    var fallback = "79";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -298,6 +298,23 @@
   // Either side of the storm week, where the wording changes from "unsettled"
   // to "at its worst".
   var LEAP_PEAK_DAYS = 4;
+
+  // How the app checks the chart against what it has actually seen. Seven days
+  // against the seven before them: a baby's week has a shape — a carer some
+  // days and not others, a different Sunday — and a week against a week
+  // cancels most of it. Today is in neither, because it is not over and half a
+  // day looks exactly like a bad one.
+  var LEAP_SLEEP_DAYS = 7;
+  // Both have to be cleared before a change is worth saying out loud: the
+  // share so that a twenty-minute wobble in a long nap week is not news, the
+  // floor so that a baby who naps briefly is not declared changed by six
+  // minutes.
+  var LEAP_SLEEP_MIN_SHIFT = 30 * MS_MIN;
+  var LEAP_SLEEP_MIN_SHARE = 0.12;
+  // Under this there is not enough logged to say anything. A week missing
+  // three days is a week somebody forgot to log, and reading a drop out of
+  // that would be inventing one.
+  var LEAP_SLEEP_MIN_DAYS = 5;
 
   // Drawn rather than set in emoji: at seventeen pixels these have to read the
   // same on every phone, and an emoji cloud is a different picture on each.
@@ -6380,6 +6397,78 @@
     return bands;
   }
 
+  // ---------- leaps: what the log actually says ----------
+
+  // Daytime only. A small baby's night is ruled by feeds, and it is the naps
+  // that go first when something is up — which is also the thing a parent
+  // notices first. The window is the one Settings already keeps for the night,
+  // turned inside out, so nobody has to answer the same question twice.
+  function daytimeSleepMsOn(analysis, date, nowMs) {
+    var dayHours = 24 - nightLengthHours(nightWindow);
+    if (dayHours <= 0) return 0;
+    // Built as two dates rather than one plus an offset in milliseconds: the
+    // hour the clocks go back would otherwise stretch or shrink the day.
+    var from = new Date(date.getFullYear(), date.getMonth(), date.getDate(),
+      nightWindow.end, 0, 0, 0);
+    var to = new Date(date.getFullYear(), date.getMonth(), date.getDate(),
+      nightWindow.end + dayHours, 0, 0, 0);
+    return sleepMsInRange(analysis, +from, +to, nowMs);
+  }
+
+  // The app's own answer to the chart, or null when it has not seen enough to
+  // have one. Null is the honest answer there; a zero would be a lie.
+  function leapSleepShift() {
+    if (24 - nightLengthHours(nightWindow) <= 0) return null;
+    var analysis = analyzeSleep();
+    var now = Date.now();
+    var today = new Date();
+
+    // Averaged over the days that have something logged, never over seven. A
+    // day nobody logged is a day unknown, and counting it as no sleep at all
+    // would manufacture exactly the drop this is meant to detect.
+    function span(offset) {
+      var total = 0;
+      var days = 0;
+      for (var i = 0; i < LEAP_SLEEP_DAYS; i++) {
+        var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset - i);
+        var ms = daytimeSleepMsOn(analysis, d, now);
+        if (ms > 0) {
+          total += ms;
+          days++;
+        }
+      }
+      return { avg: days ? total / days : 0, days: days };
+    }
+
+    var recent = span(1);
+    var prior = span(1 + LEAP_SLEEP_DAYS);
+    if (recent.days < LEAP_SLEEP_MIN_DAYS || prior.days < LEAP_SLEEP_MIN_DAYS) return null;
+    var delta = recent.avg - prior.avg;
+    var worth = Math.abs(delta) >= LEAP_SLEEP_MIN_SHIFT &&
+      prior.avg > 0 && Math.abs(delta) / prior.avg >= LEAP_SLEEP_MIN_SHARE;
+    return {
+      recentAvg: recent.avg,
+      priorAvg: prior.avg,
+      delta: delta,
+      way: !worth ? "level" : delta < 0 ? "down" : "up"
+    };
+  }
+
+  // One plain sentence of arithmetic, no interpretation attached.
+  function leapSleepSentence(shift) {
+    if (!shift) return "";
+    if (shift.way === "down") {
+      return "Daytime sleep is down " + formatDuration(-shift.delta) +
+        " a day on the week before, at " + formatDuration(shift.recentAvg) + " a day.";
+    }
+    if (shift.way === "up") {
+      return "Daytime sleep is up " + formatDuration(shift.delta) +
+        " a day on the week before, at " + formatDuration(shift.recentAvg) + " a day.";
+    }
+    return "Daytime sleep is holding at about " + formatDuration(shift.recentAvg) +
+      " a day, the same as the week before.";
+  }
+
   // What, if anything, the main screen may say right now. Null most of the
   // time, on purpose.
   function leapNotice() {
@@ -6408,9 +6497,22 @@
 
   // Plain sentences, and never a promise. "About" and "roughly" are doing real
   // work here: this chart was already a few days out on this baby's first band.
-  function leapWords(notice) {
+  // The chart says what it always says; the sub-line is where this baby gets a
+  // word in. When there is enough logged, the generic sentence gives way to
+  // the arithmetic — including when the arithmetic disagrees, which is the
+  // reading worth having. A chart that only ever confirms itself is a
+  // horoscope.
+  function leapWords(notice, shift) {
     var week = notice.band.week;
     var when = formatDayMonth(notice.at);
+    var agrees = shift && shift.way === "down"
+      ? "The log agrees: daytime sleep is down " + formatDuration(-shift.delta) +
+        " a day on the week before."
+      : shift && shift.way === "up"
+      ? "Your baby is sleeping more than the week before, though."
+      : shift
+      ? "Your baby is sleeping about as much as usual, though."
+      : "Daytime sleep is usually the first thing to go.";
     if (notice.kind === "settling") {
       return { tone: "calm",
         line: "Fussy around " + week + " weeks \u2014 and the chart says this one is not a leap",
@@ -6425,7 +6527,7 @@
     if (notice.kind === "peak") {
       return { tone: "storm",
         line: "The " + week + "-week leap is at its worst about now",
-        sub: "Unsettled until roughly " + when + ". Daytime sleep is usually the first thing to go." };
+        sub: "Unsettled until roughly " + when + ". " + agrees };
     }
     if (notice.kind === "easing") {
       return { tone: "sun",
@@ -6434,14 +6536,14 @@
     }
     return { tone: "storm",
       line: "The " + week + "-week leap \u2014 unsettled until roughly " + when,
-      sub: "Daytime sleep is usually the first thing to go." };
+      sub: agrees };
   }
 
   function renderLeapBanner() {
     var notice = leapNotice();
     el.leapBanner.hidden = !notice;
     if (!notice) return;
-    var words = leapWords(notice);
+    var words = leapWords(notice, leapSleepShift());
     el.leapBanner.className = "banner banner-leap tone-" + words.tone;
     el.leapIcon.innerHTML = LEAP_ICONS[words.tone === "sun" ? "sun" : words.tone === "calm" ? "calm" : "storm"];
     el.leapLine.textContent = words.line;
@@ -6514,20 +6616,32 @@
     leapBands().forEach(function (band) {
       if (weeks >= band.from && weeks < band.to) inBand = band;
     });
+    var shift = leapSleepShift();
+    var said = leapSleepSentence(shift);
+    // Off the chart and sleeping less is the case the chart cannot see at all,
+    // and the one the parent here spotted before it did. It says so plainly
+    // rather than staying quiet, but only here — the main screen keeps its
+    // discipline, and a drop that lasts a month would otherwise light a line
+    // for a month.
+    if (!inBand && shift && shift.way === "down") {
+      said = "Daytime sleep is down " + formatDuration(-shift.delta) +
+        " a day on the week before, though the chart has nothing here.";
+    }
+    var tail = said ? " " + said : "";
     if (inBand && !inBand.leap) {
-      return here + "Fussy around now is common, and the chart says it is not a leap.";
+      return here + "Fussy around now is common, and the chart says it is not a leap." + tail;
     }
     if (inBand) {
       return here + "The " + inBand.week + "-week leap runs to about " +
-        formatDayMonth(leapDate(dob, inBand.to)) + ".";
+        formatDayMonth(leapDate(dob, inBand.to)) + "." + tail;
     }
     var next = null;
     leapBands().forEach(function (band) {
       if (band.leap && next === null && band.from > weeks) next = band;
     });
-    if (!next) return here + "Nothing more on the chart from here on.";
+    if (!next) return here + "Nothing more on the chart from here on." + tail;
     return here + "Nothing due. The " + next.week + "-week leap starts about " +
-      formatDayMonth(leapDate(dob, next.from)) + ".";
+      formatDayMonth(leapDate(dob, next.from)) + "." + tail;
   }
 
   function renderLeapPanel() {
