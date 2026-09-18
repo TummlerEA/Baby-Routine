@@ -86,7 +86,7 @@ Served as static files by GitHub Pages: Settings → Pages → Source: `main` br
 
 ## Checks
 
-226 of them, in `tests/`, driven by Playwright:
+236 of them, in `tests/`, driven by Playwright:
 
 ```
 cd tests && npm install

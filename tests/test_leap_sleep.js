@@ -69,7 +69,7 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
   {
     const r = await run(41, seed(PRIOR, [[10, 12], [14, 16]], true).concat(seed(RECENT, [[10, 12]], true)));
     ok('A banner shows', r.banner.hidden === false, r.banner);
-    ok('A sub says the log agrees', /The log agrees: daytime sleep is down 2h a day on the week before\./.test(r.banner.sub), r.banner.sub);
+    ok('A sub says the log agrees', /Naps down 2h a day \u2014 the log agrees/.test(r.banner.sub), r.banner.sub);
     ok('A diary gives both figures', /Daytime sleep is down 2h a day on the week before, at 2h a day\./.test(r.say), r.say);
     ok('A names the band', /The 5-week leap runs to about 19 September\./.test(r.say), r.say);
     ok('A clean console', r.errs.length === 0, r.errs);
@@ -78,21 +78,21 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
   // ---------- B. sleeping normally through a leap ----------
   {
     const r = await run(41, seed(PRIOR.concat(RECENT), [[10, 12], [14, 16]], true));
-    ok('B sub contradicts the chart', /sleeping about as much as usual, though\./.test(r.banner.sub), r.banner.sub);
+    ok('B sub contradicts the chart', /Sleeping about as much as usual, though/.test(r.banner.sub), r.banner.sub);
     ok('B diary says holding', /Daytime sleep is holding at about 4h a day, the same as the week before\./.test(r.say), r.say);
   }
 
   // ---------- C. sleeping more ----------
   {
     const r = await run(41, seed(PRIOR, [[10, 12]], true).concat(seed(RECENT, [[10, 12], [14, 16]], true)));
-    ok('C sub says more', /sleeping more than the week before, though\./.test(r.banner.sub), r.banner.sub);
+    ok('C sub says more', /Napping more than the week before, though/.test(r.banner.sub), r.banner.sub);
     ok('C diary says up 2h', /Daytime sleep is up 2h a day on the week before, at 4h a day\./.test(r.say), r.say);
   }
 
   // ---------- D. not enough logged: the generic line comes back ----------
   {
     const r = await run(41, seed(PRIOR, [[10, 12], [14, 16]], true).concat(seed(range(38, 40), [[10, 12]], true)));
-    ok('D falls back to the generic sub', /Daytime sleep is usually the first thing to go\./.test(r.banner.sub), r.banner.sub);
+    ok('D falls back to the generic sub', /Daytime sleep is usually the first to go/.test(r.banner.sub), r.banner.sub);
     ok('D diary says nothing about sleep', /daytime sleep/i.test(r.say) === false, r.say);
   }
 
@@ -100,7 +100,7 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
   {
     // five logged days in the recent week at the SAME nap length as all seven before
     const r = await run(41, seed(PRIOR, [[10, 12], [14, 16]], true).concat(seed(range(36, 40), [[10, 12], [14, 16]], true)));
-    ok('E two unlogged days read as level, not as a drop', /sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
+    ok('E two unlogged days read as level, not as a drop', /Sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
     ok('E diary does not claim a drop', /is down/.test(r.say) === false, r.say);
   }
 
@@ -118,14 +118,14 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
   {
     // 4h → 3h 40m: twenty minutes, under the floor
     const r = await run(41, seed(PRIOR, [[10, 12], [14, 16]], true).concat(seed(RECENT, [[10, 12], [14, 15.6667]], true)));
-    ok('G a 20-minute dip reads as level', /sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
+    ok('G a 20-minute dip reads as level', /Sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
   }
 
   // ---------- H. the share threshold, where the floor alone would pass ----------
   {
     // 8h → 7h 25m: 35 minutes clears the floor but is only 7% of the baseline
     const r = await run(41, seed(PRIOR, [[9, 13], [14, 18]], true).concat(seed(RECENT, [[9, 13], [14, 17.4167]], true)));
-    ok('H 35m off a long day is not a change', /sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
+    ok('H 35m off a long day is not a change', /Sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
   }
   {
     // 1h → 25m: 35 minutes off a short day is more than half of it
@@ -148,13 +148,13 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
       short.push({ id: 'n' + (n++), type: 'sleep_end', time: dayIso(d + 1, 5) });
     });
     const r = await run(41, long.concat(short));
-    ok('I a shorter night does not move a daytime figure', /sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
+    ok('I a shorter night does not move a daytime figure', /Sleeping about as much as usual/.test(r.banner.sub), r.banner.sub);
   }
 
   // ---------- J. no sleep logged at all: v78 behaviour is untouched ----------
   {
     const r = await run(41, []);
-    ok('J generic sub with no log', /Daytime sleep is usually the first thing to go\./.test(r.banner.sub), r.banner.sub);
+    ok('J generic sub with no log', /Daytime sleep is usually the first to go/.test(r.banner.sub), r.banner.sub);
     ok('J diary sentence unchanged', /^5 weeks 6 days today\. The 5-week leap runs to about 19 September\.$/.test(r.say), r.say);
   }
 
@@ -163,7 +163,7 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
     const P3 = range(21, 27), R3 = range(28, 34);
     const r = await run(35, seed(P3, [[10, 12], [14, 16]], true).concat(seed(R3, [[10, 12]], true)));
     ok('K peak line', /at its worst about now/.test(r.banner.line), r.banner.line);
-    ok('K peak keeps the date and adds the log', /Unsettled until roughly 19 September\. The log agrees: daytime sleep is down 2h a day on the week before\./.test(r.banner.sub), r.banner.sub);
+    ok('K peak hands its one line to the log', /^Naps down 2h a day \u2014 the log agrees$/.test(r.banner.sub), r.banner.sub);
   }
 
   // ---------- L. nothing new in storage ----------

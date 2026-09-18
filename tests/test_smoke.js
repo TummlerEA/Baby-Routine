@@ -72,6 +72,59 @@ const APP = h.APP;
     ok(name + ' closes again', await page.isVisible('#screenMain'));
   }
 
+  // The top line carries the name, then the date, then the age, and no clock
+  // of its own — the phone has one an inch above it.
+  const topline = await page.evaluate(() => {
+    const status = document.querySelector('.topbar-status');
+    const kids = [].map.call(status.children, el => el.id || el.className);
+    const name = document.getElementById('babyNameDisplay');
+    return {
+      order: kids,
+      clock: !!document.getElementById('topClock'),
+      nameRow: !!document.querySelector('.name-row'),
+      nameIsButton: name ? name.tagName : null,
+      nameHeight: name ? Math.round(name.getBoundingClientRect().height) : 0,
+      date: document.getElementById('topDate').textContent
+    };
+  });
+  ok('the name comes first on the top line, then the date',
+    JSON.stringify(topline.order) === JSON.stringify(['babyNameDisplay', 'topDate']), topline.order);
+  ok('the app keeps no clock of its own', topline.clock === false, topline);
+  ok('the name has no row of its own any more', topline.nameRow === false, topline);
+  ok('the name is not a button', topline.nameIsButton === 'SPAN', topline.nameIsButton);
+  ok('the name is the small one', topline.nameHeight > 0 && topline.nameHeight < 40, topline.nameHeight);
+
+  // The age is abbreviated here and nowhere else: this line holds three things.
+  const dob = new Date();
+  dob.setDate(dob.getDate() - 41);
+  await page.evaluate(d => localStorage.setItem('baby-tracker-dob', d),
+    dob.getFullYear() + '-' + String(dob.getMonth() + 1).padStart(2, '0') +
+    '-' + String(dob.getDate()).padStart(2, '0'));
+  await page.reload();
+  await page.waitForTimeout(400);
+  const dated = await page.evaluate(() => document.getElementById('topDate').textContent);
+  ok('the age on the top line is the short form', /\b5w 6d\b/i.test(dated), dated);
+
+  // Shallower, but never below what a finger needs.
+  const targets = await page.evaluate(() => {
+    const h = s => Math.round(document.querySelector(s).getBoundingClientRect().height);
+    return { action: h('.action-btn'), combo: h('.combo-btn') };
+  });
+  ok('the action buttons are still a comfortable target', targets.action >= 44, targets);
+  ok('the combo button is still a comfortable target', targets.combo >= 44, targets);
+
+  // Today's routine shows four steps, two either side of now — not six.
+  await page.evaluate(() =>
+    localStorage.setItem('baby-tracker-routine', JSON.stringify({ on: true, slots: [] })));
+  await page.reload();
+  await page.waitForTimeout(500);
+  const strip = await page.evaluate(() => ({
+    shown: !document.getElementById('routineStrip').hidden,
+    rows: document.querySelectorAll('#routineStripList > *').length
+  }));
+  ok('the routine strip appears when the routine is on', strip.shown === true, strip);
+  ok('and shows four steps, not six', strip.rows === 4, strip);
+
   await page.click('#logToggle');
   await page.waitForTimeout(400);
   const rows = await page.evaluate(() => document.querySelectorAll('#logList > *').length);

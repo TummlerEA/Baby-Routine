@@ -1,6 +1,6 @@
 # Checks
 
-226 checks over the app, in a browser, driven by Playwright.
+236 checks over the app, in a browser, driven by Playwright.
 
 ```
 cd tests && npm install      # once, if Playwright is not already about
@@ -60,7 +60,7 @@ an hour out and every assertion quietly shifts with it.
 | File | Checks | What it is about |
 |---|---|---|
 | `test_version.js` | 6 | The release number in its five places, and that the worker caches the shell under the names the page asks for. No browser; runs in milliseconds. |
-| `test_smoke.js` | 28 | Log one of everything, open and close every screen, insist the console stayed silent. Knows almost nothing, catches almost everything. |
+| `test_smoke.js` | 38 | Log one of everything, open and close every screen, check the shape of the top line and the depth of the buttons, insist the console stayed silent. Knows almost nothing, catches almost everything. |
 | `test_leaps.js` | 117 | The leaps chart: every banner state day by day, the rule that keeps it quiet mid-band, both empty states, markers and bands per row, and that nothing is written to storage. |
 | `test_leap_sleep.js` | 25 | The chart checked against the log: agreeing, disagreeing, off-chart drops, both thresholds from both sides, and two traps — unlogged days must not read as a drop, and a shorter night must not move a daytime figure. |
 | `test_nights_window.js` | 28 | The nights section of Statistics: the window the chips promise, and the night just gone appearing in the morning. |

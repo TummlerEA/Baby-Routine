@@ -66,12 +66,17 @@
   // that started three quarters of an hour late, narrower than the gap
   // between one sleep in the suggested routine and the next.
   var ROUTINE_MATCH_MS = 90 * 60 * 1000;
-  // How much of the day the strip on the main screen shows: the four steps
-  // just gone and the two still to come. Weighted backwards on purpose —
-  // what is coming is already named twice over, by the banner above and by
-  // the sleep card below, while how the last few hours actually went against
-  // the plan is said nowhere else on the screen.
-  var ROUTINE_STRIP_BACK = 4;
+  // How much of the day the strip on the main screen shows: two steps just
+  // gone and two still to come.
+  //
+  // It was four back and two on, and the weighting was deliberate — what is
+  // coming is named twice over, by the banner above and the sleep card below,
+  // while how the last hours went against the plan is said nowhere else. That
+  // reasoning holds for the two rows nearest now. It does not stretch to the
+  // fourth one back: at breakfast that row is a quarter past three, and the
+  // history already has it. With half as many rows to spend, they are spent
+  // either side of the minute the screen is being read in.
+  var ROUTINE_STRIP_BACK = 2;
   var ROUTINE_STRIP_ON = 2;
   var META_STAMP_KEY = "baby-tracker-meta-updated";
   var SYNC_KEY = "baby-tracker-sync";
@@ -149,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "80";
+    var fallback = "81";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1170,6 +1175,19 @@
     return months + (months === 1 ? " month" : " months");
   }
 
+  // The same age in as few characters as it can be said in, for the top line
+  // — which now carries the name and the date as well. "5W 6D", not "5 weeks
+  // 6 days". Everywhere else in the app the long form stays: this is the only
+  // place where the room ran out.
+  function formatAgeShort(days) {
+    if (days === null || days < 0) return "";
+    if (days < 14) return "day " + days;
+    var weeks = Math.floor(days / 7);
+    var rest = days % 7;
+    if (weeks < 9) return weeks + "w" + (rest ? " " + rest + "d" : "");
+    return Math.floor(days / 30.44) + "m";
+  }
+
   // Name, date of birth and intervals travel together and change rarely, so a
   // single timestamp for the group decides which side wins.
   function metaStamp() {
@@ -1338,7 +1356,6 @@
 
   var el = {
     topDate: document.getElementById("topDate"),
-    topClock: document.getElementById("topClock"),
     babyName: document.getElementById("babyName"),
     errorBanner: document.getElementById("errorBanner"),
     errorText: document.getElementById("errorText"),
@@ -4953,7 +4970,6 @@
 
   el.settingsOpenBtn.addEventListener("click", function () { showSettings(false); });
   el.settingsBack.addEventListener("click", showMain);
-  el.babyNameDisplay.addEventListener("click", function () { showSettings(true); });
   el.infoOpenBtn.addEventListener("click", function () { showScreen("info"); });
   el.infoBack.addEventListener("click", showMain);
   el.gsMore.addEventListener("click", function () { showScreen("info"); });
@@ -6510,37 +6526,39 @@
   function leapWords(notice, shift) {
     var week = notice.band.week;
     var when = formatDayMonth(notice.at);
+    // Both lines are written to fit one line each on a phone. The banner used
+    // to run to four and sat at the top of a screen that was already full;
+    // every word here is paying rent. The long version of all of it is one
+    // tap away on the leaps screen, which is where this banner goes.
     var agrees = shift && shift.way === "down"
-      ? "The log agrees: daytime sleep is down " + formatDuration(-shift.delta) +
-        " a day on the week before."
+      ? "Naps down " + formatDuration(-shift.delta) + " a day \u2014 the log agrees"
       : shift && shift.way === "up"
-      ? "Your baby is sleeping more than the week before, though."
+      ? "Napping more than the week before, though"
       : shift
-      ? "Your baby is sleeping about as much as usual, though."
-      : "Daytime sleep is usually the first thing to go.";
+      ? "Sleeping about as much as usual, though"
+      : "Daytime sleep is usually the first to go";
     if (notice.kind === "settling") {
       return { tone: "calm",
-        line: "Fussy around " + week + " weeks \u2014 and the chart says this one is not a leap",
-        sub: "Babies work out around now that somebody who walks away is still somewhere. " +
-          "That is the new skill." };
+        line: "Fussy at " + week + " weeks \u2014 not a leap",
+        sub: "They are learning you come back" };
     }
     if (notice.kind === "soon") {
       return { tone: "calm",
-        line: "The " + week + "-week leap starts about " + when,
-        sub: "Nothing to do \u2014 just so it is not a surprise." };
+        line: week + "-week leap from about " + when,
+        sub: "Nothing to do \u2014 just so it is not a surprise" };
     }
     if (notice.kind === "peak") {
       return { tone: "storm",
-        line: "The " + week + "-week leap is at its worst about now",
-        sub: "Unsettled until roughly " + when + ". " + agrees };
+        line: week + "-week leap at its worst about now",
+        sub: agrees };
     }
     if (notice.kind === "easing") {
       return { tone: "sun",
-        line: "The " + week + "-week leap should be easing off",
-        sub: "By the chart the next stretch is an easier one." };
+        line: week + "-week leap should be easing off",
+        sub: "An easier stretch next, by the chart" };
     }
     return { tone: "storm",
-      line: "The " + week + "-week leap \u2014 unsettled until roughly " + when,
+      line: week + "-week leap \u2014 to about " + when,
       sub: agrees };
   }
 
@@ -9072,12 +9090,15 @@
 
   // ---------- clock & render ----------
 
+  // No clock of its own any more. Every phone that runs this already shows
+  // one in its status bar, an inch above and in a bigger typeface — the two
+  // sat in the same screenshot saying the same minute. The row it used to
+  // share now carries the name instead, which had a whole line to itself.
   function renderClock() {
     var now = new Date();
-    el.topClock.textContent = formatClockTime(now);
     var days = ageDaysAt(now);
     el.topDate.textContent = formatDateShort(now) +
-      (days !== null && days >= 0 ? " · " + formatAge(days) : "");
+      (days !== null && days >= 0 ? " · " + formatAgeShort(days) : "");
   }
 
   function renderAll(opts) {
