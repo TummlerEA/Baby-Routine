@@ -149,7 +149,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "77";
+    var fallback = "78";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -249,6 +249,75 @@
     { weeks: 16, label: "Immunisations — 16 weeks" },
     { weeks: 52, label: "Immunisations — 1 year" }
   ];
+
+  // The ten fussy phases of the popular "leaps" chart, in weeks from birth:
+  // the band a baby may be unsettled through, the week the storm is most
+  // likely, the week the sun is most likely back out, and the week the chart
+  // itself names the leap by.
+  //
+  // Read off the chart and kept to whole weeks, which is all the precision it
+  // has — the bands are drawn by hand and the book says a few days either way.
+  // A popular chart, not a clinical one, and the app says so wherever it shows
+  // it. Counted from the day of birth; a baby who came early is a due date the
+  // app does not hold, so the screen says to count from that instead.
+  var LEAPS = [
+    { week: 5,  from: 5,  to: 6,  storm: 5,  sun: 6  },
+    { week: 8,  from: 8,  to: 10, storm: 8,  sun: 10 },
+    { week: 12, from: 12, to: 13, storm: 12, sun: 13 },
+    { week: 19, from: 15, to: 20, storm: 17, sun: 21 },
+    { week: 26, from: 23, to: 29, storm: 26, sun: 31 },
+    { week: 37, from: 35, to: 38, storm: 36, sun: 39 },
+    { week: 46, from: 42, to: 47, storm: 44, sun: 48 },
+    { week: 55, from: 51, to: 56, storm: 53, sun: 58 },
+    { week: 64, from: 60, to: 65, storm: 61, sun: 66 },
+    { week: 75, from: 71, to: 76, storm: 72, sun: 79 }
+  ];
+
+  // Not a leap, and the one band on the chart that explains itself: around
+  // here a baby works out that somebody who walks away is still somewhere.
+  // Worth more than the rest of the chart put together, because it answers
+  // the question the fussiness actually raises.
+  var LEAP_SETTLING = { from: 29, to: 31 };
+
+  // Where the chart stops. Past it there is nothing drawn and nothing to say,
+  // so the whole thing goes quiet rather than showing an empty grid.
+  var LEAP_LAST_WEEK = 84;
+  var LEAP_ROW_WEEKS = 7;
+  var LEAP_ROWS = LEAP_LAST_WEEK / LEAP_ROW_WEEKS;
+
+  // How long the main screen is allowed to talk about one band. The bands
+  // cover 38 of the chart's 84 weeks, so a line that honoured every day of
+  // them would be lit for half of the first eighteen months — which is
+  // wallpaper, not a warning, and a standing excuse for every bad night.
+  // A few days' notice, the opening stretch, a word as it closes, then quiet.
+  // The 📅 screen keeps every band whole; this is only what the main screen is
+  // allowed to interrupt with.
+  var LEAP_NOTICE_DAYS = 3;
+  var LEAP_OPENING_DAYS = 10;
+  var LEAP_EASING_DAYS = 4;
+  // Either side of the storm week, where the wording changes from "unsettled"
+  // to "at its worst".
+  var LEAP_PEAK_DAYS = 4;
+
+  // Drawn rather than set in emoji: at seventeen pixels these have to read the
+  // same on every phone, and an emoji cloud is a different picture on each.
+  var LEAP_ICONS = {
+    storm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M17.3 15.5H7.4a3.4 3.4 0 0 1-.3-6.8 5 5 0 0 1 9.5 1.2 2.9 2.9 0 0 1 .7 5.6Z"></path>' +
+      '<path d="M8.8 18.2 7.9 21"></path><path d="M12.6 18.2 11.7 21"></path>' +
+      '<path d="M16.4 18.2 15.5 21"></path></svg>',
+    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<circle cx="8.6" cy="7.4" r="3"></circle><path d="M8.6 1.6v1.4"></path>' +
+      '<path d="M3.4 7.4H2"></path><path d="M4.9 3.7 3.9 2.7"></path>' +
+      '<path d="M12.3 3.7l1-1"></path><path d="M4.9 11.1l-1 1"></path>' +
+      '<path d="M17.3 20.4H7.9a3.3 3.3 0 0 1 .2-6.5 4.4 4.4 0 0 1 8.3 1.1 2.8 2.8 0 0 1 .9 5.4Z" ' +
+      'fill="var(--bg)"></path></svg>',
+    calm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M17.3 17.5H7.4a3.6 3.6 0 0 1-.3-7.2 5.2 5.2 0 0 1 9.8 1.3 3 3 0 0 1 .4 5.9Z"></path></svg>'
+  };
 
   // How the baby is fed. A standing fact about the baby rather than something
   // to answer at every feed, so it lives in Settings — but the first thing any
@@ -1412,6 +1481,15 @@
     planCancel: document.getElementById("planCancel"),
     planList: document.getElementById("planList"),
     planJabs: document.getElementById("planJabs"),
+    leapBanner: document.getElementById("leapBanner"),
+    leapIcon: document.getElementById("leapIcon"),
+    leapLine: document.getElementById("leapLine"),
+    leapSub: document.getElementById("leapSub"),
+    leapPanel: document.getElementById("leapPanel"),
+    leapChart: document.getElementById("leapChart"),
+    leapSay: document.getElementById("leapSay"),
+    leapExpand: document.getElementById("leapExpand"),
+    leapLegend: document.getElementById("leapLegend"),
     screenRoutine: document.getElementById("screenRoutine"),
     routineOpenBtn: document.getElementById("routineOpen"),
     routineBack: document.getElementById("routineBack"),
@@ -6038,6 +6116,7 @@
   function renderPlans() {
     renderPlanList();
     renderPlanSoon();
+    renderLeapPanel();
   }
 
   function renderPlanChips() {
@@ -6259,6 +6338,227 @@
       showToast("Open it to add it to your calendar");
     }
   }
+
+  // ---------- leaps ----------
+
+  // Everything here is worked out from the date of birth and a fixed table.
+  // Nothing is stored, nothing is synced, and no entry gains a field — which
+  // is the whole reason it can be added without touching the document format.
+
+  // Calendar days, never milliseconds. A band boundary is a date, and adding
+  // a week's worth of ms across the October clock change lands an hour short
+  // and reports the day before — the same trap the immunisation dates fell
+  // into once already.
+  function leapDate(dob, weeks) {
+    return new Date(dob.getFullYear(), dob.getMonth(), dob.getDate() + weeks * 7);
+  }
+
+  function formatDayMonth(date) {
+    return date.getDate() + " " + MONTHS[date.getMonth()];
+  }
+
+  // Age in weeks as a fraction, or null when there is no date of birth, the
+  // date is in the future, or the baby has outgrown the chart.
+  function leapAgeWeeks() {
+    var dob = dobDate();
+    if (!dob) return null;
+    var days = ageDaysAt(Date.now());
+    if (days === null || days < 0) return null;
+    var weeks = days / 7;
+    return weeks > LEAP_LAST_WEEK ? null : weeks;
+  }
+
+  // Every band on the chart, the one that is not a leap included, in the order
+  // a match should be taken — last wins. Band five closes on the very week the
+  // settling band opens, and when both could speak it is the one with the
+  // explanation that should.
+  function leapBands() {
+    var bands = LEAPS.map(function (lp) {
+      return { week: lp.week, from: lp.from, to: lp.to, storm: lp.storm, leap: true };
+    });
+    bands.push({ week: LEAP_SETTLING.from, from: LEAP_SETTLING.from, to: LEAP_SETTLING.to, leap: false });
+    return bands;
+  }
+
+  // What, if anything, the main screen may say right now. Null most of the
+  // time, on purpose.
+  function leapNotice() {
+    var dob = dobDate();
+    var weeks = leapAgeWeeks();
+    if (!dob || weeks === null) return null;
+    var days = ageDaysAt(Date.now());
+    var found = null;
+    leapBands().forEach(function (band) {
+      var startDay = band.from * 7;
+      var endDay = band.to * 7;
+      if (band.leap && days >= startDay - LEAP_NOTICE_DAYS && days < startDay) {
+        found = { kind: "soon", band: band, at: leapDate(dob, band.from) };
+      } else if (days >= startDay && days < endDay && days < startDay + LEAP_OPENING_DAYS) {
+        found = { kind: band.leap ? "in" : "settling", band: band, at: leapDate(dob, band.to) };
+      } else if (band.leap && days >= endDay && days < endDay + LEAP_EASING_DAYS) {
+        found = { kind: "easing", band: band, at: leapDate(dob, band.to) };
+      }
+    });
+    if (found && found.kind === "in" && found.band.storm) {
+      var stormDay = found.band.storm * 7;
+      if (Math.abs(days - stormDay) <= LEAP_PEAK_DAYS) found.kind = "peak";
+    }
+    return found;
+  }
+
+  // Plain sentences, and never a promise. "About" and "roughly" are doing real
+  // work here: this chart was already a few days out on this baby's first band.
+  function leapWords(notice) {
+    var week = notice.band.week;
+    var when = formatDayMonth(notice.at);
+    if (notice.kind === "settling") {
+      return { tone: "calm",
+        line: "Fussy around " + week + " weeks \u2014 and the chart says this one is not a leap",
+        sub: "Babies work out around now that somebody who walks away is still somewhere. " +
+          "That is the new skill." };
+    }
+    if (notice.kind === "soon") {
+      return { tone: "calm",
+        line: "The " + week + "-week leap starts about " + when,
+        sub: "Nothing to do \u2014 just so it is not a surprise." };
+    }
+    if (notice.kind === "peak") {
+      return { tone: "storm",
+        line: "The " + week + "-week leap is at its worst about now",
+        sub: "Unsettled until roughly " + when + ". Daytime sleep is usually the first thing to go." };
+    }
+    if (notice.kind === "easing") {
+      return { tone: "sun",
+        line: "The " + week + "-week leap should be easing off",
+        sub: "By the chart the next stretch is an easier one." };
+    }
+    return { tone: "storm",
+      line: "The " + week + "-week leap \u2014 unsettled until roughly " + when,
+      sub: "Daytime sleep is usually the first thing to go." };
+  }
+
+  function renderLeapBanner() {
+    var notice = leapNotice();
+    el.leapBanner.hidden = !notice;
+    if (!notice) return;
+    var words = leapWords(notice);
+    el.leapBanner.className = "banner banner-leap tone-" + words.tone;
+    el.leapIcon.innerHTML = LEAP_ICONS[words.tone === "sun" ? "sun" : words.tone === "calm" ? "calm" : "storm"];
+    el.leapLine.textContent = words.line;
+    el.leapSub.textContent = words.sub;
+  }
+
+  // ---------- leaps: the chart ----------
+
+  var leapChartOpen = false;
+
+  // One row is seven weeks, the same seven the printed chart uses. Bands,
+  // gridlines and markers are placed by percentage across it, so the row is
+  // whatever width the phone gives it.
+  function leapRowHtml(row, weeksNow) {
+    var base = row * LEAP_ROW_WEEKS;
+    var top = base + LEAP_ROW_WEEKS;
+    function pct(w) { return ((w - base) / LEAP_ROW_WEEKS * 100).toFixed(3) + "%"; }
+    var bands = "";
+    var marks = "";
+    LEAPS.concat([{ from: LEAP_SETTLING.from, to: LEAP_SETTLING.to, hatch: true }])
+      .forEach(function (lp) {
+        var a = Math.max(base, lp.from);
+        var b = Math.min(top, lp.to);
+        if (b - a > 0.001) {
+          bands += '<i class="leap-band' + (lp.hatch ? " leap-band-hatch" : "") +
+            '" style="left:' + pct(a) + ';width:' + ((b - a) / LEAP_ROW_WEEKS * 100).toFixed(3) + '%"></i>';
+        }
+        if (lp.hatch) return;
+        // Half-open at the top, or a marker sitting exactly on a row boundary
+        // is drawn twice — once closing one row and again opening the next.
+        // Week 21's sun did just that. The last row keeps its closing edge,
+        // since there is no row after it to take one.
+        var last = row === LEAP_ROWS - 1;
+        if (lp.storm >= base && (last ? lp.storm <= top : lp.storm < top)) {
+          marks += '<i class="leap-mark leap-mark-storm" style="left:' + pct(lp.storm) + '">' +
+            LEAP_ICONS.storm + '</i>';
+        }
+        if (lp.sun >= base && (last ? lp.sun <= top : lp.sun < top)) {
+          marks += '<i class="leap-mark leap-mark-sun" style="left:' + pct(lp.sun) + '">' +
+            LEAP_ICONS.sun + '</i>';
+        }
+      });
+    var ticks = "";
+    var labels = "";
+    for (var i = 0; i <= LEAP_ROW_WEEKS; i++) {
+      var wk = base + i;
+      if (i > 0 && i < LEAP_ROW_WEEKS) ticks += '<i class="leap-tick" style="left:' + pct(wk) + '"></i>';
+      // Every other number: eight of them across a narrow phone collide.
+      if (i === 0 || i === LEAP_ROW_WEEKS || wk % 2 === 0) {
+        labels += '<i class="leap-num" style="left:' + pct(wk) + '">' + wk + '</i>';
+      }
+    }
+    var here = "";
+    if (weeksNow !== null && weeksNow >= base && weeksNow <= top) {
+      here = '<i class="leap-here" style="left:' + pct(weeksNow) + '"></i>';
+    }
+    return '<div class="leap-row">' +
+      '<div class="leap-marks">' + marks + '</div>' +
+      '<div class="leap-track">' + bands + ticks + here + '</div>' +
+      '<div class="leap-nums">' + labels + '</div>' +
+    '</div>';
+  }
+
+  // The line under the strip. Unlike the banner this always has something to
+  // say, because the parent came looking.
+  function leapSentence(dob, days, weeks) {
+    var age = formatAge(days);
+    var here = age ? age + " today. " : "";
+    var inBand = null;
+    leapBands().forEach(function (band) {
+      if (weeks >= band.from && weeks < band.to) inBand = band;
+    });
+    if (inBand && !inBand.leap) {
+      return here + "Fussy around now is common, and the chart says it is not a leap.";
+    }
+    if (inBand) {
+      return here + "The " + inBand.week + "-week leap runs to about " +
+        formatDayMonth(leapDate(dob, inBand.to)) + ".";
+    }
+    var next = null;
+    leapBands().forEach(function (band) {
+      if (band.leap && next === null && band.from > weeks) next = band;
+    });
+    if (!next) return here + "Nothing more on the chart from here on.";
+    return here + "Nothing due. The " + next.week + "-week leap starts about " +
+      formatDayMonth(leapDate(dob, next.from)) + ".";
+  }
+
+  function renderLeapPanel() {
+    var dob = dobDate();
+    var weeks = leapAgeWeeks();
+    el.leapPanel.hidden = !dob || weeks === null;
+    if (el.leapPanel.hidden) return;
+    var html = "";
+    if (leapChartOpen) {
+      for (var r = 0; r < LEAP_ROWS; r++) html += leapRowHtml(r, weeks);
+    } else {
+      html = leapRowHtml(Math.min(Math.floor(weeks / LEAP_ROW_WEEKS), LEAP_ROWS - 1), weeks);
+    }
+    el.leapChart.innerHTML = html;
+    el.leapSay.textContent = leapSentence(dob, ageDaysAt(Date.now()), weeks);
+    el.leapExpand.textContent = leapChartOpen
+      ? "Show just these seven weeks \u2039"
+      : "Show all " + LEAP_LAST_WEEK + " weeks \u203a";
+    el.leapLegend.hidden = !leapChartOpen;
+  }
+
+  el.leapExpand.addEventListener("click", function () {
+    leapChartOpen = !leapChartOpen;
+    renderLeapPanel();
+  });
+
+  el.leapBanner.addEventListener("click", function () {
+    renderPlans();
+    showScreen("plan");
+    el.leapPanel.scrollIntoView({ block: "center" });
+  });
 
   // ---------- the routine schedule ----------
 
@@ -8673,6 +8973,7 @@
     renderTempBanner();
     renderMeasurements();
     renderPlanSoon();
+    renderLeapBanner();
     renderShopBadge();
     renderRotaBanner();
     renderRoutineNow();
