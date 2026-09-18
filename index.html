@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=79">
+<link rel="stylesheet" href="style.css?v=80">
 </head>
 <body>
 
@@ -43,6 +43,10 @@
           <button class="icon-btn icon-btn-badged" id="moreOpen" aria-label="More" aria-haspopup="true" aria-expanded="false">⋯<span class="icon-badge" id="shopBadge" hidden>0</span></button>
           <div class="more-backdrop" id="moreBackdrop" hidden></div>
           <div class="more-menu" id="moreMenu" hidden>
+            <button type="button" class="more-item" id="leapOpen">
+              <span class="more-icon">🌀</span>
+              <span class="more-label">Leaps</span>
+            </button>
             <button type="button" class="more-item" id="shopOpen">
               <span class="more-icon">🛒</span>
               <span class="more-label">Shopping list</span>
@@ -658,25 +662,6 @@
         <div class="plan-list" id="planList"></div>
       </section>
 
-      <section id="leapPanel" hidden>
-        <div class="data-panel">
-          <div class="leap-head">
-            <span class="leap-head-title">Leaps</span>
-            <span class="leap-head-note">worked out from the date of birth</span>
-          </div>
-          <div class="leap-chart" id="leapChart"></div>
-          <div class="leap-say" id="leapSay">—</div>
-          <button class="data-btn" id="leapExpand">Show all 84 weeks ›</button>
-          <div class="leap-legend" id="leapLegend" hidden>
-            <div class="leap-key"><i class="leap-swatch leap-swatch-band"></i><span>Your baby may be more fussy now.</span></div>
-            <div class="leap-key"><i class="leap-swatch"></i><span>Probably a comparatively uncomplicated phase.</span></div>
-            <div class="leap-key"><i class="leap-swatch leap-swatch-hatch"></i><span>Fussiness around 29 or 30 weeks is <strong>not</strong> another leap. Your baby has discovered that somebody who walks away is still somewhere, and comes back. Funny as it sounds, that is progress — they are learning about distance.</span></div>
-          </div>
-          <p class="data-hint">Ten fussy phases in the first eighteen months, counted in <strong>weeks from birth</strong> — if your baby came early, count from the due date instead. The dot is today. This is a <strong>popular parenting chart, not a clinical one</strong>: the research behind it is argued over, the weeks are approximate, and plenty of babies sail through a week it paints grey. Worked out here from the date of birth alone — nothing is saved, synced or sent anywhere. If sleep or mood genuinely worries you, ring the health visitor rather than reading this.</p>
-          <p class="data-hint"><strong>It checks itself against your log.</strong> Where there are at least five days of naps logged in each of the last two weeks, the line underneath says what daytime sleep has actually done — the last seven days against the seven before them, averaged over the days that have something in them rather than over seven flat. If the chart claims a leap and your baby is sleeping normally, it says that too. That disagreement is the useful half: a chart that only ever agrees with itself is a horoscope.</p>
-        </div>
-      </section>
-
       <section>
         <div class="data-panel">
           <button class="data-btn" id="planJabs">💉 Add the UK routine immunisation dates</button>
@@ -687,6 +672,43 @@
       <section>
         <div class="data-panel">
           <p class="data-hint">Nothing here can send you a notification — a page in a browser cannot do that on a phone. Use <strong>Add to phone calendar</strong> on an appointment and your own calendar will remind you properly. The file is built on this phone and goes nowhere.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============ leaps screen ============ -->
+  <div class="screen" id="screenLeaps" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="leapBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Leaps</span>
+    </header>
+
+    <main class="content">
+
+      <section id="leapPanel" hidden>
+        <p class="leap-say" id="leapSay">—</p>
+        <div class="leap-chart" id="leapChart"></div>
+        <div class="leap-legend" id="leapLegend">
+          <div class="leap-key"><i class="leap-swatch leap-swatch-band"></i><span>Your baby may be more fussy now.</span></div>
+          <div class="leap-key"><i class="leap-swatch"></i><span>Probably a comparatively uncomplicated phase.</span></div>
+          <div class="leap-key"><i class="leap-swatch leap-swatch-hatch"></i><span>Fussiness around 29 or 30 weeks is <strong>not</strong> another leap. Your baby has discovered that somebody who walks away is still somewhere, and comes back. Funny as it sounds, that is progress — they are learning about distance.</span></div>
+        </div>
+      </section>
+
+      <section id="leapNoDob" hidden>
+        <div class="data-panel">
+          <p class="data-hint" id="leapUnset">This works from your baby’s date of birth, and there is not one set yet. Add it under <strong>⚙️ Settings</strong> and the chart draws itself.</p>
+          <p class="data-hint" id="leapPast" hidden>Your baby is past the end of this chart. It stops at <strong>84 weeks</strong>, a little over eighteen months, because that is where the chart itself stops — not because anything changes that week.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="data-panel">
+          <p class="data-hint">Ten fussy phases in the first eighteen months, counted in <strong>weeks from birth</strong> — if your baby came early, count from the due date instead. The dot is today. This is a <strong>popular parenting chart, not a clinical one</strong>: the research behind it is argued over, the weeks are approximate, and plenty of babies sail through a week it paints grey. Worked out here from the date of birth alone — nothing is saved, synced or sent anywhere. If sleep or mood genuinely worries you, ring the health visitor rather than reading this.</p>
+          <p class="data-hint"><strong>It checks itself against your log.</strong> Where there are at least five days of naps logged in each of the last two weeks, the line at the top says what daytime sleep has actually done — the last seven days against the seven before them, averaged over the days that have something in them rather than over seven flat. If the chart claims a leap and your baby is sleeping normally, it says that too. That disagreement is the useful half: a chart that only ever agrees with itself is a horoscope.</p>
         </div>
       </section>
 
@@ -1105,7 +1127,7 @@
 
           <p class="data-hint">Create the token at <strong>github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens</strong>. Give it access to <strong>only</strong> that one repository, with <strong>Contents: Read and write</strong>. A classic token would reach every repository you own — do not use one here.</p>
           <p class="data-hint">The token stays on this phone and is never included in a backup, a report or a share link. Both phones need connecting once each.</p>
-          <p class="data-hint"><strong>Leaps.</strong> Under 📅 there is a strip of the popular "leaps" chart — the fussy weeks a baby is often said to go through — drawn against your own baby's age, with today marked on it. The main screen borrows a line from it only around the start of a band and as one closes, never for the whole of it: those bands cover nearly half the first eighteen months, and a warning that is always on is not a warning. The chart itself is worked out from the date of birth and a fixed table, but the sentence under the strip is not: where you have logged enough naps, it compares the last week of daytime sleep with the week before and says what it finds — including when that contradicts the chart, and including when daytime sleep drops in a week the chart calls quiet. It remains a parenting chart rather than a medical one.</p>
+          <p class="data-hint"><strong>Leaps.</strong> Under <strong>⋯</strong> there is a strip of the popular "leaps" chart — the fussy weeks a baby is often said to go through — drawn against your own baby's age, with today marked on it. The main screen borrows a line from it only around the start of a band and as one closes, never for the whole of it: those bands cover nearly half the first eighteen months, and a warning that is always on is not a warning. It draws all eighty-four weeks at once, with today marked and the week you are in scrolled into view. The chart itself is worked out from the date of birth and a fixed table, but the sentence under the strip is not: where you have logged enough naps, it compares the last week of daytime sleep with the week before and says what it finds — including when that contradicts the chart, and including when daytime sleep drops in a week the chart calls quiet. It remains a parenting chart rather than a medical one.</p>
                     <p class="data-hint"><strong>Keep every phone up to date.</strong> When a release adds something new to an entry, a phone still running the old version cannot hold it — so rather than quietly dropping it and writing the shortened version back over everybody else's, that phone stops syncing altogether and says so here. Tap the update banner and it picks straight back up. Nothing you logged in the meantime is lost.</p>
         </div>
       </section>
@@ -1135,6 +1157,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=79"></script>
+<script src="app.js?v=80"></script>
 </body>
 </html>
