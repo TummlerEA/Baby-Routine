@@ -1,0 +1,9 @@
+{
+  "name": "baby-tracker-tests",
+  "private": true,
+  "description": "Checks for Baby Tracker. A development dependency of these checks only — the app itself has none, and nothing here is served.",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

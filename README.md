@@ -82,7 +82,20 @@ Open `index.html` in a browser. It works from `file://` exactly as it does when 
 
 Served as static files by GitHub Pages: Settings → Pages → Source: `main` branch, `/ (root)`.
 
-**Releasing.** Bump the `?v=` on both assets in `index.html`, the `version` in `version.json` and the `file://` fallback in `app.js` to the same number, in one commit. The `?v=` is what makes browsers fetch the new files; `version.json` is what makes an already-open copy notice. `test_update.js` and `test_version.js` fail if any of the three disagree, and the version shown on screen is read from the script's own `?v=`, so it can never claim to be something other than what loaded.
+**Releasing.** The release number lives in **five** places, and all five move together in one commit: the `?v=` on both assets in `index.html`, the `version` in `version.json`, the `file://` fallback in `app.js`, and `var VERSION` in `sw.js`. The `?v=` is what makes browsers fetch the new files; `version.json` is what makes an already-open copy notice; `sw.js` names the cache and the shell it keeps. `tests/test_version.js` fails if any of the five disagree, and it runs in milliseconds without a browser. The version shown on screen is read from the script's own `?v=`, so it can never claim to be something other than what loaded.
+
+## Checks
+
+226 of them, in `tests/`, driven by Playwright:
+
+```
+cd tests && npm install
+node tests/run.js
+```
+
+Everything runs in two timezones, because almost every bug this app has had was a date bug and a date bug hides perfectly in its author's own zone. The app is opened as `file://`, so there is no server to start.
+
+Playwright is the only dependency in the project and it belongs to the checks alone — nothing under `tests/` is served, referenced by `index.html`, or reachable from the app. Delete the folder and the app is untouched. See `tests/README.md`.
 
 ## Voice logging (Siri Shortcuts)
 
