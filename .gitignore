@@ -1,2 +1,6 @@
 # Screenshots and scratch output from local checks — never part of the app.
 *.png
+
+# Playwright, installed for the checks under tests/. The app itself has no
+# dependencies and nothing here is served.
+tests/node_modules/
