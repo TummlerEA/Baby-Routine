@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=81">
+<link rel="stylesheet" href="style.css?v=82">
 </head>
 <body>
 
@@ -43,6 +43,10 @@
           <button class="icon-btn icon-btn-badged" id="moreOpen" aria-label="More" aria-haspopup="true" aria-expanded="false">⋯<span class="icon-badge" id="shopBadge" hidden>0</span></button>
           <div class="more-backdrop" id="moreBackdrop" hidden></div>
           <div class="more-menu" id="moreMenu" hidden>
+            <button type="button" class="more-item" id="milkOpen">
+              <span class="more-icon">🧊</span>
+              <span class="more-label">Milk stash</span>
+            </button>
             <button type="button" class="more-item" id="leapOpen">
               <span class="more-icon">🌀</span>
               <span class="more-label">Leaps</span>
@@ -866,6 +870,73 @@
     </main>
   </div>
 
+  <!-- ============ milk stash screen ============ -->
+  <div class="screen" id="screenMilk" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="milkBack" aria-label="Back">←</button>
+      <span class="topbar-heading" id="milkTitle">Milk stash</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <div class="ho-window">
+          <span class="ho-window-label" id="milkLangLabel">Language</span>
+          <div class="ho-chips" id="milkLangs"></div>
+        </div>
+
+        <div class="data-panel milk-head">
+          <div class="milk-now">
+            <span class="milk-big" id="milkNowBags">—</span>
+            <span class="milk-big milk-big-ml" id="milkNowMl">—</span>
+          </div>
+          <p class="milk-avg" id="milkAvg"></p>
+          <div class="ho-window milk-window">
+            <span class="ho-window-label" id="milkWindowLabel">Read over</span>
+            <div class="ho-chips" id="milkWindows"></div>
+          </div>
+          <p class="milk-rate" id="milkRate">—</p>
+          <p class="data-hint milk-warn" id="milkWarn" hidden></p>
+        </div>
+
+        <div class="data-panel">
+          <label class="manual-field">
+            <span class="manual-label" id="milkMlLabel">Millilitres in a bag</span>
+            <input id="milkMl" class="manual-input" type="number" inputmode="numeric" min="0" max="400" step="10" autocomplete="off">
+          </label>
+          <div class="ho-chips milk-ml-chips" id="milkMlChips"></div>
+          <label class="manual-field">
+            <span class="manual-label" id="milkBagsLabel">How many bags</span>
+            <input id="milkBags" class="manual-input" type="number" inputmode="numeric" min="0" max="99" step="1" value="1" autocomplete="off">
+          </label>
+          <div class="milk-actions">
+            <button class="data-btn data-btn-import milk-btn-in" id="milkAdd">➕ Froze it</button>
+            <button class="data-btn milk-btn-out" id="milkUse">➖ Took it out</button>
+          </div>
+          <button class="data-btn milk-btn-set" id="milkSet">⚖️ Stocktake — that is what is in there now</button>
+        </div>
+
+        <div class="data-panel" id="milkCharts" hidden>
+          <h3 class="milk-chart-title" id="milkDailyTitle">Left at the end of each day</h3>
+          <div class="milk-chart" id="milkDailyChart"></div>
+          <h3 class="milk-chart-title" id="milkWeeklyTitle">Left at the end of each week</h3>
+          <div class="milk-chart" id="milkWeeklyChart"></div>
+        </div>
+
+        <h3 class="milk-chart-title" id="milkLogTitle" hidden>What has been recorded</h3>
+        <div class="milk-log" id="milkLog"></div>
+        <p class="data-hint" id="milkEmpty" hidden></p>
+
+        <div class="data-panel">
+          <p class="data-hint" id="milkHelp1"></p>
+          <p class="data-hint" id="milkHelp2"></p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ statistics screen ============ -->
   <div class="screen" id="screenStats" hidden>
 
@@ -1153,6 +1224,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=81"></script>
+<script src="app.js?v=82"></script>
 </body>
 </html>

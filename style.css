@@ -2788,3 +2788,123 @@ body {
 }
 
 #screenLeaps .leap-chart { padding: 0 10px; }
+
+/* ---------- the freezer ---------- */
+
+/* Two numbers that answer the only question the page is opened with, big
+   enough to read at arm's length in a kitchen. Bags first: that is what gets
+   counted by hand, and the millilitres are the finer figure behind it. */
+.milk-head { gap: 6px; }
+.milk-now {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.milk-big {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+.milk-big-ml {
+  color: var(--text-dim);
+  font-size: 22px;
+  font-weight: 600;
+}
+.milk-avg {
+  color: var(--text-faint);
+  font-size: 13px;
+  margin: 0;
+}
+.milk-window { margin-top: 8px; }
+.milk-rate {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 2px 0 0;
+}
+/* A balance below zero is a missed entry, not a scary number — said in the
+   colour the app already uses for "look at this", not the one it uses for a
+   temperature that needs a doctor. */
+.milk-warn { color: var(--overdue); }
+
+.milk-ml-chips { margin: -2px 0 2px; }
+
+/* Freeze and take out sit side by side because they are the same size of
+   decision; the stocktake is below on its own, because it overwrites the
+   other two and should not be a neighbouring tap in the dark. */
+.milk-actions {
+  display: flex;
+  gap: 8px;
+}
+.milk-actions .data-btn {
+  flex: 1;
+  text-align: center;
+}
+.milk-btn-out {
+  border-color: var(--accent-feed);
+  color: var(--accent-feed);
+  font-weight: 600;
+}
+.milk-btn-set {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.milk-chart-title {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 10px 0 0;
+}
+.milk-chart {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 8px 4px;
+}
+.ho-svg .m-milk { fill: var(--accent-sleep); }
+
+.milk-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.milk-entry {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.milk-entry-in { border-left-color: var(--accent-sleep); }
+.milk-entry-out { border-left-color: var(--accent-feed); }
+.milk-entry-set { border-left-color: var(--text-faint); }
+.milk-entry-body {
+  flex: 1;
+  min-width: 0;
+}
+.milk-entry-head {
+  font-size: 15px;
+  font-weight: 600;
+}
+.milk-entry-sub {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.milk-entry-del {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 16px;
+  min-height: 44px;
+  min-width: 44px;
+}
+.milk-entry-del:active { opacity: 0.6; }

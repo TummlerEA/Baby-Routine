@@ -57,6 +57,7 @@ const APP = h.APP;
 
   // And every screen behind the dots.
   const behindDots = [
+    ['#milkOpen', '#milkBack', '#screenMilk', 'the milk stash'],
     ['#leapOpen', '#leapBack', '#screenLeaps', 'leaps'],
     ['#shopOpen', '#shopBack', '#screenShop', 'the shopping list'],
     ['#infoOpen', '#infoBack', '#screenInfo', 'help']

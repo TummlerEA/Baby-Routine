@@ -130,8 +130,8 @@
     ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
   // What shape of entry this build can hold — not which release it is. Bumped
   // by one only when a field is added that an older copy has never heard of;
-  // fedMl in v72 was the last, and the releases either side of it leave this
-  // alone.
+  // the freezer ledger in v82 was the last, and the releases either side of
+  // it leave this alone.
   //
   // It is here to stop an out-of-date phone writing over a newer one's work.
   // normaliseImported rebuilds every entry field by field and drops whatever it
@@ -144,7 +144,7 @@
   // and writes nothing to it, and says why. Half-reading it would put stripped
   // entries on this phone with their timestamps untouched, which no later
   // update could tell from the real thing.
-  var DOC_FORMAT = 2;
+  var DOC_FORMAT = 3;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "81";
+    var fallback = "82";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -459,6 +459,38 @@
   // it once, the app clears it if the status ever moves off "ordered", so
   // a later re-order can't inherit a stale date left over from a first one.
   var SHOP_ETA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  // ---------- the freezer ----------
+
+  // Not a list of bags but a ledger of movements, which is what lets the
+  // chart answer "how much was in the freezer three weeks ago" without
+  // storing a row per bag per day. Three kinds, and the third is the one
+  // that makes the other two safe to get wrong: a stocktake states the
+  // balance outright at that moment, so a miscounted week is corrected by
+  // counting the freezer rather than by hunting for the entry that was
+  // missed.
+  var MILK_KEY = "baby-tracker-milk";
+  var MILK_KINDS = ["in", "out", "set"];
+  // A bag, not a bottle. The top of the range is generous on purpose: some
+  // people freeze into 250 ml pots, and a cap that rejects what somebody
+  // actually has in the freezer is a cap that teaches them to lie to it.
+  var MAX_MILK_ML = 400;
+  var MAX_MILK_BAGS = 99;
+  // The sizes the bags themselves are sold in, so the usual case is one tap.
+  var MILK_ML_CHOICES = [60, 80, 100, 120, 150, 180, 200, 250];
+  var MILK_DEFAULT_ML = 120;
+  // How many days back the two charts reach. Fourteen bars is the most that
+  // still reads on a phone — the same limit the statistics screen found.
+  var MILK_CHART_DAYS = 14;
+  var MILK_CHART_WEEKS = 10;
+  // Which windows the rate can be read over. Three days is this week's
+  // appetite, seven is the settled figure, five is there because the honest
+  // answer often sits between them.
+  var MILK_RATE_WINDOWS = [3, 5, 7];
+  var MILK_DEFAULT_WINDOW = 7;
+  // How much of the log the page shows before it stops. Enough to check a
+  // week's entries and correct one; the whole ledger is in the backup.
+  var MILK_LOG_ROWS = 30;
 
   var ROTA_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   var ROTA_DEFAULT_HOURS = 6;
@@ -1346,6 +1378,7 @@
     var shopRetired = retireBoughtShopping();
     var shopPruned = pruneShopTombstones();
     if (shopRetired || shopPruned) saveShopping(shopping);
+    if (pruneMilkTombstones()) saveMilk(milk);
     if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
   }
   var intervals = loadIntervals();
@@ -1490,6 +1523,37 @@
     shopList: document.getElementById("shopList"),
     shopQuiet: document.getElementById("shopQuiet"),
     shopAmazonNote: document.getElementById("shopAmazonNote"),
+    screenMilk: document.getElementById("screenMilk"),
+    milkOpenBtn: document.getElementById("milkOpen"),
+    milkBack: document.getElementById("milkBack"),
+    milkTitle: document.getElementById("milkTitle"),
+    milkLangLabel: document.getElementById("milkLangLabel"),
+    milkLangs: document.getElementById("milkLangs"),
+    milkNowBags: document.getElementById("milkNowBags"),
+    milkNowMl: document.getElementById("milkNowMl"),
+    milkAvg: document.getElementById("milkAvg"),
+    milkWarn: document.getElementById("milkWarn"),
+    milkWindowLabel: document.getElementById("milkWindowLabel"),
+    milkWindows: document.getElementById("milkWindows"),
+    milkRate: document.getElementById("milkRate"),
+    milkMlLabel: document.getElementById("milkMlLabel"),
+    milkMl: document.getElementById("milkMl"),
+    milkMlChips: document.getElementById("milkMlChips"),
+    milkBagsLabel: document.getElementById("milkBagsLabel"),
+    milkBags: document.getElementById("milkBags"),
+    milkAdd: document.getElementById("milkAdd"),
+    milkUse: document.getElementById("milkUse"),
+    milkSet: document.getElementById("milkSet"),
+    milkCharts: document.getElementById("milkCharts"),
+    milkDailyTitle: document.getElementById("milkDailyTitle"),
+    milkDailyChart: document.getElementById("milkDailyChart"),
+    milkWeeklyTitle: document.getElementById("milkWeeklyTitle"),
+    milkWeeklyChart: document.getElementById("milkWeeklyChart"),
+    milkLogTitle: document.getElementById("milkLogTitle"),
+    milkLog: document.getElementById("milkLog"),
+    milkEmpty: document.getElementById("milkEmpty"),
+    milkHelp1: document.getElementById("milkHelp1"),
+    milkHelp2: document.getElementById("milkHelp2"),
     handoverWho: document.getElementById("handoverWho"),
     handoverWhen: document.getElementById("handoverWhen"),
     handoverHours: document.getElementById("handoverHours"),
@@ -4369,7 +4433,8 @@
     // guard on events because that is all they contain, but a family with
     // appointments or a shopping list and nothing logged yet still has
     // something worth saving here.
-    if (!liveEvents().length && !livePlans().length && !liveShopping().length && !liveRotaShifts().length) {
+    if (!liveEvents().length && !livePlans().length && !liveShopping().length &&
+        !liveRotaShifts().length && !liveMilk().length) {
       showToast("Nothing to export yet");
       return;
     }
@@ -4385,6 +4450,7 @@
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
+      milk: milk,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
@@ -4617,12 +4683,21 @@
     return out;
   }
 
+  // The lists a backup carries alongside the entries. A backup may hold
+  // none of the latter at all — the export guard has always allowed one
+  // carrying only the diary, the shopping list, the rota or the freezer —
+  // and until the freezer arrived nobody had tried restoring such a file to
+  // notice it was refused on the way back in.
+  var BACKUP_LISTS = ["plans", "shopping", "rotaShifts", "milk"];
+
   function parseJsonImport(text) {
     try {
       var parsed = JSON.parse(text);
       if (Array.isArray(parsed)) return parsed;
-      if (parsed && Array.isArray(parsed.events)) return parsed.events;
-      return null;
+      if (!parsed || typeof parsed !== "object") return null;
+      if (Array.isArray(parsed.events)) return parsed.events;
+      var carries = BACKUP_LISTS.some(function (key) { return Array.isArray(parsed[key]); });
+      return carries ? [] : null;
     } catch (e) {
       return null;
     }
@@ -4734,6 +4809,10 @@
       saveRotaShifts(rotaShifts);
       renderRotaBanner();
       renderRotaWeek();
+    }
+    if (Array.isArray(parsed.milk) && mergeMilk(parsed.milk)) {
+      saveMilk(milk);
+      renderMilk();
     }
   }
 
@@ -4894,6 +4973,13 @@
       return;
     }
     if (isJson) applyBackupSettings(clean);
+    // Everything in a file with no entries has already been taken by the
+    // line above. Running the entry merge over an empty list would answer
+    // "Added 0 entries" on top of work it had nothing to do with.
+    if (isJson && !list.length) {
+      showToast("Backup restored");
+      return;
+    }
     mergeImported(list);
   }
 
@@ -4953,6 +5039,7 @@
     el.screenLeaps.hidden = name !== "leaps";
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
+    el.screenMilk.hidden = name !== "milk";
     el.screenRota.hidden = name !== "rota";
     el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
@@ -5457,7 +5544,8 @@
       events: events,
       plans: plans,
       shopping: shopping,
-      rotaShifts: rotaShifts
+      rotaShifts: rotaShifts,
+      milk: milk
     };
   }
 
@@ -5598,6 +5686,9 @@
       var remoteRotaShifts = Array.isArray(remoteDoc.rotaShifts) ? remoteDoc.rotaShifts : [];
       var pulledRotaShifts = mergeRotaShifts(remoteRotaShifts);
       if (pulledRotaShifts) saveRotaShifts(rotaShifts);
+      var remoteMilk = Array.isArray(remoteDoc.milk) ? remoteDoc.milk : [];
+      var pulledMilk = mergeMilk(remoteMilk);
+      if (pulledMilk) saveMilk(milk);
 
       var remoteMeta = remoteDoc.meta;
       applyingRemote = true;
@@ -5638,6 +5729,7 @@
       if (pulledPlans) renderPlans();
       if (pulledShopping) renderShopping();
       if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
+      if (pulledMilk) renderMilk();
       if (pulled || pulledVoice || remoteMeta) renderAll();
 
       // Drop what has aged out before comparing, so the cleaned-up log is
@@ -5649,13 +5741,14 @@
       var shopPruned = pruneShopTombstones();
       if (shopRetired || shopPruned) saveShopping(shopping);
       if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
+      if (pruneMilkTombstones()) saveMilk(milk);
 
       var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
         remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
-        remoteRotaShifts.some(tombstoneExpired);
+        remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired);
       var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
         remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
-        remoteMissesOurRotaShifts(remoteRotaShifts) ||
+        remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
         metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
       if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
@@ -7704,6 +7797,8 @@
         saveUiLang(lang.id);
         renderHandover();
         renderShopping();
+        applyMilkChrome();
+        renderMilk();
       });
       container.appendChild(btn);
     });
@@ -8434,6 +8529,653 @@
     });
   });
 
+  // ---------- what is in the freezer ----------
+
+  // Structurally the shopping list again — records with an id, an updatedAt
+  // and a tombstone, merged last-write-wins and carried in the same synced
+  // document. What it stores is a ledger rather than a list: three kinds of
+  // movement, from which the balance on any past day can be worked out. No
+  // bag is tracked individually, so there is no FIFO to keep honest and no
+  // bag left half-used in the data when the real one went in the bin.
+  var MILK_TEXT = {
+    en: {
+      screenTitle: "Milk stash",
+      back: "Back",
+      langLabel: "Language",
+      bags: function (n) { return n + (Math.abs(n) === 1 ? " bag" : " bags"); },
+      ml: function (n) { return n + " ml"; },
+      num: function (n) { return String(n); },
+      perBag: function (n) { return "about " + n + " ml a bag"; },
+      emptyHead: "The freezer is empty.",
+      windowLabel: "Read over",
+      windowChip: function (d) { return d + " days"; },
+      rate: function (bags, ml, days) {
+        return "Going out: " + bags + " a day, " + ml + " ml — over " +
+          (days === 1 ? "one day" : days + " days") + ".";
+      },
+      rateNone: function (days) {
+        return "Nothing taken out in the last " + (days === 1 ? "day" : days + " days") + ".";
+      },
+      lasts: function (days) {
+        if (days < 1) return "At that rate it runs out today.";
+        return "At that rate it lasts about " +
+          (days === 1 ? "one more day" : days + " more days") + ".";
+      },
+      negative: "The count has gone below zero, so a bag left the freezer without " +
+        "being written down. Count what is actually in there and tap Stocktake — " +
+        "nothing before today has to be corrected.",
+      mlLabel: "Millilitres in a bag",
+      bagsLabel: "How many bags",
+      add: "➕ Froze it",
+      use: "➖ Took it out",
+      set: "⚖️ Stocktake — that is what is in there now",
+      added: function (bags, ml) { return "Frozen: " + bags + ", " + ml + " ml"; },
+      used: function (bags, ml) { return "Taken out: " + bags + ", " + ml + " ml"; },
+      stocktook: function (bags, ml) { return "Stocktake: " + bags + ", " + ml + " ml"; },
+      removed: "Entry deleted",
+      needMl: "Type how many millilitres are in a bag.",
+      needBags: "Type how many bags.",
+      dailyTitle: "Left at the end of each day",
+      weeklyTitle: "Left at the end of each week",
+      logTitle: "What has been recorded",
+      logIn: "Froze",
+      logOut: "Took out",
+      logSet: "Stocktake",
+      logLeft: function (bags, ml) { return "left: " + bags + " · " + ml + " ml"; },
+      deleteOne: "Delete this entry",
+      empty: "Nothing recorded yet. Count what is in the freezer and tap Stocktake — " +
+        "that is the whole of the setting up.",
+      help1: "The bag count and the millilitres are two separate running totals, so " +
+        "taking out a 150 ml bag when the average is 120 leaves the average where it " +
+        "should be. There is no first-in-first-out here on purpose: the freezer is a " +
+        "pile, not a queue, and the only questions this page answers are how much is " +
+        "left and how fast it is going.",
+      help2: "Nothing here leaves the phone except through the sync you already set up. " +
+        "A stocktake states the balance outright at the moment you tap it — everything " +
+        "before it is left alone, and everything after it is counted on top. That is the " +
+        "way to correct a week nobody kept up with: count the freezer, tap it once. The " +
+        "rate above counts what was recorded as taken out, so a bag a stocktake quietly " +
+        "corrected away is not in it."
+    },
+    ru: {
+      screenTitle: "Запасы молока",
+      back: "Назад",
+      langLabel: "Язык",
+      bags: function (n) {
+        var a = Math.abs(n);
+        return pluralRu(a, n + " пакетик", n + " пакетика", n + " пакетиков");
+      },
+      ml: function (n) { return n + " мл"; },
+      // Russian writes a decimal with a comma, the same as every other
+      // number this app shows in it.
+      num: function (n) { return String(n).replace(".", ","); },
+      perBag: function (n) { return "примерно " + n + " мл в пакетике"; },
+      emptyHead: "В морозилке пусто.",
+      windowLabel: "Считать за",
+      windowChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
+      rate: function (bags, ml, days) {
+        return "Расход: " + bags + " в день, " + ml + " мл — за " +
+          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
+      },
+      rateNone: function (days) {
+        return "За последние " + pluralRu(days, days + " день", days + " дня", days + " дней") +
+          " ничего не брали.";
+      },
+      lasts: function (days) {
+        if (days < 1) return "При таком расходе закончится сегодня.";
+        return "При таком расходе хватит ещё примерно на " +
+          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
+      },
+      negative: "Остаток ушёл в минус — значит пакетик достали, а записать забыли. " +
+        "Пересчитайте, что реально лежит, и нажмите «Сверка»: прошлое исправлять не нужно.",
+      mlLabel: "Миллилитров в пакетике",
+      bagsLabel: "Сколько пакетиков",
+      add: "➕ Заморозили",
+      use: "➖ Взяли",
+      set: "⚖️ Сверка — столько лежит сейчас",
+      added: function (bags, ml) { return "Заморозили: " + bags + ", " + ml + " мл"; },
+      used: function (bags, ml) { return "Взяли: " + bags + ", " + ml + " мл"; },
+      stocktook: function (bags, ml) { return "Сверка: " + bags + ", " + ml + " мл"; },
+      removed: "Запись удалена",
+      needMl: "Укажите, сколько миллилитров в пакетике.",
+      needBags: "Укажите, сколько пакетиков.",
+      dailyTitle: "Остаток на конец дня",
+      weeklyTitle: "Остаток на конец недели",
+      logTitle: "Что записано",
+      logIn: "Заморозили",
+      logOut: "Взяли",
+      logSet: "Сверка",
+      logLeft: function (bags, ml) { return "осталось: " + bags + " · " + ml + " мл"; },
+      deleteOne: "Удалить запись",
+      empty: "Пока ничего не записано. Пересчитайте морозилку и нажмите «Сверка» — " +
+        "на этом настройка заканчивается.",
+      help1: "Пакетики и миллилитры считаются по отдельности, поэтому взятый пакетик " +
+        "на 150 мл при среднем 120 не сдвигает среднее туда, куда не надо. FIFO здесь " +
+        "нет намеренно: морозилка — это куча, а не очередь, и страница отвечает только " +
+        "на два вопроса — сколько осталось и как быстро уходит.",
+      help2: "Никуда отсюда ничего не уходит, кроме той синхронизации, которую вы уже " +
+        "настроили. «Сверка» прямо задаёт остаток на момент нажатия: всё, что было до " +
+        "неё, остаётся как есть, всё после — считается сверху. Так и чинится неделя, " +
+        "которую никто не вёл: пересчитать морозилку и нажать один раз. Расход наверху " +
+        "считает только то, что записали как «взяли», — пакетик, который молча списала " +
+        "сверка, в него не попадёт."
+    }
+  };
+
+  function mk() { return MILK_TEXT[uiLang] || MILK_TEXT.en; }
+
+  var milk = loadMilk();
+  var milkWindow = MILK_DEFAULT_WINDOW;
+
+  function loadMilk() {
+    try {
+      var raw = localStorage.getItem(MILK_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read the milk stash");
+      return [];
+    }
+  }
+
+  function saveMilk(list) {
+    try {
+      localStorage.setItem(MILK_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
+    }
+  }
+
+  // Anything arriving from another phone or a file, made safe to store. A
+  // stocktake is the one kind allowed to be zero: "there is nothing left" is
+  // a real thing to record, where "froze nothing" is not.
+  function normaliseMilkRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var at = new Date(String(raw.at || "").trim().replace(" ", "T"));
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    var record = { id: id };
+    if (raw.deleted) {
+      record.deleted = true;
+      record.at = isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString();
+      record.updatedAt = isNaN(stamped.getTime()) ? record.at : stamped.toISOString();
+      return record;
+    }
+    if (isNaN(at.getTime())) return null;
+    if (MILK_KINDS.indexOf(String(raw.kind)) < 0) return null;
+    var bags = Math.round(Number(raw.bags));
+    var ml = Math.round(Number(raw.ml));
+    if (!isFinite(bags) || !isFinite(ml)) return null;
+    if (bags < 0 || ml < 0) return null;
+    if (bags > MAX_MILK_BAGS || ml > MAX_MILK_BAGS * MAX_MILK_ML) return null;
+    if (raw.kind !== "set" && (bags < 1 || ml < 1)) return null;
+    record.kind = String(raw.kind);
+    record.bags = bags;
+    record.ml = ml;
+    record.at = at.toISOString();
+    record.updatedAt = isNaN(stamped.getTime()) ? record.at : stamped.toISOString();
+    return record;
+  }
+
+  function liveMilk() {
+    return milk.filter(function (r) { return !isDeleted(r); });
+  }
+
+  function sortedMilk() {
+    return liveMilk().slice().sort(function (a, b) {
+      return a.at > b.at ? 1 : a.at < b.at ? -1 : 0;
+    });
+  }
+
+  // The whole of the arithmetic. Walking forward and letting a stocktake
+  // overwrite the running total is what makes a stocktake a correction
+  // rather than one more movement to reconcile: everything before it stops
+  // mattering the moment it is passed.
+  function milkBalanceFrom(list, ms) {
+    var bags = 0, ml = 0;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (+new Date(r.at) > ms) break;
+      if (r.kind === "set") { bags = r.bags; ml = r.ml; }
+      else if (r.kind === "out") { bags -= r.bags; ml -= r.ml; }
+      else { bags += r.bags; ml += r.ml; }
+    }
+    return { bags: bags, ml: ml };
+  }
+
+  function milkBalanceNow() {
+    return milkBalanceFrom(sortedMilk(), Date.now());
+  }
+
+  // Millilitres per bag, as the freezer actually stands — not an average of
+  // what was typed, which would drift the moment a big bag went out.
+  function milkPerBag(balance) {
+    if (!balance.bags || balance.ml <= 0) return 0;
+    return Math.round(balance.ml / balance.bags);
+  }
+
+  // Calendar days, built with new Date(y, m, d + n) rather than millisecond
+  // offsets — a week of milliseconds across a clock change lands an hour out
+  // and puts a movement in the wrong bucket.
+  function endOfDayMs(date) {
+    return +new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1) - 1;
+  }
+
+  function milkBalanceRows(count, step) {
+    var list = sortedMilk();
+    var today = new Date();
+    var rows = [];
+    for (var i = count - 1; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i * step);
+      var at = milkBalanceFrom(list, endOfDayMs(d));
+      rows.push({ date: d, bags: at.bags, ml: at.ml });
+    }
+    return rows;
+  }
+
+  // How fast it is going. Averaged over the window asked for, but never over
+  // more days than the log has been kept — a freezer first counted on Tuesday
+  // has not been quietly emptying itself since the previous Wednesday.
+  //
+  // Deliberately the opposite of the way daytime sleep is averaged, where a
+  // day with nothing logged is dropped. Here a day with nothing taken out is
+  // real information: nobody needed a bag.
+  function milkRate(days) {
+    var list = sortedMilk();
+    if (!list.length) return null;
+    var today = new Date();
+    var midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var from = +new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + 1);
+    var first = new Date(list[0].at);
+    var firstDay = new Date(first.getFullYear(), first.getMonth(), first.getDate());
+    var span = days;
+    if (+firstDay > from) span = Math.round((+midnight - +firstDay) / MS_DAY) + 1;
+    if (span < 1) span = 1;
+    var bags = 0, ml = 0;
+    list.forEach(function (r) {
+      if (r.kind !== "out" || +new Date(r.at) < from) return;
+      bags += r.bags;
+      ml += r.ml;
+    });
+    return { days: span, bags: bags / span, ml: ml / span, anyOut: ml > 0 || bags > 0 };
+  }
+
+  function milkDaysLeft(balance, rate) {
+    if (!rate || !rate.ml || balance.ml <= 0) return null;
+    return Math.floor(balance.ml / rate.ml);
+  }
+
+  function addMilkRecord(kind, bags, ml) {
+    var record = { id: uuid(), kind: kind, bags: bags, ml: ml, at: new Date().toISOString() };
+    touch(record);
+    milk.push(record);
+    if (!saveMilk(milk)) return null;
+    renderMilk();
+    return record.id;
+  }
+
+  function deleteMilkRecord(id) {
+    var target = milk.filter(function (r) { return r.id === id; })[0];
+    if (!target) return;
+    var carried = { kind: target.kind, bags: target.bags, ml: target.ml };
+    delete target.kind;
+    delete target.bags;
+    delete target.ml;
+    target.deleted = true;
+    touch(target);
+    if (!saveMilk(milk)) return;
+    renderMilk();
+    showToast(mk().removed, function () {
+      delete target.deleted;
+      target.kind = carried.kind;
+      target.bags = carried.bags;
+      target.ml = carried.ml;
+      touch(target);
+      if (!saveMilk(milk)) return;
+      renderMilk();
+    });
+  }
+
+  function pruneMilkTombstones() {
+    var before = milk.length;
+    milk = milk.filter(function (r) { return !tombstoneExpired(r); });
+    return before - milk.length;
+  }
+
+  function mergeMilk(remoteList) {
+    var byId = {};
+    milk.forEach(function (r) { byId[r.id] = r; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var record = normaliseMilkRecord(raw);
+      if (!record || !record.id) return;
+      if (tombstoneExpired(record)) return;
+      var existing = byId[record.id];
+      if (!existing) {
+        milk.push(record);
+        byId[record.id] = record;
+        changed++;
+      } else if (record.updatedAt > updatedAtOf(existing)) {
+        milk[milk.indexOf(existing)] = record;
+        byId[record.id] = record;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteMissesOurMilk(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (r) {
+      if (r && r.id) remoteById[r.id] = r;
+    });
+    return milk.some(function (r) {
+      var mirror = remoteById[r.id];
+      return !mirror || updatedAtOf(r) > (mirror.updatedAt || "");
+    });
+  }
+
+  // ---------- the freezer, drawn ----------
+
+  // The same hand-drawn bars the statistics screen uses, minus the average
+  // line: a running balance has no average worth drawing a rule at, and the
+  // shape of the slope is the whole of what this chart is for.
+  function milkChartSvg(rows, label) {
+    var WIDTH = 320, LEFT = 2, RIGHT = 2, TOP = 13, BARH = 60, AXIS = 14;
+    var height = TOP + BARH + AXIS;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var n = rows.length;
+    var gap = n > 14 ? 1 : 3;
+    var barW = (plotW - gap * (n - 1)) / n;
+    var max = 1;
+    rows.forEach(function (r) { max = Math.max(max, r.ml); });
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height +
+      '" role="img" aria-label="' + escapeHtml(label) + '">'];
+    out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + (TOP + BARH) +
+      '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + BARH) + '"/>');
+
+    var labelEvery = Math.max(1, Math.ceil(n / 6));
+    var T = mk();
+    rows.forEach(function (row, i) {
+      // A negative balance means a bag left unlogged. It draws as nothing
+      // rather than as a bar below the rail: the hint above already names
+      // the problem, and an upside-down bar would only make the chart
+      // harder to read on the days either side of it.
+      var v = Math.max(0, row.ml);
+      var h = (v / max) * BARH;
+      var x = LEFT + i * (barW + gap);
+      var y = TOP + BARH - h;
+      out.push('<rect class="m-milk" x="' + (Math.round(x * 10) / 10) +
+        '" y="' + (Math.round(y * 10) / 10) + '" width="' + (Math.round(Math.max(1, barW) * 10) / 10) +
+        '" height="' + (Math.round(Math.max(0, h) * 10) / 10) + '" rx="1">' +
+        '<title>' + escapeHtml(formatDateShort(row.date) + ': ' +
+          T.bags(row.bags) + ' · ' + T.ml(row.ml)) + '</title></rect>');
+      if (n <= 14 && v > 0) {
+        out.push('<text class="stats-bar-label" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (Math.round(Math.max(9, y - 3) * 10) / 10) +
+          '" text-anchor="middle">' + row.bags + '</text>');
+      }
+      if (n <= 10 || i % labelEvery === 0 || i === n - 1) {
+        out.push('<text class="ho-tick" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (height - 2) + '" text-anchor="middle">' + row.date.getDate() + '</text>');
+      }
+    });
+    out.push('</svg>');
+    return out.join("");
+  }
+
+  function milkWhen(date) {
+    return (uiLang === "ru"
+      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
+      : formatDateShort(date)) + ", " + formatClockTime(date);
+  }
+
+  function milkRow(entry) {
+    var T = mk();
+    var record = entry.record;
+    var row = document.createElement("div");
+    row.className = "milk-entry milk-entry-" + record.kind;
+
+    var body = document.createElement("div");
+    body.className = "milk-entry-body";
+
+    var head = document.createElement("div");
+    head.className = "milk-entry-head";
+    var what = record.kind === "in" ? T.logIn : record.kind === "out" ? T.logOut : T.logSet;
+    var sign = record.kind === "in" ? "+" : record.kind === "out" ? "−" : "=";
+    head.textContent = what + " " + sign + " " + T.bags(record.bags) + " · " + T.ml(record.ml);
+
+    var sub = document.createElement("div");
+    sub.className = "milk-entry-sub";
+    sub.textContent = milkWhen(new Date(record.at)) + " · " +
+      T.logLeft(T.bags(entry.after.bags), entry.after.ml);
+
+    body.appendChild(head);
+    body.appendChild(sub);
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "milk-entry-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteMilkRecord(record.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  // Newest first on screen, but the running balance can only be worked out
+  // forwards, so it is built in order and reversed.
+  function milkLedger() {
+    var list = sortedMilk();
+    var bags = 0, ml = 0;
+    var out = [];
+    list.forEach(function (r) {
+      if (r.kind === "set") { bags = r.bags; ml = r.ml; }
+      else if (r.kind === "out") { bags -= r.bags; ml -= r.ml; }
+      else { bags += r.bags; ml += r.ml; }
+      out.push({ record: r, after: { bags: bags, ml: ml } });
+    });
+    return out.reverse();
+  }
+
+  function readMilkNumber(input, max) {
+    var n = Math.round(Number(String(input.value).replace(",", ".")));
+    if (!isFinite(n) || n < 1 || n > max) return null;
+    return n;
+  }
+
+  function submitMilk(kind) {
+    var T = mk();
+    var ml = readMilkNumber(el.milkMl, MAX_MILK_ML);
+    var bags = readMilkNumber(el.milkBags, MAX_MILK_BAGS);
+    // A stocktake of nothing is the one legitimate zero: it is how a freezer
+    // that has just been emptied gets said out loud.
+    if (kind === "set") {
+      if (String(el.milkBags.value).trim() === "0") bags = 0;
+      if (String(el.milkMl.value).trim() === "0") ml = 0;
+      if (bags === 0) ml = 0;
+    }
+    if (ml === null) { showToast(T.needMl); el.milkMl.focus(); return; }
+    if (bags === null) { showToast(T.needBags); el.milkBags.focus(); return; }
+    // The form asks for one bag's worth; the ledger stores the total, so a
+    // batch of four is one record and the chart never has to multiply. Both
+    // numbers are already capped above, so the product cannot run away.
+    var total = ml * bags;
+    if (!addMilkRecord(kind, bags, total)) return;
+    showToast((kind === "in" ? T.added : kind === "out" ? T.used : T.stocktook)(
+      T.bags(bags), total));
+    el.milkBags.value = "1";
+  }
+
+  function buildMilkChips() {
+    MILK_ML_CHOICES.forEach(function (ml) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.textContent = String(ml);
+      btn.addEventListener("click", function () {
+        el.milkMl.value = String(ml);
+        markMilkChips();
+      });
+      el.milkMlChips.appendChild(btn);
+    });
+    MILK_RATE_WINDOWS.forEach(function (days) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.addEventListener("click", function () {
+        milkWindow = days;
+        renderMilk();
+      });
+      el.milkWindows.appendChild(btn);
+    });
+    buildLangChips(el.milkLangs);
+  }
+
+  function markMilkChips() {
+    var typed = String(el.milkMl.value).trim();
+    Array.prototype.forEach.call(el.milkMlChips.children, function (btn, i) {
+      var on = String(MILK_ML_CHOICES[i]) === typed;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    var T = mk();
+    Array.prototype.forEach.call(el.milkWindows.children, function (btn, i) {
+      var on = MILK_RATE_WINDOWS[i] === milkWindow;
+      btn.textContent = T.windowChip(MILK_RATE_WINDOWS[i]);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    markLangChips(el.milkLangs);
+  }
+
+  // The heading and the button that opens it, named in the chosen language
+  // at startup too — so a screen reader has the right word for it before
+  // anybody has been there.
+  function applyMilkChrome() {
+    var T = mk();
+    el.milkTitle.textContent = T.screenTitle;
+    el.milkBack.setAttribute("aria-label", T.back);
+    el.milkOpenBtn.setAttribute("aria-label", T.screenTitle);
+  }
+
+  function renderMilkHead() {
+    var T = mk();
+    var balance = milkBalanceNow();
+    var perBag = milkPerBag(balance);
+    el.milkNowBags.textContent = T.bags(balance.bags);
+    el.milkNowMl.textContent = T.ml(balance.ml);
+    el.milkAvg.textContent = balance.bags > 0 ? T.perBag(perBag)
+      : balance.bags === 0 ? T.emptyHead : "";
+    el.milkWarn.hidden = balance.bags >= 0 && balance.ml >= 0;
+    el.milkWarn.textContent = T.negative;
+
+    var rate = milkRate(milkWindow);
+    if (!rate || !rate.anyOut) {
+      el.milkRate.textContent = T.rateNone(milkWindow);
+    } else {
+      var left = milkDaysLeft(balance, rate);
+      el.milkRate.textContent = T.rate(
+        T.num(Math.round(rate.bags * 10) / 10), Math.round(rate.ml), rate.days) +
+        (left === null ? "" : " " + T.lasts(left));
+    }
+  }
+
+  function renderMilkCharts() {
+    var T = mk();
+    var any = liveMilk().length > 0;
+    el.milkCharts.hidden = !any;
+    if (!any) return;
+    el.milkDailyTitle.textContent = T.dailyTitle;
+    el.milkWeeklyTitle.textContent = T.weeklyTitle;
+    el.milkDailyChart.innerHTML =
+      milkChartSvg(milkBalanceRows(MILK_CHART_DAYS, 1), T.dailyTitle);
+    el.milkWeeklyChart.innerHTML =
+      milkChartSvg(milkBalanceRows(MILK_CHART_WEEKS, 7), T.weeklyTitle);
+  }
+
+  function renderMilkLog() {
+    var T = mk();
+    var ledger = milkLedger();
+    el.milkLog.innerHTML = "";
+    el.milkLogTitle.hidden = !ledger.length;
+    el.milkLogTitle.textContent = T.logTitle;
+    el.milkEmpty.hidden = ledger.length > 0;
+    el.milkEmpty.textContent = T.empty;
+    ledger.slice(0, MILK_LOG_ROWS).forEach(function (entry) {
+      el.milkLog.appendChild(milkRow(entry));
+    });
+  }
+
+  function renderMilk() {
+    if (el.screenMilk.hidden) return;
+    applyMilkChrome();
+    var T = mk();
+    el.milkLangLabel.textContent = T.langLabel;
+    el.milkWindowLabel.textContent = T.windowLabel;
+    el.milkMlLabel.textContent = T.mlLabel;
+    el.milkBagsLabel.textContent = T.bagsLabel;
+    el.milkAdd.textContent = T.add;
+    el.milkUse.textContent = T.use;
+    el.milkSet.textContent = T.set;
+    el.milkHelp1.textContent = T.help1;
+    el.milkHelp2.textContent = T.help2;
+    markMilkChips();
+    renderMilkHead();
+    renderMilkCharts();
+    renderMilkLog();
+  }
+
+  buildMilkChips();
+  applyMilkChrome();
+
+  el.milkOpenBtn.addEventListener("click", function () {
+    showScreen("milk");
+    // Pre-filled with what the freezer averages, so the usual "took one out"
+    // is two taps and no typing. An empty freezer has no average to offer.
+    var perBag = milkPerBag(milkBalanceNow());
+    el.milkMl.value = String(perBag || MILK_DEFAULT_ML);
+    el.milkBags.value = "1";
+    renderMilk();
+  });
+  el.milkBack.addEventListener("click", showMain);
+  el.milkAdd.addEventListener("click", function () { submitMilk("in"); });
+  el.milkUse.addEventListener("click", function () { submitMilk("out"); });
+  el.milkSet.addEventListener("click", function () { submitMilk("set"); });
+  el.milkMl.addEventListener("input", markMilkChips);
+
+  // Read out in the summary the AI screen builds, because "how much is in the
+  // freezer" is exactly the sort of thing a feeding question turns on — and
+  // because a model told nothing about it will invent a number from the
+  // bottle feeds it can see.
+  function milkSummaryLines() {
+    if (!liveMilk().length) return [];
+    var balance = milkBalanceNow();
+    var rate = milkRate(MILK_DEFAULT_WINDOW);
+    var out = ["Frozen milk in the freezer: " + balance.bags + " bags, " +
+      balance.ml + " ml in total" +
+      (balance.bags > 0 ? " — about " + milkPerBag(balance) + " ml a bag" : "") + "."];
+    if (rate && rate.anyOut) {
+      var left = milkDaysLeft(balance, rate);
+      out.push("Taken out of the freezer: " + (Math.round(rate.bags * 10) / 10) +
+        " bags a day, " + Math.round(rate.ml) + " ml, averaged over the last " +
+        rate.days + (rate.days === 1 ? " day" : " days") +
+        (left === null ? "" : " — about " + left + " days' worth left at that rate") + ".");
+    } else {
+      out.push("Nothing has been taken out of the freezer in the last " +
+        MILK_DEFAULT_WINDOW + " days.");
+    }
+    return out;
+  }
+
   // ---------- ask an AI ----------
 
   // Counts for one calendar day, in the same shape the day headings already
@@ -8787,6 +9529,12 @@
     if (measures.length) {
       out.push("");
       measures.forEach(function (line) { out.push(line); });
+    }
+
+    var freezer = milkSummaryLines();
+    if (freezer.length) {
+      out.push("");
+      freezer.forEach(function (line) { out.push(line); });
     }
 
     // What is coming, so "what should I ask on Thursday" has something to
