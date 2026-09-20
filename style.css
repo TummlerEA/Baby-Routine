@@ -2908,3 +2908,181 @@ body {
   min-width: 44px;
 }
 .milk-entry-del:active { opacity: 0.6; }
+
+/* ---------- the diary ---------- */
+
+.jr-head {
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.jr-head-loose { margin-top: 14px; }
+
+/* Label and faces on one line while the phone has room for it, and the
+   faces on their own line when it does not — five 44px targets plus a word
+   do not fit across a 320px screen, and the targets are what must not give. */
+.jr-rate {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jr-who {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  font-size: 14px;
+  min-width: 56px;
+}
+.jr-faces {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+.jr-face {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex: 1;
+  font-size: 22px;
+  line-height: 1;
+  min-height: 44px;
+  opacity: 0.5;
+  padding: 0;
+}
+/* The chosen face is the only one at full strength — on a row of five
+   emoji, dimming the rest reads faster than outlining the one. */
+.jr-face.on {
+  border-color: var(--accent-sleep);
+  box-shadow: inset 0 0 0 1px var(--accent-sleep);
+  opacity: 1;
+}
+.jr-face:active { opacity: 0.7; }
+
+.jr-text {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.jr-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jr-trend-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.jr-trend-label {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  font-size: 12px;
+  min-width: 56px;
+}
+.jr-strip {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+}
+.jr-cell {
+  border-radius: 2px;
+  flex: 1;
+  height: 16px;
+}
+/* One to five, hardest to easiest. A day nobody answered for is an outline
+   and not a middling colour: "we did not say" and "it was ordinary" are
+   different answers, and a strip that blurs them is worse than no strip. */
+.jr-cell-none {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.jr-s1 { background: var(--danger); }
+.jr-s2 { background: var(--overdue); }
+.jr-s3 { background: var(--text-faint); }
+.jr-s4 { background: var(--accent-diaper); opacity: 0.6; }
+.jr-s5 { background: var(--accent-diaper); }
+.jr-tally {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  font-size: 12px;
+  min-width: 58px;
+  text-align: right;
+  white-space: nowrap;
+}
+.jr-order { margin: 2px 0 0; }
+
+.jr-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.jr-entry {
+  align-items: flex-start;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 4px;
+  padding: 4px 4px 4px 12px;
+}
+.jr-note { border-left: 3px solid var(--accent-sleep); }
+.jr-entry-body {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  flex: 1;
+  font-family: inherit;
+  min-width: 0;
+  padding: 8px 0;
+  text-align: left;
+}
+.jr-entry-body:active { opacity: 0.7; }
+.jr-entry-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+.jr-entry-when {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+.jr-entry-face { font-size: 15px; }
+.jr-note-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+/* A diary entry keeps the line breaks it was typed with — a description of
+   a bedtime routine is a list, and flattening it into a paragraph is how it
+   stops being readable to the person it was written for. */
+.jr-entry-text {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.jr-del {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 15px;
+  min-height: 44px;
+  min-width: 44px;
+}
+.jr-del:active { opacity: 0.6; }

@@ -130,8 +130,8 @@
     ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
   // What shape of entry this build can hold — not which release it is. Bumped
   // by one only when a field is added that an older copy has never heard of;
-  // the freezer ledger in v82 was the last, and the releases either side of
-  // it leave this alone.
+  // the diary in v83 was the last, and the releases either side of it leave
+  // this alone.
   //
   // It is here to stop an out-of-date phone writing over a newer one's work.
   // normaliseImported rebuilds every entry field by field and drops whatever it
@@ -144,7 +144,7 @@
   // and writes nothing to it, and says why. Half-reading it would put stripped
   // entries on this phone with their timestamps untouched, which no later
   // update could tell from the real thing.
-  var DOC_FORMAT = 3;
+  var DOC_FORMAT = 4;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "82";
+    var fallback = "83";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -459,6 +459,46 @@
   // it once, the app clears it if the status ever moves off "ordered", so
   // a later re-order can't inherit a stale date left over from a first one.
   var SHOP_ETA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  // ---------- the diary of how it felt ----------
+
+  // The only subjective thing the app records. Everything else in it is a
+  // fact somebody tapped — a feed happened, a bag came out of the freezer —
+  // and none of that says whether the day was survivable. Two shapes of
+  // record share one list: a dated entry, which carries a line of text and
+  // up to three ratings, and a standing note, which is not about a day at
+  // all but about a room or a bedtime routine and stays pinned where a sleep
+  // or feeding consultant can be shown it.
+  var JOURNAL_KEY = "baby-tracker-journal";
+  var JOURNAL_KINDS = ["day", "note"];
+  // Long enough for a description of a bedroom, which is the longest thing
+  // anybody has a reason to put here.
+  var MAX_JOURNAL_TEXT = 2000;
+  var MAX_JOURNAL_TITLE = 60;
+  // Who a day can be rated for. The baby is the obvious one; the other two
+  // are the point of the exercise, because nothing else in this app has ever
+  // asked how the parents are.
+  var JOURNAL_WHO = ["baby", "mum", "dad"];
+  // 1 is the hardest day and 5 the easiest, on one scale for all three —
+  // three different scales could not be laid beside each other, and laying
+  // them beside each other is the whole reason to keep them.
+  var JOURNAL_FACES = ["\uD83D\uDE2D", "\uD83D\uDE23", "\uD83D\uDE10", "\uD83D\uDE42", "\uD83D\uDE04"];
+  // Where a day stops being ordinary in either direction. Deliberately not
+  // the midpoint: 3 is "it was a day", and counting it as either good or
+  // hard would make both tallies meaningless.
+  var JOURNAL_GOOD = 4;
+  var JOURNAL_HARD = 2;
+  var JOURNAL_TREND_DAYS = 14;
+  var JOURNAL_TALLY_WINDOWS = [7, 14, 30];
+  var JOURNAL_DEFAULT_WINDOW = 14;
+  var JOURNAL_FEED_ROWS = 30;
+  // How much of the diary rides in the AI summary. Capped rather than
+  // complete: the summary has to stay short enough to paste, and the tallies
+  // above it carry the shape of a month that five entries cannot.
+  var JOURNAL_AI_ENTRIES = 5;
+  var JOURNAL_AI_CHARS = 280;
+  var JOURNAL_AI_NOTES = 3;
+  var JOURNAL_AI_NOTE_CHARS = 500;
 
   // ---------- the freezer ----------
 
@@ -1249,16 +1289,20 @@
     try {
       var raw = localStorage.getItem(AI_KEY);
       var parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || typeof parsed !== "object") return { on: false, name: false };
-      return { on: parsed.on === true, name: parsed.name === true };
+      if (!parsed || typeof parsed !== "object") {
+        return { on: false, name: false, journal: false };
+      }
+      return { on: parsed.on === true, name: parsed.name === true,
+        journal: parsed.journal === true };
     } catch (e) {
-      return { on: false, name: false };
+      return { on: false, name: false, journal: false };
     }
   }
 
   function saveAiPrefs(prefs) {
     try {
-      localStorage.setItem(AI_KEY, JSON.stringify({ on: !!prefs.on, name: !!prefs.name }));
+      localStorage.setItem(AI_KEY, JSON.stringify({ on: !!prefs.on, name: !!prefs.name,
+        journal: !!prefs.journal }));
     } catch (e) {
       showError("Couldn't save that setting");
     }
@@ -1379,6 +1423,7 @@
     var shopPruned = pruneShopTombstones();
     if (shopRetired || shopPruned) saveShopping(shopping);
     if (pruneMilkTombstones()) saveMilk(milk);
+    if (pruneJournalTombstones()) saveJournal(journal);
     if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
   }
   var intervals = loadIntervals();
@@ -1554,6 +1599,46 @@
     milkEmpty: document.getElementById("milkEmpty"),
     milkHelp1: document.getElementById("milkHelp1"),
     milkHelp2: document.getElementById("milkHelp2"),
+    screenJournal: document.getElementById("screenJournal"),
+    journalOpenBtn: document.getElementById("journalOpen"),
+    journalBack: document.getElementById("journalBack"),
+    journalTitle: document.getElementById("journalTitle"),
+    journalLangLabel: document.getElementById("journalLangLabel"),
+    journalLangs: document.getElementById("journalLangs"),
+    journalTodayTitle: document.getElementById("journalTodayTitle"),
+    journalLabelBaby: document.getElementById("journalLabelBaby"),
+    journalRowBaby: document.getElementById("journalRowBaby"),
+    journalLabelMum: document.getElementById("journalLabelMum"),
+    journalRowMum: document.getElementById("journalRowMum"),
+    journalLabelDad: document.getElementById("journalLabelDad"),
+    journalRowDad: document.getElementById("journalRowDad"),
+    journalTextLabel: document.getElementById("journalTextLabel"),
+    journalText: document.getElementById("journalText"),
+    journalTextHint: document.getElementById("journalTextHint"),
+    journalSave: document.getElementById("journalSave"),
+    journalCancel: document.getElementById("journalCancel"),
+    journalTrendTitle: document.getElementById("journalTrendTitle"),
+    journalTrend: document.getElementById("journalTrend"),
+    journalTrendEmpty: document.getElementById("journalTrendEmpty"),
+    journalTallyLabel: document.getElementById("journalTallyLabel"),
+    journalWindows: document.getElementById("journalWindows"),
+    journalFeedTitle: document.getElementById("journalFeedTitle"),
+    journalFeedOrder: document.getElementById("journalFeedOrder"),
+    journalFeed: document.getElementById("journalFeed"),
+    journalFeedEmpty: document.getElementById("journalFeedEmpty"),
+    journalNotesTitle: document.getElementById("journalNotesTitle"),
+    journalNotesHint: document.getElementById("journalNotesHint"),
+    journalNoteAdd: document.getElementById("journalNoteAdd"),
+    journalNoteForm: document.getElementById("journalNoteForm"),
+    journalNoteTitleLabel: document.getElementById("journalNoteTitleLabel"),
+    journalNoteTitle: document.getElementById("journalNoteTitle"),
+    journalNoteTextLabel: document.getElementById("journalNoteTextLabel"),
+    journalNoteText: document.getElementById("journalNoteText"),
+    journalNoteSave: document.getElementById("journalNoteSave"),
+    journalNoteCancel: document.getElementById("journalNoteCancel"),
+    journalNotes: document.getElementById("journalNotes"),
+    journalNotesEmpty: document.getElementById("journalNotesEmpty"),
+    journalPrivacy: document.getElementById("journalPrivacy"),
     handoverWho: document.getElementById("handoverWho"),
     handoverWhen: document.getElementById("handoverWhen"),
     handoverHours: document.getElementById("handoverHours"),
@@ -1634,6 +1719,7 @@
     aiCopy: document.getElementById("aiCopy"),
     aiEnabled: document.getElementById("aiEnabled"),
     aiUseName: document.getElementById("aiUseName"),
+    aiUseJournal: document.getElementById("aiUseJournal"),
     settingsOpenBtn: document.getElementById("settingsOpen"),
     settingsBack: document.getElementById("settingsBack"),
     babyNameDisplay: document.getElementById("babyNameDisplay"),
@@ -1829,6 +1915,22 @@
 
   function cleanText(value, limit) {
     return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, limit);
+  }
+
+  // cleanText flattens a paragraph into one line, which is right for a name
+  // or a shopping item and wrong for a description of a bedroom. This keeps
+  // the line breaks and nothing else: spaces and tabs collapse, a run of
+  // blank lines becomes one, and trailing space on a line goes. Everything
+  // is still put on screen through textContent, so nothing kept here can
+  // change how the text around it is read.
+  function cleanLines(value, limit) {
+    return String(value == null ? "" : value)
+      .replace(/\r\n?/g, "\n")
+      .replace(/[^\S\n]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, limit);
   }
 
   function measureLabelOf(event) {
@@ -4434,7 +4536,7 @@
     // appointments or a shopping list and nothing logged yet still has
     // something worth saving here.
     if (!liveEvents().length && !livePlans().length && !liveShopping().length &&
-        !liveRotaShifts().length && !liveMilk().length) {
+        !liveRotaShifts().length && !liveMilk().length && !liveJournal().length) {
       showToast("Nothing to export yet");
       return;
     }
@@ -4451,6 +4553,7 @@
       plans: plans,
       shopping: shopping,
       milk: milk,
+      journal: journal,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
@@ -4688,7 +4791,7 @@
   // carrying only the diary, the shopping list, the rota or the freezer —
   // and until the freezer arrived nobody had tried restoring such a file to
   // notice it was refused on the way back in.
-  var BACKUP_LISTS = ["plans", "shopping", "rotaShifts", "milk"];
+  var BACKUP_LISTS = ["plans", "shopping", "rotaShifts", "milk", "journal"];
 
   function parseJsonImport(text) {
     try {
@@ -4813,6 +4916,11 @@
     if (Array.isArray(parsed.milk) && mergeMilk(parsed.milk)) {
       saveMilk(milk);
       renderMilk();
+    }
+    if (Array.isArray(parsed.journal) && mergeJournal(parsed.journal)) {
+      saveJournal(journal);
+      loadJournalForm();
+      renderJournal();
     }
   }
 
@@ -5040,6 +5148,7 @@
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
     el.screenMilk.hidden = name !== "milk";
+    el.screenJournal.hidden = name !== "journal";
     el.screenRota.hidden = name !== "rota";
     el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
@@ -5545,7 +5654,8 @@
       plans: plans,
       shopping: shopping,
       rotaShifts: rotaShifts,
-      milk: milk
+      milk: milk,
+      journal: journal
     };
   }
 
@@ -5689,6 +5799,9 @@
       var remoteMilk = Array.isArray(remoteDoc.milk) ? remoteDoc.milk : [];
       var pulledMilk = mergeMilk(remoteMilk);
       if (pulledMilk) saveMilk(milk);
+      var remoteJournal = Array.isArray(remoteDoc.journal) ? remoteDoc.journal : [];
+      var pulledJournal = mergeJournal(remoteJournal);
+      if (pulledJournal) saveJournal(journal);
 
       var remoteMeta = remoteDoc.meta;
       applyingRemote = true;
@@ -5730,6 +5843,7 @@
       if (pulledShopping) renderShopping();
       if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
       if (pulledMilk) renderMilk();
+      if (pulledJournal) { loadJournalForm(); renderJournal(); }
       if (pulled || pulledVoice || remoteMeta) renderAll();
 
       // Drop what has aged out before comparing, so the cleaned-up log is
@@ -5742,13 +5856,16 @@
       if (shopRetired || shopPruned) saveShopping(shopping);
       if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
       if (pruneMilkTombstones()) saveMilk(milk);
+      if (pruneJournalTombstones()) saveJournal(journal);
 
       var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
         remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
-        remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired);
+        remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired) ||
+        remoteJournal.some(tombstoneExpired);
       var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
         remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
         remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
+        remoteMissesOurJournal(remoteJournal) ||
         metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
       if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
@@ -7799,6 +7916,8 @@
         renderShopping();
         applyMilkChrome();
         renderMilk();
+        applyJournalChrome();
+        renderJournal();
       });
       container.appendChild(btn);
     });
@@ -9176,6 +9295,778 @@
     return out;
   }
 
+  // ---------- the diary ----------
+
+  // Same record shape and the same last-write-wins merge as the shopping
+  // list and the freezer. What is different is that nothing here is ever
+  // worked out: a rating is what somebody said the day was like, and the
+  // app's job is to keep it and lay it beside the other two, not to grade it.
+  var JOURNAL_TEXT = {
+    en: {
+      screenTitle: "Diary",
+      back: "Back",
+      langLabel: "Language",
+      todayTitle: "How was today",
+      whoLabel: { baby: "Baby", mum: "Mum", dad: "Dad" },
+      // Read out by a screen reader instead of the face, which it would
+      // otherwise announce by its Unicode name.
+      faceLabel: ["a hard day", "a trying day", "an ordinary day",
+        "a good day", "a lovely day"],
+      clearRating: "no answer",
+      textLabel: "Anything worth remembering",
+      textHint: "A line is plenty. Nobody reads this but you two.",
+      save: "Save today",
+      saved: "Saved",
+      updated: "Updated",
+      removed: "Entry deleted",
+      nothing: "Nothing to save yet — tap a face, or write a line.",
+      trendTitle: "The last fortnight",
+      tallyLabel: "Count over",
+      tallyChip: function (d) { return d + " days"; },
+      // Short enough to sit on the end of the strip it belongs to. The
+      // sentence behind it is what a screen reader and a long press get.
+      tallyBadge: function (good, hard) {
+        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
+      },
+      tallyLong: function (who, good, hard, days) {
+        return who + ", over " + days + " days: " +
+          good + (good === 1 ? " good day" : " good days") + ", " +
+          hard + (hard === 1 ? " hard day" : " hard days");
+      },
+      faceOrder: "The faces run baby, mum, dad.",
+      trendEmpty: "Rate a day or two and the strip fills in.",
+      feedTitle: "Days written down",
+      feedEmpty: "Nothing written down yet.",
+      notesTitle: "Notes for a specialist",
+      notesHint: "Not about a day. A description of the bedroom, the bedtime routine, " +
+        "how feeds actually go — the things a sleep or feeding consultant asks for and " +
+        "nobody can recall on the spot. Kept where they can be read out or pasted.",
+      noteAdd: "＋ Add a note",
+      noteTitleLabel: "What it is about",
+      noteTextLabel: "The note",
+      noteSave: "Save the note",
+      noteSaved: "Note saved",
+      noteRemoved: "Note deleted",
+      noteNothing: "Give the note a name and something to say.",
+      noteEmpty: "No notes yet.",
+      cancel: "Cancel",
+      edit: "Edit",
+      deleteOne: "Delete",
+      editing: function (when) { return "Editing " + when; },
+      editingToday: "Editing today",
+      privacy: "This stays on your phones and in your own repository, like everything " +
+        "else here. It is the one part of the log nobody else has written a word of, so " +
+        "it is also the part worth thinking twice about before it goes into a summary " +
+        "for an AI — that is a switch under Settings, and it is off until you turn it on."
+    },
+    ru: {
+      screenTitle: "Дневник",
+      back: "Назад",
+      langLabel: "Язык",
+      todayTitle: "Как прошёл день",
+      whoLabel: { baby: "Ребёнок", mum: "Мама", dad: "Папа" },
+      faceLabel: ["тяжёлый день", "трудный день", "обычный день",
+        "хороший день", "прекрасный день"],
+      clearRating: "без ответа",
+      textLabel: "Что стоит запомнить",
+      textHint: "Хватит одной строки. Это читаете только вы двое.",
+      save: "Сохранить день",
+      saved: "Сохранено",
+      updated: "Изменено",
+      removed: "Запись удалена",
+      nothing: "Пока нечего сохранять — выберите лицо или напишите строку.",
+      trendTitle: "Последние две недели",
+      tallyLabel: "Считать за",
+      tallyChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
+      tallyBadge: function (good, hard) {
+        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
+      },
+      tallyLong: function (who, good, hard, days) {
+        return who + ", за " +
+          pluralRu(days, days + " день", days + " дня",
+            days + " дней") + ": " +
+          pluralRu(good, good + " хороший день",
+            good + " хороших дня",
+            good + " хороших дней") + ", " +
+          pluralRu(hard, hard + " тяжёлый день",
+            hard + " тяжёлых дня",
+            hard + " тяжёлых дней");
+      },
+      faceOrder: "Лица идут по порядку: ребёнок, мама, папа.",
+      trendEmpty: "Оцените день-другой, и полоса заполнится.",
+      feedTitle: "Записанные дни",
+      feedEmpty: "Пока ничего не записано.",
+      notesTitle: "Заметки для специалиста",
+      notesHint: "Это не про день. Описание спальни, ритуал засыпания, как на самом деле " +
+        "идут кормления — то, о чём спрашивает консультант по сну или по кормлению и чего " +
+        "с ходу не вспомнить. Лежит там, откуда можно зачитать или скопировать.",
+      noteAdd: "＋ Добавить заметку",
+      noteTitleLabel: "О чём заметка",
+      noteTextLabel: "Текст",
+      noteSave: "Сохранить заметку",
+      noteSaved: "Заметка сохранена",
+      noteRemoved: "Заметка удалена",
+      noteNothing: "Дайте заметке название и текст.",
+      noteEmpty: "Заметок пока нет.",
+      cancel: "Отмена",
+      edit: "Изменить",
+      deleteOne: "Удалить",
+      editing: function (when) { return "Правим " + when; },
+      editingToday: "Правим сегодняшний день",
+      privacy: "Всё это остаётся на ваших телефонах и в вашем репозитории, как и остальное. " +
+        "Это единственная часть журнала, к которой никто посторонний не приложил ни слова, — " +
+        "поэтому и подумать дважды стоит именно о ней, прежде чем она попадёт в выгрузку для " +
+        "ИИ. Это отдельный переключатель в настройках, и он выключен, пока вы его не включите."
+    }
+  };
+
+  function jr() { return JOURNAL_TEXT[uiLang] || JOURNAL_TEXT.en; }
+
+  var journal = loadJournal();
+  var journalWindow = JOURNAL_DEFAULT_WINDOW;
+  // Which day the form is pointed at. Today unless somebody tapped an older
+  // entry to edit it.
+  var journalDay = null;
+  var editingNoteId = null;
+  var noteFormOpen = false;
+
+  function loadJournal() {
+    try {
+      var raw = localStorage.getItem(JOURNAL_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read the diary");
+      return [];
+    }
+  }
+
+  function saveJournal(list) {
+    try {
+      localStorage.setItem(JOURNAL_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
+    }
+  }
+
+  function safeRating(raw) {
+    var n = Math.round(Number(raw));
+    return isFinite(n) && n >= 1 && n <= JOURNAL_FACES.length ? n : null;
+  }
+
+  // Anything arriving from another phone or a file, made safe to store. A
+  // dated entry with neither a rating nor a word in it is not an entry —
+  // it is what is left when somebody cleared the form, and it is dropped
+  // rather than kept as a blank row on the other phone.
+  function normaliseJournalEntry(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var at = new Date(String(raw.at || "").trim().replace(" ", "T"));
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    var entry = { id: id };
+    if (raw.deleted) {
+      entry.deleted = true;
+      entry.at = isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString();
+      entry.updatedAt = isNaN(stamped.getTime()) ? entry.at : stamped.toISOString();
+      return entry;
+    }
+    if (isNaN(at.getTime())) return null;
+    if (JOURNAL_KINDS.indexOf(String(raw.kind)) < 0) return null;
+    entry.kind = String(raw.kind);
+    entry.at = at.toISOString();
+    entry.updatedAt = isNaN(stamped.getTime()) ? entry.at : stamped.toISOString();
+    var text = cleanLines(raw.text, MAX_JOURNAL_TEXT);
+    if (entry.kind === "note") {
+      var title = cleanText(raw.title, MAX_JOURNAL_TITLE);
+      if (!title || !text) return null;
+      entry.title = title;
+      entry.text = text;
+      return entry;
+    }
+    var day = String(raw.day || "").trim();
+    if (!SHOP_ETA_RE.test(day) || isNaN(new Date(day + "T00:00:00").getTime())) return null;
+    entry.day = day;
+    var any = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var score = safeRating(raw[who]);
+      if (score !== null) { entry[who] = score; any = true; }
+    });
+    if (text) entry.text = text;
+    if (!any && !text) return null;
+    return entry;
+  }
+
+  function liveJournal() {
+    return journal.filter(function (e) { return !isDeleted(e); });
+  }
+
+  // Newest day first. Two entries on the same day cannot happen through the
+  // form — it edits the one that is there — but a merge from a phone that
+  // was offline can produce them, and they are shown rather than hidden.
+  function journalDays() {
+    return liveJournal().filter(function (e) { return e.kind === "day"; })
+      .sort(function (a, b) {
+        if (a.day !== b.day) return a.day > b.day ? -1 : 1;
+        return a.at > b.at ? -1 : 1;
+      });
+  }
+
+  function journalNotes() {
+    return liveJournal().filter(function (e) { return e.kind === "note"; })
+      .sort(function (a, b) { return a.updatedAt > b.updatedAt ? -1 : 1; });
+  }
+
+  function entryForDay(day) {
+    return journalDays().filter(function (e) { return e.day === day; })[0] || null;
+  }
+
+  function currentDay() {
+    return journalDay || dayKeyOf(new Date());
+  }
+
+  // ---------- the trend ----------
+
+  // One row per person, oldest on the left, so the strip reads the way a
+  // fortnight is remembered. A day nobody rated draws as an outline rather
+  // than as a middling score: "we did not say" and "it was ordinary" are
+  // different answers and the strip must not conflate them.
+  function journalTrendRows(who) {
+    var byDay = {};
+    journalDays().forEach(function (e) {
+      if (byDay[e.day] === undefined && e[who] !== undefined) byDay[e.day] = e[who];
+    });
+    var today = new Date();
+    var out = [];
+    for (var i = JOURNAL_TREND_DAYS - 1; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      var key = dayKeyOf(d);
+      out.push({ date: d, day: key, score: byDay[key] === undefined ? null : byDay[key] });
+    }
+    return out;
+  }
+
+  // Counted over the window asked for, and only over the days that carry an
+  // answer — an unrated day is not a good one and not a hard one either.
+  function journalTally(who, days) {
+    var today = new Date();
+    var from = dayKeyOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + 1));
+    var good = 0, hard = 0, rated = 0;
+    var seen = {};
+    journalDays().forEach(function (e) {
+      if (e.day < from || e[who] === undefined || seen[e.day]) return;
+      seen[e.day] = true;
+      rated++;
+      if (e[who] >= JOURNAL_GOOD) good++;
+      else if (e[who] <= JOURNAL_HARD) hard++;
+    });
+    return { good: good, hard: hard, rated: rated };
+  }
+
+  // ---------- writing it down ----------
+
+  function saveJournalDay() {
+    var T = jr();
+    var day = currentDay();
+    var text = cleanLines(el.journalText.value, MAX_JOURNAL_TEXT);
+    var scores = {};
+    var any = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var picked = journalPicked[who];
+      if (picked !== null) { scores[who] = picked; any = true; }
+    });
+    var existing = entryForDay(day);
+    if (!any && !text) {
+      // Clearing everything out of a day that had something in it is a
+      // deletion, not a refusal — otherwise there would be no way to undo
+      // having written it.
+      if (existing) { deleteJournalEntry(existing.id); return; }
+      showToast(T.nothing);
+      return;
+    }
+    var entry = existing || { id: uuid(), kind: "day", day: day, at: new Date().toISOString() };
+    JOURNAL_WHO.forEach(function (who) { delete entry[who]; });
+    JOURNAL_WHO.forEach(function (who) {
+      if (scores[who] !== undefined) entry[who] = scores[who];
+    });
+    if (text) entry.text = text; else delete entry.text;
+    touch(entry);
+    if (!existing) journal.push(entry);
+    if (!saveJournal(journal)) return;
+    journalDay = null;
+    loadJournalForm();
+    renderJournal();
+    showToast(existing ? T.updated : T.saved);
+  }
+
+  function saveJournalNote() {
+    var T = jr();
+    var title = cleanText(el.journalNoteTitle.value, MAX_JOURNAL_TITLE);
+    var text = cleanLines(el.journalNoteText.value, MAX_JOURNAL_TEXT);
+    if (!title || !text) { showToast(T.noteNothing); return; }
+    var existing = editingNoteId
+      ? journal.filter(function (e) { return e.id === editingNoteId; })[0] : null;
+    var entry = existing || { id: uuid(), kind: "note", at: new Date().toISOString() };
+    entry.title = title;
+    entry.text = text;
+    touch(entry);
+    if (!existing) journal.push(entry);
+    if (!saveJournal(journal)) return;
+    closeNoteForm();
+    renderJournal();
+    showToast(T.noteSaved);
+  }
+
+  function deleteJournalEntry(id) {
+    var T = jr();
+    var target = journal.filter(function (e) { return e.id === id; })[0];
+    if (!target) return;
+    var carried = { kind: target.kind, day: target.day, title: target.title, text: target.text,
+      baby: target.baby, mum: target.mum, dad: target.dad };
+    var note = target.kind === "note";
+    delete target.kind;
+    delete target.day;
+    delete target.title;
+    delete target.text;
+    JOURNAL_WHO.forEach(function (who) { delete target[who]; });
+    target.deleted = true;
+    touch(target);
+    if (!saveJournal(journal)) return;
+    if (journalDay && carried.day === journalDay) journalDay = null;
+    loadJournalForm();
+    renderJournal();
+    showToast(note ? T.noteRemoved : T.removed, function () {
+      delete target.deleted;
+      Object.keys(carried).forEach(function (key) {
+        if (carried[key] !== undefined) target[key] = carried[key];
+      });
+      touch(target);
+      if (!saveJournal(journal)) return;
+      loadJournalForm();
+      renderJournal();
+    });
+  }
+
+  function pruneJournalTombstones() {
+    var before = journal.length;
+    journal = journal.filter(function (e) { return !tombstoneExpired(e); });
+    return before - journal.length;
+  }
+
+  function mergeJournal(remoteList) {
+    var byId = {};
+    journal.forEach(function (e) { byId[e.id] = e; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var entry = normaliseJournalEntry(raw);
+      if (!entry || !entry.id) return;
+      if (tombstoneExpired(entry)) return;
+      var existing = byId[entry.id];
+      if (!existing) {
+        journal.push(entry);
+        byId[entry.id] = entry;
+        changed++;
+      } else if (entry.updatedAt > updatedAtOf(existing)) {
+        journal[journal.indexOf(existing)] = entry;
+        byId[entry.id] = entry;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteMissesOurJournal(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (e) {
+      if (e && e.id) remoteById[e.id] = e;
+    });
+    return journal.some(function (e) {
+      var mirror = remoteById[e.id];
+      return !mirror || updatedAtOf(e) > (mirror.updatedAt || "");
+    });
+  }
+
+  // ---------- the diary, drawn ----------
+
+  // The three rows have ids of their own in the markup rather than being
+  // found by a data attribute, so a typo is a missing element at startup
+  // and not a row that silently never responds to a tap.
+  function whoCap(who) { return who.charAt(0).toUpperCase() + who.slice(1); }
+  function journalRowId(who) { return "journalRow" + whoCap(who); }
+  function journalLabelId(who) { return "journalLabel" + whoCap(who); }
+
+  // What the three rows of faces currently say. Kept out of the DOM because
+  // a rating can be cleared, and "nothing chosen" has no element to hold it.
+  var journalPicked = { baby: null, mum: null, dad: null };
+
+  function buildJournalFaces() {
+    JOURNAL_WHO.forEach(function (who) {
+      var row = el[journalRowId(who)];
+      JOURNAL_FACES.forEach(function (face, i) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "jr-face";
+        btn.textContent = face;
+        btn.addEventListener("click", function () {
+          // Tapping the face already chosen clears it, which is the only
+          // way back to "we did not say" once something has been tapped.
+          journalPicked[who] = journalPicked[who] === i + 1 ? null : i + 1;
+          markJournalFaces();
+        });
+        row.appendChild(btn);
+      });
+    });
+    JOURNAL_TALLY_WINDOWS.forEach(function (days) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.addEventListener("click", function () {
+        journalWindow = days;
+        renderJournal();
+      });
+      el.journalWindows.appendChild(btn);
+    });
+    buildLangChips(el.journalLangs);
+  }
+
+  function markJournalFaces() {
+    var T = jr();
+    JOURNAL_WHO.forEach(function (who) {
+      el[journalLabelId(who)].textContent = T.whoLabel[who];
+      Array.prototype.forEach.call(el[journalRowId(who)].children, function (btn, i) {
+        var on = journalPicked[who] === i + 1;
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        btn.setAttribute("aria-label", T.whoLabel[who] + ": " +
+          (on ? T.clearRating : T.faceLabel[i]));
+      });
+    });
+    Array.prototype.forEach.call(el.journalWindows.children, function (btn, i) {
+      var on = JOURNAL_TALLY_WINDOWS[i] === journalWindow;
+      btn.textContent = T.tallyChip(JOURNAL_TALLY_WINDOWS[i]);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    markLangChips(el.journalLangs);
+  }
+
+  // Fills the form from whatever is stored for the day it is pointed at, so
+  // opening the screen twice in an evening shows what was written the first
+  // time rather than an empty box over the top of it.
+  function loadJournalForm() {
+    var entry = entryForDay(currentDay());
+    JOURNAL_WHO.forEach(function (who) {
+      journalPicked[who] = entry && entry[who] !== undefined ? entry[who] : null;
+    });
+    el.journalText.value = entry && entry.text ? entry.text : "";
+    markJournalFaces();
+  }
+
+  function journalWhen(day) {
+    var parts = String(day).split("-");
+    var date = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    return uiLang === "ru"
+      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
+      : formatDateShort(date);
+  }
+
+  function renderJournalForm() {
+    var T = jr();
+    var day = currentDay();
+    var today = dayKeyOf(new Date());
+    el.journalTodayTitle.textContent = day === today ? T.todayTitle : T.editing(journalWhen(day));
+    el.journalTextLabel.textContent = T.textLabel;
+    el.journalTextHint.textContent = T.textHint;
+    el.journalSave.textContent = T.save;
+    el.journalCancel.hidden = day === today;
+    el.journalCancel.textContent = T.cancel;
+  }
+
+  function renderJournalTrend() {
+    var T = jr();
+    el.journalTrendTitle.textContent = T.trendTitle;
+    el.journalTallyLabel.textContent = T.tallyLabel;
+    el.journalTrend.innerHTML = "";
+    var anyRated = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var rows = journalTrendRows(who);
+      var line = document.createElement("div");
+      line.className = "jr-trend-row";
+      var label = document.createElement("span");
+      label.className = "jr-trend-label";
+      label.textContent = T.whoLabel[who];
+      var strip = document.createElement("div");
+      strip.className = "jr-strip";
+      rows.forEach(function (row) {
+        var cell = document.createElement("i");
+        cell.className = "jr-cell" + (row.score === null ? " jr-cell-none" : " jr-s" + row.score);
+        cell.title = journalWhen(row.day) +
+          (row.score === null ? "" : " · " + JOURNAL_FACES[row.score - 1] +
+            " " + T.faceLabel[row.score - 1]);
+        if (row.score !== null) anyRated = true;
+        strip.appendChild(cell);
+      });
+
+      // The count sits on the end of the strip rather than under it: a
+      // sentence below each row pushed the next person's label away from
+      // their own strip, and three rows meant to be read against each other
+      // stopped looking like three rows.
+      var tally = journalTally(who, journalWindow);
+      var badge = document.createElement("span");
+      badge.className = "jr-tally";
+      badge.textContent = T.tallyBadge(tally.good, tally.hard);
+      badge.title = T.tallyLong(T.whoLabel[who], tally.good, tally.hard, journalWindow);
+
+      line.appendChild(label);
+      line.appendChild(strip);
+      line.appendChild(badge);
+      line.setAttribute("aria-label",
+        T.tallyLong(T.whoLabel[who], tally.good, tally.hard, journalWindow));
+      el.journalTrend.appendChild(line);
+    });
+    el.journalTrendEmpty.hidden = anyRated;
+    el.journalTrendEmpty.textContent = T.trendEmpty;
+  }
+
+  function journalDayRow(entry) {
+    var T = jr();
+    var row = document.createElement("div");
+    row.className = "jr-entry";
+
+    var body = document.createElement("button");
+    body.type = "button";
+    body.className = "jr-entry-body";
+    body.setAttribute("aria-label", T.edit + " — " + journalWhen(entry.day));
+
+    var head = document.createElement("div");
+    head.className = "jr-entry-head";
+    var when = document.createElement("span");
+    when.className = "jr-entry-when";
+    when.textContent = journalWhen(entry.day);
+    head.appendChild(when);
+    JOURNAL_WHO.forEach(function (who) {
+      if (entry[who] === undefined) return;
+      var face = document.createElement("span");
+      face.className = "jr-entry-face";
+      face.textContent = JOURNAL_FACES[entry[who] - 1];
+      face.title = T.whoLabel[who] + ": " + T.faceLabel[entry[who] - 1];
+      head.appendChild(face);
+    });
+    body.appendChild(head);
+
+    if (entry.text) {
+      var said = document.createElement("div");
+      said.className = "jr-entry-text";
+      said.textContent = entry.text;
+      body.appendChild(said);
+    }
+    body.addEventListener("click", function () {
+      journalDay = entry.day;
+      loadJournalForm();
+      renderJournal();
+      el.journalText.focus();
+      window.scrollTo(0, 0);
+    });
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "jr-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteJournalEntry(entry.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function journalNoteRow(entry) {
+    var T = jr();
+    var row = document.createElement("div");
+    row.className = "jr-entry jr-note";
+
+    var body = document.createElement("button");
+    body.type = "button";
+    body.className = "jr-entry-body";
+    body.setAttribute("aria-label", T.edit + " — " + entry.title);
+    var title = document.createElement("div");
+    title.className = "jr-note-title";
+    title.textContent = entry.title;
+    var said = document.createElement("div");
+    said.className = "jr-entry-text";
+    said.textContent = entry.text;
+    body.appendChild(title);
+    body.appendChild(said);
+    body.addEventListener("click", function () { openNoteForm(entry.id); });
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "jr-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteJournalEntry(entry.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function openNoteForm(id) {
+    var entry = id ? journal.filter(function (e) { return e.id === id; })[0] : null;
+    editingNoteId = entry ? entry.id : null;
+    noteFormOpen = true;
+    el.journalNoteTitle.value = entry ? entry.title : "";
+    el.journalNoteText.value = entry ? entry.text : "";
+    renderJournal();
+    el.journalNoteTitle.focus();
+  }
+
+  function closeNoteForm() {
+    editingNoteId = null;
+    noteFormOpen = false;
+    el.journalNoteTitle.value = "";
+    el.journalNoteText.value = "";
+  }
+
+  function renderJournalFeed() {
+    var T = jr();
+    var days = journalDays();
+    el.journalFeedTitle.hidden = !days.length;
+    el.journalFeedTitle.textContent = T.feedTitle;
+    el.journalFeedOrder.textContent = T.faceOrder;
+    el.journalFeedOrder.hidden = !days.length;
+    el.journalFeedEmpty.hidden = days.length > 0;
+    el.journalFeedEmpty.textContent = T.feedEmpty;
+    el.journalFeed.innerHTML = "";
+    days.slice(0, JOURNAL_FEED_ROWS).forEach(function (entry) {
+      el.journalFeed.appendChild(journalDayRow(entry));
+    });
+  }
+
+  function renderJournalNotes() {
+    var T = jr();
+    var notes = journalNotes();
+    el.journalNotesTitle.textContent = T.notesTitle;
+    el.journalNotesHint.textContent = T.notesHint;
+    el.journalNoteAdd.textContent = T.noteAdd;
+    el.journalNoteAdd.hidden = noteFormOpen;
+    el.journalNoteForm.hidden = !noteFormOpen;
+    el.journalNoteTitleLabel.textContent = T.noteTitleLabel;
+    el.journalNoteTextLabel.textContent = T.noteTextLabel;
+    el.journalNoteSave.textContent = T.noteSave;
+    el.journalNoteCancel.textContent = T.cancel;
+    el.journalNotesEmpty.hidden = notes.length > 0 || noteFormOpen;
+    el.journalNotesEmpty.textContent = T.noteEmpty;
+    el.journalNotes.innerHTML = "";
+    notes.forEach(function (entry) {
+      el.journalNotes.appendChild(journalNoteRow(entry));
+    });
+  }
+
+  function applyJournalChrome() {
+    var T = jr();
+    el.journalTitle.textContent = T.screenTitle;
+    el.journalBack.setAttribute("aria-label", T.back);
+    el.journalOpenBtn.setAttribute("aria-label", T.screenTitle);
+  }
+
+  function renderJournal() {
+    if (el.screenJournal.hidden) return;
+    applyJournalChrome();
+    var T = jr();
+    el.journalLangLabel.textContent = T.langLabel;
+    el.journalPrivacy.textContent = T.privacy;
+    markJournalFaces();
+    renderJournalForm();
+    renderJournalTrend();
+    renderJournalFeed();
+    renderJournalNotes();
+  }
+
+  buildJournalFaces();
+  applyJournalChrome();
+
+  el.journalOpenBtn.addEventListener("click", function () {
+    showScreen("journal");
+    journalDay = null;
+    closeNoteForm();
+    loadJournalForm();
+    renderJournal();
+  });
+  el.journalBack.addEventListener("click", showMain);
+  el.journalSave.addEventListener("click", saveJournalDay);
+  el.journalCancel.addEventListener("click", function () {
+    journalDay = null;
+    loadJournalForm();
+    renderJournal();
+  });
+  el.journalNoteAdd.addEventListener("click", function () { openNoteForm(null); });
+  el.journalNoteSave.addEventListener("click", saveJournalNote);
+  el.journalNoteCancel.addEventListener("click", function () {
+    closeNoteForm();
+    renderJournal();
+  });
+
+  // What the diary contributes to the summary the AI screen builds. Behind
+  // its own switch, off until somebody turns it on: everything else in the
+  // summary is a count of something that happened, and this is the one part
+  // where a person wrote down how they were coping.
+  function journalSummaryLines() {
+    if (!loadAiPrefs().journal) return [];
+    var days = journalDays();
+    var notes = journalNotes();
+    if (!days.length && !notes.length) return [];
+    var out = [];
+    var names = { baby: "the baby", mum: "mum", dad: "dad" };
+    var tallies = [];
+    JOURNAL_WHO.forEach(function (who) {
+      var tally = journalTally(who, journalWindow);
+      if (!tally.rated) return;
+      tallies.push(names[who] + " " + tally.good + " good, " + tally.hard + " hard, out of " +
+        tally.rated + " rated");
+    });
+    if (tallies.length) {
+      out.push("How the days have felt, rated by hand from 1 (hardest) to 5 (easiest), " +
+        "over the last " + journalWindow + " days — " + tallies.join("; ") + ".");
+    }
+    var written = days.filter(function (e) { return e.text; }).slice(0, JOURNAL_AI_ENTRIES);
+    if (written.length) {
+      out.push("");
+      out.push("What was written on those days, most recent first:");
+      written.forEach(function (entry) {
+        var faces = [];
+        JOURNAL_WHO.forEach(function (who) {
+          if (entry[who] !== undefined) faces.push(names[who] + " " + entry[who] + "/5");
+        });
+        out.push(entry.day + (faces.length ? " (" + faces.join(", ") + ")" : "") + ": " +
+          shorten(entry.text, JOURNAL_AI_CHARS));
+      });
+    }
+    if (notes.length) {
+      out.push("");
+      out.push("Standing notes the parents keep, which describe how things are set up " +
+        "rather than how one day went:");
+      notes.slice(0, JOURNAL_AI_NOTES).forEach(function (entry) {
+        out.push(entry.title + ": " + shorten(entry.text, JOURNAL_AI_NOTE_CHARS));
+      });
+    }
+    return out;
+  }
+
+  // Cut on a word rather than mid-syllable, and say that it was cut — a
+  // model handed a sentence that simply stops will finish it itself.
+  function shorten(text, limit) {
+    var flat = String(text).replace(/\s+/g, " ").trim();
+    if (flat.length <= limit) return flat;
+    var cut = flat.slice(0, limit);
+    var space = cut.lastIndexOf(" ");
+    return (space > limit * 0.6 ? cut.slice(0, space) : cut) + "… (cut short)";
+  }
+
   // ---------- ask an AI ----------
 
   // Counts for one calendar day, in the same shape the day headings already
@@ -9537,6 +10428,12 @@
       freezer.forEach(function (line) { out.push(line); });
     }
 
+    var diary = journalSummaryLines();
+    if (diary.length) {
+      out.push("");
+      diary.forEach(function (line) { out.push(line); });
+    }
+
     // What is coming, so "what should I ask on Thursday" has something to
     // work with. Only the near future: a jab due in eight months is not what
     // the question is about.
@@ -9667,6 +10564,7 @@
     var prefs = loadAiPrefs();
     el.aiEnabled.checked = prefs.on;
     el.aiUseName.checked = prefs.name;
+    el.aiUseJournal.checked = prefs.journal;
     el.aiRow.hidden = !prefs.on;
   }
 
@@ -9690,6 +10588,13 @@
     var prefs = loadAiPrefs();
     prefs.name = el.aiUseName.checked;
     saveAiPrefs(prefs);
+  });
+
+  el.aiUseJournal.addEventListener("change", function () {
+    var prefs = loadAiPrefs();
+    prefs.journal = el.aiUseJournal.checked;
+    saveAiPrefs(prefs);
+    renderAiPreview();
   });
 
   el.aiOpen.addEventListener("click", openAi);
