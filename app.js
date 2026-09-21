@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "84";
+    var fallback = "85";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1572,8 +1572,6 @@
     milkOpenBtn: document.getElementById("milkOpen"),
     milkBack: document.getElementById("milkBack"),
     milkTitle: document.getElementById("milkTitle"),
-    milkLangLabel: document.getElementById("milkLangLabel"),
-    milkLangs: document.getElementById("milkLangs"),
     milkNowBags: document.getElementById("milkNowBags"),
     milkNowMl: document.getElementById("milkNowMl"),
     milkAvg: document.getElementById("milkAvg"),
@@ -1603,8 +1601,6 @@
     journalOpenBtn: document.getElementById("journalOpen"),
     journalBack: document.getElementById("journalBack"),
     journalTitle: document.getElementById("journalTitle"),
-    journalLangLabel: document.getElementById("journalLangLabel"),
-    journalLangs: document.getElementById("journalLangs"),
     journalTodayTitle: document.getElementById("journalTodayTitle"),
     journalDateLabel: document.getElementById("journalDateLabel"),
     journalDate: document.getElementById("journalDate"),
@@ -7916,10 +7912,6 @@
         saveUiLang(lang.id);
         renderHandover();
         renderShopping();
-        applyMilkChrome();
-        renderMilk();
-        applyJournalChrome();
-        renderJournal();
       });
       container.appendChild(btn);
     });
@@ -8659,132 +8651,63 @@
   // bag is tracked individually, so there is no FIFO to keep honest and no
   // bag left half-used in the data when the real one went in the bin.
   var MILK_TEXT = {
-    en: {
-      screenTitle: "Milk stash",
-      back: "Back",
-      langLabel: "Language",
-      bags: function (n) { return n + (Math.abs(n) === 1 ? " bag" : " bags"); },
-      ml: function (n) { return n + " ml"; },
-      num: function (n) { return String(n); },
-      perBag: function (n) { return "about " + n + " ml a bag"; },
-      emptyHead: "The freezer is empty.",
-      windowLabel: "Read over",
-      windowChip: function (d) { return d + " days"; },
-      rate: function (bags, ml, days) {
-        return "Going out: " + bags + " a day, " + ml + " ml — over " +
-          (days === 1 ? "one day" : days + " days") + ".";
-      },
-      rateNone: function (days) {
-        return "Nothing taken out in the last " + (days === 1 ? "day" : days + " days") + ".";
-      },
-      lasts: function (days) {
-        if (days < 1) return "At that rate it runs out today.";
-        return "At that rate it lasts about " +
-          (days === 1 ? "one more day" : days + " more days") + ".";
-      },
-      negative: "The count has gone below zero, so a bag left the freezer without " +
-        "being written down. Count what is actually in there and tap Stocktake — " +
-        "nothing before today has to be corrected.",
-      mlLabel: "Millilitres in a bag",
-      bagsLabel: "How many bags",
-      add: "➕ Froze it",
-      use: "➖ Took it out",
-      set: "⚖️ Stocktake — that is what is in there now",
-      added: function (bags, ml) { return "Frozen: " + bags + ", " + ml + " ml"; },
-      used: function (bags, ml) { return "Taken out: " + bags + ", " + ml + " ml"; },
-      stocktook: function (bags, ml) { return "Stocktake: " + bags + ", " + ml + " ml"; },
-      removed: "Entry deleted",
-      needMl: "Type how many millilitres are in a bag.",
-      needBags: "Type how many bags.",
-      dailyTitle: "Left at the end of each day",
-      weeklyTitle: "Left at the end of each week",
-      logTitle: "What has been recorded",
-      logIn: "Froze",
-      logOut: "Took out",
-      logSet: "Stocktake",
-      logLeft: function (bags, ml) { return "left: " + bags + " · " + ml + " ml"; },
-      deleteOne: "Delete this entry",
-      empty: "Nothing recorded yet. Count what is in the freezer and tap Stocktake — " +
-        "that is the whole of the setting up.",
-      help1: "The bag count and the millilitres are two separate running totals, so " +
-        "taking out a 150 ml bag when the average is 120 leaves the average where it " +
-        "should be. There is no first-in-first-out here on purpose: the freezer is a " +
-        "pile, not a queue, and the only questions this page answers are how much is " +
-        "left and how fast it is going.",
-      help2: "Nothing here leaves the phone except through the sync you already set up. " +
-        "A stocktake states the balance outright at the moment you tap it — everything " +
-        "before it is left alone, and everything after it is counted on top. That is the " +
-        "way to correct a week nobody kept up with: count the freezer, tap it once. The " +
-        "rate above counts what was recorded as taken out, so a bag a stocktake quietly " +
-        "corrected away is not in it."
+    screenTitle: "Milk stash",
+    back: "Back",
+    bags: function (n) { return n + (Math.abs(n) === 1 ? " bag" : " bags"); },
+    ml: function (n) { return n + " ml"; },
+    num: function (n) { return String(n); },
+    perBag: function (n) { return "about " + n + " ml a bag"; },
+    emptyHead: "The freezer is empty.",
+    windowLabel: "Read over",
+    windowChip: function (d) { return d + " days"; },
+    rate: function (bags, ml, days) {
+      return "Going out: " + bags + " a day, " + ml + " ml — over " +
+        (days === 1 ? "one day" : days + " days") + ".";
     },
-    ru: {
-      screenTitle: "Запасы молока",
-      back: "Назад",
-      langLabel: "Язык",
-      bags: function (n) {
-        var a = Math.abs(n);
-        return pluralRu(a, n + " пакетик", n + " пакетика", n + " пакетиков");
-      },
-      ml: function (n) { return n + " мл"; },
-      // Russian writes a decimal with a comma, the same as every other
-      // number this app shows in it.
-      num: function (n) { return String(n).replace(".", ","); },
-      perBag: function (n) { return "примерно " + n + " мл в пакетике"; },
-      emptyHead: "В морозилке пусто.",
-      windowLabel: "Считать за",
-      windowChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
-      rate: function (bags, ml, days) {
-        return "Расход: " + bags + " в день, " + ml + " мл — за " +
-          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
-      },
-      rateNone: function (days) {
-        return "За последние " + pluralRu(days, days + " день", days + " дня", days + " дней") +
-          " ничего не брали.";
-      },
-      lasts: function (days) {
-        if (days < 1) return "При таком расходе закончится сегодня.";
-        return "При таком расходе хватит ещё примерно на " +
-          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
-      },
-      negative: "Остаток ушёл в минус — значит пакетик достали, а записать забыли. " +
-        "Пересчитайте, что реально лежит, и нажмите «Сверка»: прошлое исправлять не нужно.",
-      mlLabel: "Миллилитров в пакетике",
-      bagsLabel: "Сколько пакетиков",
-      add: "➕ Заморозили",
-      use: "➖ Взяли",
-      set: "⚖️ Сверка — столько лежит сейчас",
-      added: function (bags, ml) { return "Заморозили: " + bags + ", " + ml + " мл"; },
-      used: function (bags, ml) { return "Взяли: " + bags + ", " + ml + " мл"; },
-      stocktook: function (bags, ml) { return "Сверка: " + bags + ", " + ml + " мл"; },
-      removed: "Запись удалена",
-      needMl: "Укажите, сколько миллилитров в пакетике.",
-      needBags: "Укажите, сколько пакетиков.",
-      dailyTitle: "Остаток на конец дня",
-      weeklyTitle: "Остаток на конец недели",
-      logTitle: "Что записано",
-      logIn: "Заморозили",
-      logOut: "Взяли",
-      logSet: "Сверка",
-      logLeft: function (bags, ml) { return "осталось: " + bags + " · " + ml + " мл"; },
-      deleteOne: "Удалить запись",
-      empty: "Пока ничего не записано. Пересчитайте морозилку и нажмите «Сверка» — " +
-        "на этом настройка заканчивается.",
-      help1: "Пакетики и миллилитры считаются по отдельности, поэтому взятый пакетик " +
-        "на 150 мл при среднем 120 не сдвигает среднее туда, куда не надо. FIFO здесь " +
-        "нет намеренно: морозилка — это куча, а не очередь, и страница отвечает только " +
-        "на два вопроса — сколько осталось и как быстро уходит.",
-      help2: "Никуда отсюда ничего не уходит, кроме той синхронизации, которую вы уже " +
-        "настроили. «Сверка» прямо задаёт остаток на момент нажатия: всё, что было до " +
-        "неё, остаётся как есть, всё после — считается сверху. Так и чинится неделя, " +
-        "которую никто не вёл: пересчитать морозилку и нажать один раз. Расход наверху " +
-        "считает только то, что записали как «взяли», — пакетик, который молча списала " +
-        "сверка, в него не попадёт."
-    }
+    rateNone: function (days) {
+      return "Nothing taken out in the last " + (days === 1 ? "day" : days + " days") + ".";
+    },
+    lasts: function (days) {
+      if (days < 1) return "At that rate it runs out today.";
+      return "At that rate it lasts about " +
+        (days === 1 ? "one more day" : days + " more days") + ".";
+    },
+    negative: "The count has gone below zero, so a bag left the freezer without " +
+      "being written down. Count what is actually in there and tap Stocktake — " +
+      "nothing before today has to be corrected.",
+    mlLabel: "Millilitres in a bag",
+    bagsLabel: "How many bags",
+    add: "➕ Froze it",
+    use: "➖ Took it out",
+    set: "⚖️ Stocktake — that is what is in there now",
+    added: function (bags, ml) { return "Frozen: " + bags + ", " + ml + " ml"; },
+    used: function (bags, ml) { return "Taken out: " + bags + ", " + ml + " ml"; },
+    stocktook: function (bags, ml) { return "Stocktake: " + bags + ", " + ml + " ml"; },
+    removed: "Entry deleted",
+    needMl: "Type how many millilitres are in a bag.",
+    needBags: "Type how many bags.",
+    dailyTitle: "Left at the end of each day",
+    weeklyTitle: "Left at the end of each week",
+    logTitle: "What has been recorded",
+    logIn: "Froze",
+    logOut: "Took out",
+    logSet: "Stocktake",
+    logLeft: function (bags, ml) { return "left: " + bags + " · " + ml + " ml"; },
+    deleteOne: "Delete this entry",
+    empty: "Nothing recorded yet. Count what is in the freezer and tap Stocktake — " +
+      "that is the whole of the setting up.",
+    help1: "The bag count and the millilitres are two separate running totals, so " +
+      "taking out a 150 ml bag when the average is 120 leaves the average where it " +
+      "should be. There is no first-in-first-out here on purpose: the freezer is a " +
+      "pile, not a queue, and the only questions this page answers are how much is " +
+      "left and how fast it is going.",
+    help2: "Nothing here leaves the phone except through the sync you already set up. " +
+      "A stocktake states the balance outright at the moment you tap it — everything " +
+      "before it is left alone, and everything after it is counted on top. That is the " +
+      "way to correct a week nobody kept up with: count the freezer, tap it once. The " +
+      "rate above counts what was recorded as taken out, so a bag a stocktake quietly " +
+      "corrected away is not in it."
   };
-
-  function mk() { return MILK_TEXT[uiLang] || MILK_TEXT.en; }
-
   var milk = loadMilk();
   var milkWindow = MILK_DEFAULT_WINDOW;
 
@@ -8951,7 +8874,7 @@
     touch(target);
     if (!saveMilk(milk)) return;
     renderMilk();
-    showToast(mk().removed, function () {
+    showToast(MILK_TEXT.removed, function () {
       delete target.deleted;
       target.kind = carried.kind;
       target.bags = carried.bags;
@@ -9022,7 +8945,7 @@
       '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + BARH) + '"/>');
 
     var labelEvery = Math.max(1, Math.ceil(n / 6));
-    var T = mk();
+    var T = MILK_TEXT;
     rows.forEach(function (row, i) {
       // A negative balance means a bag left unlogged. It draws as nothing
       // rather than as a bar below the rail: the hint above already names
@@ -9052,13 +8975,11 @@
   }
 
   function milkWhen(date) {
-    return (uiLang === "ru"
-      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
-      : formatDateShort(date)) + ", " + formatClockTime(date);
+    return formatDateShort(date) + ", " + formatClockTime(date);
   }
 
   function milkRow(entry) {
-    var T = mk();
+    var T = MILK_TEXT;
     var record = entry.record;
     var row = document.createElement("div");
     row.className = "milk-entry milk-entry-" + record.kind;
@@ -9114,7 +9035,7 @@
   }
 
   function submitMilk(kind) {
-    var T = mk();
+    var T = MILK_TEXT;
     var ml = readMilkNumber(el.milkMl, MAX_MILK_ML);
     var bags = readMilkNumber(el.milkBags, MAX_MILK_BAGS);
     // A stocktake of nothing is the one legitimate zero: it is how a freezer
@@ -9158,7 +9079,6 @@
       });
       el.milkWindows.appendChild(btn);
     });
-    buildLangChips(el.milkLangs);
   }
 
   function markMilkChips() {
@@ -9168,28 +9088,27 @@
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
-    var T = mk();
+    var T = MILK_TEXT;
     Array.prototype.forEach.call(el.milkWindows.children, function (btn, i) {
       var on = MILK_RATE_WINDOWS[i] === milkWindow;
       btn.textContent = T.windowChip(MILK_RATE_WINDOWS[i]);
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
-    markLangChips(el.milkLangs);
   }
 
   // The heading and the button that opens it, named in the chosen language
   // at startup too — so a screen reader has the right word for it before
   // anybody has been there.
   function applyMilkChrome() {
-    var T = mk();
+    var T = MILK_TEXT;
     el.milkTitle.textContent = T.screenTitle;
     el.milkBack.setAttribute("aria-label", T.back);
     el.milkOpenBtn.setAttribute("aria-label", T.screenTitle);
   }
 
   function renderMilkHead() {
-    var T = mk();
+    var T = MILK_TEXT;
     var balance = milkBalanceNow();
     var perBag = milkPerBag(balance);
     el.milkNowBags.textContent = T.bags(balance.bags);
@@ -9211,7 +9130,7 @@
   }
 
   function renderMilkCharts() {
-    var T = mk();
+    var T = MILK_TEXT;
     var any = liveMilk().length > 0;
     el.milkCharts.hidden = !any;
     if (!any) return;
@@ -9224,7 +9143,7 @@
   }
 
   function renderMilkLog() {
-    var T = mk();
+    var T = MILK_TEXT;
     var ledger = milkLedger();
     el.milkLog.innerHTML = "";
     el.milkLogTitle.hidden = !ledger.length;
@@ -9239,8 +9158,7 @@
   function renderMilk() {
     if (el.screenMilk.hidden) return;
     applyMilkChrome();
-    var T = mk();
-    el.milkLangLabel.textContent = T.langLabel;
+    var T = MILK_TEXT;
     el.milkWindowLabel.textContent = T.windowLabel;
     el.milkMlLabel.textContent = T.mlLabel;
     el.milkBagsLabel.textContent = T.bagsLabel;
@@ -9304,130 +9222,63 @@
   // worked out: a rating is what somebody said the day was like, and the
   // app's job is to keep it and lay it beside the other two, not to grade it.
   var JOURNAL_TEXT = {
-    en: {
-      screenTitle: "Diary",
-      back: "Back",
-      langLabel: "Language",
-      todayTitle: "How was today",
-      dayLabel: "Which day",
-      pickDay: function (when) { return "Fill in " + when; },
-      whoLabel: { baby: "Baby", mum: "Mum", dad: "Dad" },
-      // Read out by a screen reader instead of the face, which it would
-      // otherwise announce by its Unicode name.
-      faceLabel: ["a hard day", "a trying day", "an ordinary day",
-        "a good day", "a lovely day"],
-      clearRating: "no answer",
-      textLabel: "Anything worth remembering",
-      textHint: "A line is plenty. Nobody reads this but you two.",
-      save: "Save today",
-      saved: "Saved",
-      updated: "Updated",
-      removed: "Entry deleted",
-      nothing: "Nothing to save yet — tap a face, or write a line.",
-      trendTitle: "The last fortnight",
-      tallyLabel: "Count over",
-      tallyChip: function (d) { return d + " days"; },
-      // Short enough to sit on the end of the strip it belongs to. The
-      // sentence behind it is what a screen reader and a long press get.
-      tallyBadge: function (good, hard) {
-        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
-      },
-      tallyLong: function (who, good, hard, days) {
-        return who + ", over " + days + " days: " +
-          good + (good === 1 ? " good day" : " good days") + ", " +
-          hard + (hard === 1 ? " hard day" : " hard days");
-      },
-      faceOrder: "The faces run baby, mum, dad.",
-      trendEmpty: "Rate a day or two and the strip fills in.",
-      feedTitle: "Days written down",
-      feedEmpty: "Nothing written down yet.",
-      notesTitle: "Notes for a specialist",
-      notesHint: "Not about a day. A description of the bedroom, the bedtime routine, " +
-        "how feeds actually go — the things a sleep or feeding consultant asks for and " +
-        "nobody can recall on the spot. Kept where they can be read out or pasted.",
-      noteAdd: "＋ Add a note",
-      noteTitleLabel: "What it is about",
-      noteTextLabel: "The note",
-      noteSave: "Save the note",
-      noteSaved: "Note saved",
-      noteRemoved: "Note deleted",
-      noteNothing: "Give the note a name and something to say.",
-      noteEmpty: "No notes yet.",
-      cancel: "Cancel",
-      edit: "Edit",
-      deleteOne: "Delete",
-      editing: function (when) { return "Editing " + when; },
-      editingToday: "Editing today",
-      privacy: "This stays on your phones and in your own repository, like everything " +
-        "else here. It is the one part of the log nobody else has written a word of, so " +
-        "it is also the part worth thinking twice about before it goes into a summary " +
-        "for an AI — that is a switch under Settings, and it is off until you turn it on."
+    screenTitle: "Diary",
+    back: "Back",
+    todayTitle: "How was today",
+    dayLabel: "Which day",
+    pickDay: function (when) { return "Fill in " + when; },
+    whoLabel: { baby: "Baby", mum: "Mum", dad: "Dad" },
+    // Read out by a screen reader instead of the face, which it would
+    // otherwise announce by its Unicode name.
+    faceLabel: ["a hard day", "a trying day", "an ordinary day",
+      "a good day", "a lovely day"],
+    clearRating: "no answer",
+    textLabel: "Anything worth remembering",
+    textHint: "A line is plenty. Nobody reads this but you two.",
+    save: "Save today",
+    saved: "Saved",
+    updated: "Updated",
+    removed: "Entry deleted",
+    nothing: "Nothing to save yet — tap a face, or write a line.",
+    trendTitle: "The last fortnight",
+    tallyLabel: "Count over",
+    tallyChip: function (d) { return d + " days"; },
+    // Short enough to sit on the end of the strip it belongs to. The
+    // sentence behind it is what a screen reader and a long press get.
+    tallyBadge: function (good, hard) {
+      return "\u{1F60A}" + good + " · \u{1F629}" + hard;
     },
-    ru: {
-      screenTitle: "Дневник",
-      back: "Назад",
-      langLabel: "Язык",
-      todayTitle: "Как прошёл день",
-      dayLabel: "Какой день",
-      pickDay: function (when) { return "Заполнить " + when; },
-      whoLabel: { baby: "Ребёнок", mum: "Мама", dad: "Папа" },
-      faceLabel: ["тяжёлый день", "трудный день", "обычный день",
-        "хороший день", "прекрасный день"],
-      clearRating: "без ответа",
-      textLabel: "Что стоит запомнить",
-      textHint: "Хватит одной строки. Это читаете только вы двое.",
-      save: "Сохранить день",
-      saved: "Сохранено",
-      updated: "Изменено",
-      removed: "Запись удалена",
-      nothing: "Пока нечего сохранять — выберите лицо или напишите строку.",
-      trendTitle: "Последние две недели",
-      tallyLabel: "Считать за",
-      tallyChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
-      tallyBadge: function (good, hard) {
-        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
-      },
-      tallyLong: function (who, good, hard, days) {
-        return who + ", за " +
-          pluralRu(days, days + " день", days + " дня",
-            days + " дней") + ": " +
-          pluralRu(good, good + " хороший день",
-            good + " хороших дня",
-            good + " хороших дней") + ", " +
-          pluralRu(hard, hard + " тяжёлый день",
-            hard + " тяжёлых дня",
-            hard + " тяжёлых дней");
-      },
-      faceOrder: "Лица идут по порядку: ребёнок, мама, папа.",
-      trendEmpty: "Оцените день-другой, и полоса заполнится.",
-      feedTitle: "Записанные дни",
-      feedEmpty: "Пока ничего не записано.",
-      notesTitle: "Заметки для специалиста",
-      notesHint: "Это не про день. Описание спальни, ритуал засыпания, как на самом деле " +
-        "идут кормления — то, о чём спрашивает консультант по сну или по кормлению и чего " +
-        "с ходу не вспомнить. Лежит там, откуда можно зачитать или скопировать.",
-      noteAdd: "＋ Добавить заметку",
-      noteTitleLabel: "О чём заметка",
-      noteTextLabel: "Текст",
-      noteSave: "Сохранить заметку",
-      noteSaved: "Заметка сохранена",
-      noteRemoved: "Заметка удалена",
-      noteNothing: "Дайте заметке название и текст.",
-      noteEmpty: "Заметок пока нет.",
-      cancel: "Отмена",
-      edit: "Изменить",
-      deleteOne: "Удалить",
-      editing: function (when) { return "Правим " + when; },
-      editingToday: "Правим сегодняшний день",
-      privacy: "Всё это остаётся на ваших телефонах и в вашем репозитории, как и остальное. " +
-        "Это единственная часть журнала, к которой никто посторонний не приложил ни слова, — " +
-        "поэтому и подумать дважды стоит именно о ней, прежде чем она попадёт в выгрузку для " +
-        "ИИ. Это отдельный переключатель в настройках, и он выключен, пока вы его не включите."
-    }
+    tallyLong: function (who, good, hard, days) {
+      return who + ", over " + days + " days: " +
+        good + (good === 1 ? " good day" : " good days") + ", " +
+        hard + (hard === 1 ? " hard day" : " hard days");
+    },
+    faceOrder: "The faces run baby, mum, dad.",
+    trendEmpty: "Rate a day or two and the strip fills in.",
+    feedTitle: "Days written down",
+    feedEmpty: "Nothing written down yet.",
+    notesTitle: "Notes for a specialist",
+    notesHint: "Not about a day. A description of the bedroom, the bedtime routine, " +
+      "how feeds actually go — the things a sleep or feeding consultant asks for and " +
+      "nobody can recall on the spot. Kept where they can be read out or pasted.",
+    noteAdd: "＋ Add a note",
+    noteTitleLabel: "What it is about",
+    noteTextLabel: "The note",
+    noteSave: "Save the note",
+    noteSaved: "Note saved",
+    noteRemoved: "Note deleted",
+    noteNothing: "Give the note a name and something to say.",
+    noteEmpty: "No notes yet.",
+    cancel: "Cancel",
+    edit: "Edit",
+    deleteOne: "Delete",
+    editing: function (when) { return "Editing " + when; },
+    editingToday: "Editing today",
+    privacy: "This stays on your phones and in your own repository, like everything " +
+      "else here. It is the one part of the log nobody else has written a word of, so " +
+      "it is also the part worth thinking twice about before it goes into a summary " +
+      "for an AI — that is a switch under Settings, and it is off until you turn it on."
   };
-
-  function jr() { return JOURNAL_TEXT[uiLang] || JOURNAL_TEXT.en; }
-
   var journal = loadJournal();
   var journalWindow = JOURNAL_DEFAULT_WINDOW;
   // Which day the form is pointed at. Today unless somebody tapped an older
@@ -9596,7 +9447,7 @@
   // ---------- writing it down ----------
 
   function saveJournalDay() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var day = currentDay();
     var text = cleanLines(el.journalText.value, MAX_JOURNAL_TEXT);
     var scores = {};
@@ -9630,7 +9481,7 @@
   }
 
   function saveJournalNote() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var title = cleanText(el.journalNoteTitle.value, MAX_JOURNAL_TITLE);
     var text = cleanLines(el.journalNoteText.value, MAX_JOURNAL_TEXT);
     if (!title || !text) { showToast(T.noteNothing); return; }
@@ -9648,7 +9499,7 @@
   }
 
   function deleteJournalEntry(id) {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var target = journal.filter(function (e) { return e.id === id; })[0];
     if (!target) return;
     var carried = { kind: target.kind, day: target.day, title: target.title, text: target.text,
@@ -9756,11 +9607,10 @@
       });
       el.journalWindows.appendChild(btn);
     });
-    buildLangChips(el.journalLangs);
   }
 
   function markJournalFaces() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     JOURNAL_WHO.forEach(function (who) {
       el[journalLabelId(who)].textContent = T.whoLabel[who];
       Array.prototype.forEach.call(el[journalRowId(who)].children, function (btn, i) {
@@ -9777,7 +9627,6 @@
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
-    markLangChips(el.journalLangs);
   }
 
   // Fills the form from whatever is stored for the day it is pointed at, so
@@ -9794,14 +9643,11 @@
 
   function journalWhen(day) {
     var parts = String(day).split("-");
-    var date = new Date(+parts[0], +parts[1] - 1, +parts[2]);
-    return uiLang === "ru"
-      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
-      : formatDateShort(date);
+    return formatDateShort(new Date(+parts[0], +parts[1] - 1, +parts[2]));
   }
 
   function renderJournalForm() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var day = currentDay();
     var today = dayKeyOf(new Date());
     el.journalTodayTitle.textContent = day === today ? T.todayTitle : T.editing(journalWhen(day));
@@ -9819,7 +9665,7 @@
   }
 
   function renderJournalTrend() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     el.journalTrendTitle.textContent = T.trendTitle;
     el.journalTallyLabel.textContent = T.tallyLabel;
     el.journalTrend.innerHTML = "";
@@ -9875,7 +9721,7 @@
   }
 
   function journalDayRow(entry) {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var row = document.createElement("div");
     row.className = "jr-entry";
 
@@ -9925,7 +9771,7 @@
   }
 
   function journalNoteRow(entry) {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var row = document.createElement("div");
     row.className = "jr-entry jr-note";
 
@@ -9973,7 +9819,7 @@
   }
 
   function renderJournalFeed() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var days = journalDays();
     el.journalFeedTitle.hidden = !days.length;
     el.journalFeedTitle.textContent = T.feedTitle;
@@ -9988,7 +9834,7 @@
   }
 
   function renderJournalNotes() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     var notes = journalNotes();
     el.journalNotesTitle.textContent = T.notesTitle;
     el.journalNotesHint.textContent = T.notesHint;
@@ -10008,7 +9854,7 @@
   }
 
   function applyJournalChrome() {
-    var T = jr();
+    var T = JOURNAL_TEXT;
     el.journalTitle.textContent = T.screenTitle;
     el.journalBack.setAttribute("aria-label", T.back);
     el.journalOpenBtn.setAttribute("aria-label", T.screenTitle);
@@ -10017,8 +9863,7 @@
   function renderJournal() {
     if (el.screenJournal.hidden) return;
     applyJournalChrome();
-    var T = jr();
-    el.journalLangLabel.textContent = T.langLabel;
+    var T = JOURNAL_TEXT;
     el.journalPrivacy.textContent = T.privacy;
     markJournalFaces();
     renderJournalForm();

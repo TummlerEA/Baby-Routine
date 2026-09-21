@@ -234,40 +234,6 @@ function record(kind, bags, ml, daysAgo, hour) {
     JSON.parse(localStorage.getItem('baby-tracker-milk') || '[]').length);
   ok('freezing nought bags is refused', stored === 0, stored);
 
-  // ---------- read in Russian ----------
-
-  // The same switch the handover and the shopping list use, so a carer
-  // reading Russian on her phone gets this screen in it too.
-  await seed([
-    record('in', 5, 600, 6),
-    record('out', 1, 120, 2),
-    record('out', 1, 120, 1)
-  ]);
-  await page.evaluate(() => document.querySelectorAll('#milkLangs .ho-chip')[1].click());
-  await page.waitForTimeout(400);
-  const ru = await head();
-  const ruChrome = await page.evaluate(() => ({
-    heading: document.getElementById('milkTitle').textContent,
-    daily: document.getElementById('milkDailyTitle').textContent,
-    set: document.getElementById('milkSet').textContent
-  }));
-  ok('the heading is in Russian', /Запасы молока/.test(ruChrome.heading), ruChrome);
-  ok('the chart titles are too', /Остаток на конец дня/.test(ruChrome.daily), ruChrome);
-  ok('so is the stocktake button', /Сверка/.test(ruChrome.set), ruChrome);
-  // Three bags left is пакетика, not пакетиков — the middle plural form.
-  // Anchored rather than \b-bounded: \b is defined by [A-Za-z0-9_], so it
-  // never matches against a Cyrillic letter and would fail whatever is there.
-  ok('the count takes the right Russian plural', /^3 пакетика$/.test(ru.bags), ru.bags);
-  ok('a decimal is written with a comma', /0,3/.test(ru.rate), ru.rate);
-  ok('no English leaks into the Russian rate line',
-    !/\ba day\b|\bdays\b/.test(ru.rate), ru.rate);
-
-  // And back, so nothing is left switched for the checks after it.
-  await page.evaluate(() => document.querySelectorAll('#milkLangs .ho-chip')[0].click());
-  await page.waitForTimeout(300);
-  const back = await head();
-  ok('switching back returns to English', /\b3 bags\b/.test(back.bags), back.bags);
-
   // ---------- what arrives from another phone ----------
 
   // Sync and a restored backup both go through the normaliser, and what it
@@ -336,6 +302,22 @@ function record(kind, bags, ml, daysAgo, hour) {
     /Taken out of the freezer/.test(summary), summary.slice(-400));
   ok('the summary never mentions a sync token',
     !/ghp_|github_pat_|token/i.test(summary));
+
+  // ---------- one language ----------
+
+  // The handover and the shopping list are read by whoever is holding the
+  // phone, so they carry a language switch. These two are not: the rest of
+  // the app is English and a row of chips on every screen is clutter
+  // charged to every reader to serve none of them.
+  await seed([]);
+  const chrome = await page.evaluate(() => ({
+    chips: document.querySelectorAll('#screenMilk .ho-chip-lang').length,
+    label: !!document.getElementById('milkLangLabel'),
+    heading: document.getElementById('milkTitle').textContent
+  }));
+  ok('the screen offers no language switch', chrome.chips === 0, chrome);
+  ok('and has no label left behind for one', chrome.label === false, chrome);
+  ok('the heading is the English one', /Milk stash/.test(chrome.heading), chrome);
 
   // ---------- nothing threw ----------
 

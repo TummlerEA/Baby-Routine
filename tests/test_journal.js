@@ -432,21 +432,21 @@ const NOW = '2026-03-12T20:00:00Z';
   ok('the summary never carries a sync token',
     !/ghp_|github_pat_/.test(summary));
 
-  // ---------- read in Russian ----------
+  // ---------- one language ----------
 
-  await seed([{ daysAgo: 1, baby: 5, mum: 2 }]);
-  await page.evaluate(() => document.querySelectorAll('#journalLangs .ho-chip')[1].click());
-  await page.waitForTimeout(400);
-  const ru = await page.evaluate(() => ({
-    heading: document.getElementById('journalTitle').textContent,
-    today: document.getElementById('journalTodayTitle').textContent,
-    who: document.getElementById('journalLabelBaby').textContent,
-    notes: document.getElementById('journalNotesTitle').textContent
+  // The handover and the shopping list are read by whoever is holding the
+  // phone, so they carry a language switch. These two are not: the rest of
+  // the app is English and a row of chips on every screen is clutter
+  // charged to every reader to serve none of them.
+  await seed([]);
+  const chrome = await page.evaluate(() => ({
+    chips: document.querySelectorAll('#screenJournal .ho-chip-lang').length,
+    label: !!document.getElementById('journalLangLabel'),
+    heading: document.getElementById('journalTitle').textContent
   }));
-  ok('the diary heading is in Russian', /Дневник/.test(ru.heading), ru);
-  ok('so is the form', /Как прошёл день/.test(ru.today), ru);
-  ok('and the row labels', /Ребёнок/.test(ru.who), ru);
-  ok('and the notes section', /Заметки для специалиста/.test(ru.notes), ru);
+  ok('the screen offers no language switch', chrome.chips === 0, chrome);
+  ok('and has no label left behind for one', chrome.label === false, chrome);
+  ok('the heading is the English one', /Diary/.test(chrome.heading), chrome);
 
   // ---------- nothing threw ----------
 
