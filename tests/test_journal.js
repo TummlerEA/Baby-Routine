@@ -215,6 +215,12 @@ const NOW = '2026-03-12T20:00:00Z';
   ok('cancel returns the form to today', s.cancel === false, s);
   ok('cancel leaves the form empty again', s.text === '', s.text);
 
+  const todayKey = await page.evaluate(() => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  });
+
   // ---------- filling in a day that has no entry ----------
 
   // The feed only lists days somebody already wrote down, so before this
@@ -288,6 +294,111 @@ const NOW = '2026-03-12T20:00:00Z';
   await page.waitForTimeout(400);
   s = await shown();
   ok('tapping today on the strip returns the form to today', s.cancel === false, s);
+
+  // ---------- the button names the day it writes to ----------
+
+  // It said "Save today" whatever day the form was pointed at, which is the
+  // one moment somebody is most likely to be saving to the wrong one.
+  await seed([{ daysAgo: 1, baby: 3, text: 'Yesterday.' }]);
+  let label = await page.evaluate(() =>
+    document.getElementById('journalSave').textContent);
+  ok('on today the button says today', /Save today/.test(label), label);
+  await page.click('#journalFeed .jr-entry-body');
+  await page.waitForTimeout(400);
+  label = await page.evaluate(() => document.getElementById('journalSave').textContent);
+  ok('on an older day the button names that day',
+    /Save/.test(label) && !/today/.test(label), label);
+
+  // ---------- moving an entry to another day ----------
+
+  // A date typed wrongly used to mean retyping the whole entry on the right
+  // day and deleting it off the wrong one.
+  await seed([{ daysAgo: 1, baby: 2, mum: 2, text: 'Logged against the wrong day.' }]);
+  await page.click('#journalFeed .jr-entry-body');
+  await page.waitForTimeout(400);
+  const wasId = (await stored()).filter(e => !e.deleted)[0].id;
+  await page.fill('#journalDate', todayKey);
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('retargeting keeps the text that was already there',
+    /wrong day/.test(s.text), s.text);
+  ok('and the ratings', JSON.stringify(s.picked) === JSON.stringify([1, 1, -1]), s.picked);
+  ok('the heading says it is a move, not an edit', /Moving/.test(s.heading), s.heading);
+  ok('there is still a way to back out', s.cancel === true, s);
+
+  await page.click('#journalSave');
+  await page.waitForTimeout(400);
+  all = (await stored()).filter(e => !e.deleted);
+  ok('moving leaves one entry, not two', all.length === 1, all);
+  ok('it is the same record, on the new day',
+    all[0].id === wasId && all[0].day === todayKey, all[0]);
+  ok('and it kept what was written', /wrong day/.test(all[0].text), all[0]);
+  ok('no tombstone is left behind',
+    (await stored()).length === 1, await stored());
+
+  // ---------- backing out of a move ----------
+
+  await seed([{ daysAgo: 2, baby: 4, text: 'Stays where it is.' }]);
+  const stayDay = (await stored())[0].day;
+  await page.click('#journalFeed .jr-entry-body');
+  await page.waitForTimeout(400);
+  await page.fill('#journalDate', todayKey);
+  await page.waitForTimeout(400);
+  await page.click('#journalCancel');
+  await page.waitForTimeout(400);
+  all = await stored();
+  ok('cancelling a move moves nothing', all.length === 1 && all[0].day === stayDay, all);
+  s = await shown();
+  ok('and puts the form back on today', s.cancel === false, s);
+
+  // ---------- moving onto a day that is taken ----------
+
+  // Two entries on one day, or one silently overwriting the other, is not
+  // worth guessing at.
+  await seed([
+    { daysAgo: 0, baby: 5, text: 'Today already has one.' },
+    { daysAgo: 1, baby: 1, text: 'Yesterday.' }
+  ]);
+  await page.click('#journalFeed .jr-entry:nth-child(2) .jr-entry-body');
+  await page.waitForTimeout(400);
+  await page.fill('#journalDate', todayKey);
+  await page.waitForTimeout(400);
+  await page.click('#journalSave');
+  await page.waitForTimeout(400);
+  all = (await stored()).filter(e => !e.deleted);
+  ok('a clash moves nothing', all.length === 2, all);
+  ok('both days keep their own entry',
+    all.some(e => /already has one/.test(e.text || '')) &&
+    all.some(e => /Yesterday/.test(e.text || '')), all);
+  const toast = await page.evaluate(() => {
+    const el = document.getElementById('toastText');
+    return el ? el.textContent : '';
+  });
+  ok('and it says why', /already has an entry/.test(toast), toast);
+
+  // ---------- an empty form still navigates ----------
+
+  await seed([{ daysAgo: 3, baby: 5, text: 'Three days back.' }]);
+  const backDay = (await stored())[0].day;
+  await page.fill('#journalDate', backDay);
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('picking a date on an empty form opens that day',
+    /Three days back/.test(s.text), s.text);
+  ok('opening a day is not a move', !/Moving/.test(s.heading), s.heading);
+
+  // ---------- the list still navigates ----------
+
+  // The strip and the feed are a list of days, not part of the form, so
+  // tapping one there shows that day whatever is half-typed above.
+  await seed([{ daysAgo: 1, baby: 3, text: 'Yesterday as stored.' }]);
+  await page.fill('#journalText', 'half typed, never saved');
+  await page.waitForTimeout(200);
+  await page.click('#journalFeed .jr-entry-body');
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('tapping the feed shows that day rather than carrying the draft',
+    /Yesterday as stored/.test(s.text), s.text);
 
   // ---------- the tally ----------
 

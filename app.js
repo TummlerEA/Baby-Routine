@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "85";
+    var fallback = "86";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -9235,7 +9235,14 @@
     clearRating: "no answer",
     textLabel: "Anything worth remembering",
     textHint: "A line is plenty. Nobody reads this but you two.",
-    save: "Save today",
+    // The button names the day it will write to. It said "Save today" whatever
+    // day the form was pointed at, which is the one moment somebody is most
+    // likely to be saving to the wrong one.
+    save: function (when) { return "Save " + when; },
+    today: "today",
+    moving: function (from, to) { return "Moving " + from + " to " + to; },
+    moved: function (when) { return "Moved to " + when; },
+    clash: function (when) { return when + " already has an entry \u2014 open that one instead."; },
     saved: "Saved",
     updated: "Updated",
     removed: "Entry deleted",
@@ -9284,6 +9291,12 @@
   // Which day the form is pointed at. Today unless somebody tapped an older
   // entry to edit it.
   var journalDay = null;
+  // Which day the entry now in the form was loaded from, or null when the
+  // form was not loaded from a saved one. journalDay says where a save will
+  // land; this says where it came from, and the two differing is what makes
+  // a save a move. Without it, correcting a date meant typing the whole
+  // entry again on the right day and deleting it off the wrong one.
+  var journalFrom = null;
   var editingNoteId = null;
   var noteFormOpen = false;
 
@@ -9406,6 +9419,38 @@
     renderJournal();
   }
 
+  // Whether the form is holding anything somebody would mind losing.
+  function journalFormHasContent() {
+    if (cleanLines(el.journalText.value, MAX_JOURNAL_TEXT)) return true;
+    return JOURNAL_WHO.some(function (who) { return journalPicked[who] !== null; });
+  }
+
+  // The date field is part of the form, so it does not navigate away from
+  // what is in it. An empty form has nothing to lose, so picking a date
+  // simply opens that day. A form with something in it is retargeted: the
+  // ratings and the text stay put and the save lands on the new day, which
+  // is how a date entered wrongly is corrected without typing the entry out
+  // again.
+  //
+  // The strip and the feed are a list of days, not part of the form, so
+  // tapping one there still opens that day — a list that showed you
+  // yesterday's entry only when the form happened to be empty would be
+  // worse than one that discards a half-typed line.
+  function retargetFormAt(day) {
+    var today = dayKeyOf(new Date());
+    if (!SHOP_ETA_RE.test(day) || isNaN(new Date(day + "T00:00:00").getTime()) ||
+        day > today) {
+      renderJournal();
+      return;
+    }
+    if (!journalFormHasContent()) {
+      pointFormAt(day);
+      return;
+    }
+    journalDay = day === today ? null : day;
+    renderJournal();
+  }
+
   // ---------- the trend ----------
 
   // One row per person, oldest on the left, so the strip reads the way a
@@ -9456,7 +9501,14 @@
       var picked = journalPicked[who];
       if (picked !== null) { scores[who] = picked; any = true; }
     });
-    var existing = entryForDay(day);
+    var onDay = entryForDay(day);
+    // The record this form was loaded from, if it was loaded from one. When
+    // the date has since been changed it is not the one sitting on the day
+    // being saved to, and that is a move.
+    var source = journalFrom && journalFrom !== day ? entryForDay(journalFrom) : null;
+    var moving = !!source;
+    var existing = source || onDay;
+
     if (!any && !text) {
       // Clearing everything out of a day that had something in it is a
       // deletion, not a refusal — otherwise there would be no way to undo
@@ -9465,7 +9517,19 @@
       showToast(T.nothing);
       return;
     }
+    // Moving onto a day that already has its own entry would put two on one
+    // day, or silently overwrite one nobody was looking at. Neither is worth
+    // guessing at, so it says so and leaves both alone.
+    if (moving && onDay) {
+      showToast(T.clash(journalWhen(day)));
+      return;
+    }
+
     var entry = existing || { id: uuid(), kind: "day", day: day, at: new Date().toISOString() };
+    // Same record, new date: the id survives, so the other phone sees the
+    // entry it already has on a different day rather than a deletion and an
+    // arrival it has to work out are the same thing.
+    entry.day = day;
     JOURNAL_WHO.forEach(function (who) { delete entry[who]; });
     JOURNAL_WHO.forEach(function (who) {
       if (scores[who] !== undefined) entry[who] = scores[who];
@@ -9477,7 +9541,7 @@
     journalDay = null;
     loadJournalForm();
     renderJournal();
-    showToast(existing ? T.updated : T.saved);
+    showToast(moving ? T.moved(journalWhen(day)) : existing ? T.updated : T.saved);
   }
 
   function saveJournalNote() {
@@ -9634,6 +9698,7 @@
   // time rather than an empty box over the top of it.
   function loadJournalForm() {
     var entry = entryForDay(currentDay());
+    journalFrom = entry ? entry.day : null;
     JOURNAL_WHO.forEach(function (who) {
       journalPicked[who] = entry && entry[who] !== undefined ? entry[who] : null;
     });
@@ -9650,7 +9715,10 @@
     var T = JOURNAL_TEXT;
     var day = currentDay();
     var today = dayKeyOf(new Date());
-    el.journalTodayTitle.textContent = day === today ? T.todayTitle : T.editing(journalWhen(day));
+    var moving = journalFrom && journalFrom !== day;
+    el.journalTodayTitle.textContent = moving
+      ? T.moving(journalWhen(journalFrom), journalWhen(day))
+      : day === today ? T.todayTitle : T.editing(journalWhen(day));
     el.journalDateLabel.textContent = T.dayLabel;
     el.journalDate.value = day;
     // Nothing later than today is offerable, and the check in pointFormAt
@@ -9659,8 +9727,10 @@
     el.journalDate.max = today;
     el.journalTextLabel.textContent = T.textLabel;
     el.journalTextHint.textContent = T.textHint;
-    el.journalSave.textContent = T.save;
-    el.journalCancel.hidden = day === today;
+    el.journalSave.textContent = T.save(day === today ? T.today : journalWhen(day));
+    // Also while a move is staged onto today: the day is today, but there is
+    // still something to back out of.
+    el.journalCancel.hidden = day === today && !moving;
     el.journalCancel.textContent = T.cancel;
   }
 
@@ -9888,7 +9958,7 @@
     pointFormAt(dayKeyOf(new Date()));
   });
   el.journalDate.addEventListener("change", function () {
-    pointFormAt(el.journalDate.value);
+    retargetFormAt(el.journalDate.value);
   });
   el.journalNoteAdd.addEventListener("click", function () { openNoteForm(null); });
   el.journalNoteSave.addEventListener("click", saveJournalNote);
