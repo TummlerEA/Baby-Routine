@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=86">
+<link rel="stylesheet" href="style.css?v=87">
 </head>
 <body>
 
@@ -43,6 +43,10 @@
           <button class="icon-btn icon-btn-badged" id="moreOpen" aria-label="More" aria-haspopup="true" aria-expanded="false">⋯<span class="icon-badge" id="shopBadge" hidden>0</span></button>
           <div class="more-backdrop" id="moreBackdrop" hidden></div>
           <div class="more-menu" id="moreMenu" hidden>
+            <button type="button" class="more-item" id="noiseOpen">
+              <span class="more-icon">🔊</span>
+              <span class="more-label">White noise</span>
+            </button>
             <button type="button" class="more-item" id="journalOpen">
               <span class="more-icon">📔</span>
               <span class="more-label">Diary</span>
@@ -955,6 +959,52 @@
     </main>
   </div>
 
+  <!-- ============ white noise ============ -->
+  <div class="screen" id="screenNoise" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="noiseBack" aria-label="Back">←</button>
+      <span class="topbar-heading">White noise</span>
+    </header>
+
+    <main class="content">
+
+      <section>
+        <button type="button" class="nz-play" id="noisePlay">
+          <span class="nz-play-icon" id="noisePlayIcon">▶</span>
+          <span class="nz-play-body">
+            <span class="nz-play-label" id="noisePlayLabel">Play</span>
+            <span class="nz-play-note" id="noisePlayNote">—</span>
+          </span>
+        </button>
+      </section>
+
+      <section class="data-panel">
+        <div class="nz-label">Sound</div>
+        <div class="nz-chips" id="noiseSounds"></div>
+        <div class="nz-label">Volume</div>
+        <div class="nz-chips" id="noiseLevels"></div>
+        <div class="nz-label">Stop after</div>
+        <div class="nz-chips" id="noiseTimers"></div>
+      </section>
+
+      <section class="data-panel">
+        <label class="settings-check">
+          <input type="checkbox" id="noiseAuto">
+          <span class="settings-label">Start it when I log a <strong>sleep</strong></span>
+        </label>
+        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark.</p>
+      </section>
+
+      <section class="data-panel">
+        <p class="data-hint">The sound is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button.</p>
+        <p class="data-hint">These settings belong to this phone. They are not synced, exported or shared, because the right sound and volume depend on the room.</p>
+        <p class="data-hint" id="noiseSilentHint">On an iPhone the ring/silent switch has to be on, or the phone plays nothing.</p>
+      </section>
+
+    </main>
+  </div>
+
   <!-- ============ milk stash screen ============ -->
   <div class="screen" id="screenMilk" hidden>
 
@@ -1302,13 +1352,20 @@
     </main>
   </div>
 
+  <button type="button" class="noise-fab" id="noiseFab" aria-label="White noise">
+    <span class="noise-fab-icon" id="noiseFabIcon">🔊</span>
+    <span class="noise-fab-left" id="noiseFabLeft" hidden></span>
+  </button>
+
 </div>
+
+<audio id="noisePlayer" playsinline preload="none"></audio>
 
 <div class="toast" id="toast" hidden>
   <span id="toastText"></span>
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=86"></script>
+<script src="app.js?v=87"></script>
 </body>
 </html>

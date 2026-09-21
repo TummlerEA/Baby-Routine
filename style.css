@@ -3100,3 +3100,128 @@ body {
   min-width: 44px;
 }
 .jr-del:active { opacity: 0.6; }
+
+/* ---------- white noise ---------- */
+
+/* The night shortcut. Fixed to the bottom corner rather than placed in the
+   layout: at 3am the phone is held in one hand and the thumb reaches the
+   bottom of the screen, not the row of icons at the top. Dimmed to an
+   outline while it is off so that a button which is usually doing nothing
+   does not compete with the three that log things. */
+.noise-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(18px + var(--safe-bottom));
+  z-index: 40;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  opacity: 0.55;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.15s ease;
+}
+
+.noise-fab:active { transform: scale(0.94); }
+
+.noise-fab.playing {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--accent-sleep);
+  background: #241f3d;
+}
+
+.noise-fab-icon { font-size: 22px; line-height: 1; }
+
+.noise-fab.playing .noise-fab-icon { font-size: 19px; }
+
+.noise-fab-left {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-sleep);
+  letter-spacing: 0.02em;
+}
+
+/* Room for the button to sit over, so the last control on a screen is never
+   the thing underneath it. */
+.app { padding-bottom: calc(92px + var(--safe-bottom)); }
+
+.nz-play {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nz-play:active { opacity: 0.75; }
+
+.nz-play.playing {
+  border-color: var(--accent-sleep);
+  background: #241f3d;
+}
+
+.nz-play-icon { font-size: 26px; line-height: 1; }
+
+.nz-play-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.nz-play-label { font-size: 18px; font-weight: 700; }
+
+.nz-play-note { font-size: 13px; color: var(--text-dim); }
+
+.nz-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin: 14px 0 8px;
+}
+
+.nz-label:first-child { margin-top: 0; }
+
+.nz-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.nz-chip {
+  flex: 1 1 auto;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-2);
+  color: var(--text-dim);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.nz-chip.on {
+  border-color: var(--accent-sleep);
+  background: #241f3d;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nz-chip-note { font-size: 11px; color: var(--text-faint); }
+
+.nz-chip.on .nz-chip-note { color: var(--text-dim); }
