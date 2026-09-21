@@ -130,8 +130,8 @@
     ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
   // What shape of entry this build can hold — not which release it is. Bumped
   // by one only when a field is added that an older copy has never heard of;
-  // fedMl in v72 was the last, and the releases either side of it leave this
-  // alone.
+  // the diary in v83 was the last, and the releases either side of it leave
+  // this alone.
   //
   // It is here to stop an out-of-date phone writing over a newer one's work.
   // normaliseImported rebuilds every entry field by field and drops whatever it
@@ -144,7 +144,7 @@
   // and writes nothing to it, and says why. Half-reading it would put stripped
   // entries on this phone with their timestamps untouched, which no later
   // update could tell from the real thing.
-  var DOC_FORMAT = 2;
+  var DOC_FORMAT = 4;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
   var SYNC_RETRIES = 3;
@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "81";
+    var fallback = "83";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -459,6 +459,78 @@
   // it once, the app clears it if the status ever moves off "ordered", so
   // a later re-order can't inherit a stale date left over from a first one.
   var SHOP_ETA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  // ---------- the diary of how it felt ----------
+
+  // The only subjective thing the app records. Everything else in it is a
+  // fact somebody tapped — a feed happened, a bag came out of the freezer —
+  // and none of that says whether the day was survivable. Two shapes of
+  // record share one list: a dated entry, which carries a line of text and
+  // up to three ratings, and a standing note, which is not about a day at
+  // all but about a room or a bedtime routine and stays pinned where a sleep
+  // or feeding consultant can be shown it.
+  var JOURNAL_KEY = "baby-tracker-journal";
+  var JOURNAL_KINDS = ["day", "note"];
+  // Long enough for a description of a bedroom, which is the longest thing
+  // anybody has a reason to put here.
+  var MAX_JOURNAL_TEXT = 2000;
+  var MAX_JOURNAL_TITLE = 60;
+  // Who a day can be rated for. The baby is the obvious one; the other two
+  // are the point of the exercise, because nothing else in this app has ever
+  // asked how the parents are.
+  var JOURNAL_WHO = ["baby", "mum", "dad"];
+  // 1 is the hardest day and 5 the easiest, on one scale for all three —
+  // three different scales could not be laid beside each other, and laying
+  // them beside each other is the whole reason to keep them.
+  var JOURNAL_FACES = ["\uD83D\uDE2D", "\uD83D\uDE23", "\uD83D\uDE10", "\uD83D\uDE42", "\uD83D\uDE04"];
+  // Where a day stops being ordinary in either direction. Deliberately not
+  // the midpoint: 3 is "it was a day", and counting it as either good or
+  // hard would make both tallies meaningless.
+  var JOURNAL_GOOD = 4;
+  var JOURNAL_HARD = 2;
+  var JOURNAL_TREND_DAYS = 14;
+  var JOURNAL_TALLY_WINDOWS = [7, 14, 30];
+  var JOURNAL_DEFAULT_WINDOW = 14;
+  var JOURNAL_FEED_ROWS = 30;
+  // How much of the diary rides in the AI summary. Capped rather than
+  // complete: the summary has to stay short enough to paste, and the tallies
+  // above it carry the shape of a month that five entries cannot.
+  var JOURNAL_AI_ENTRIES = 5;
+  var JOURNAL_AI_CHARS = 280;
+  var JOURNAL_AI_NOTES = 3;
+  var JOURNAL_AI_NOTE_CHARS = 500;
+
+  // ---------- the freezer ----------
+
+  // Not a list of bags but a ledger of movements, which is what lets the
+  // chart answer "how much was in the freezer three weeks ago" without
+  // storing a row per bag per day. Three kinds, and the third is the one
+  // that makes the other two safe to get wrong: a stocktake states the
+  // balance outright at that moment, so a miscounted week is corrected by
+  // counting the freezer rather than by hunting for the entry that was
+  // missed.
+  var MILK_KEY = "baby-tracker-milk";
+  var MILK_KINDS = ["in", "out", "set"];
+  // A bag, not a bottle. The top of the range is generous on purpose: some
+  // people freeze into 250 ml pots, and a cap that rejects what somebody
+  // actually has in the freezer is a cap that teaches them to lie to it.
+  var MAX_MILK_ML = 400;
+  var MAX_MILK_BAGS = 99;
+  // The sizes the bags themselves are sold in, so the usual case is one tap.
+  var MILK_ML_CHOICES = [60, 80, 100, 120, 150, 180, 200, 250];
+  var MILK_DEFAULT_ML = 120;
+  // How many days back the two charts reach. Fourteen bars is the most that
+  // still reads on a phone — the same limit the statistics screen found.
+  var MILK_CHART_DAYS = 14;
+  var MILK_CHART_WEEKS = 10;
+  // Which windows the rate can be read over. Three days is this week's
+  // appetite, seven is the settled figure, five is there because the honest
+  // answer often sits between them.
+  var MILK_RATE_WINDOWS = [3, 5, 7];
+  var MILK_DEFAULT_WINDOW = 7;
+  // How much of the log the page shows before it stops. Enough to check a
+  // week's entries and correct one; the whole ledger is in the backup.
+  var MILK_LOG_ROWS = 30;
 
   var ROTA_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   var ROTA_DEFAULT_HOURS = 6;
@@ -1217,16 +1289,20 @@
     try {
       var raw = localStorage.getItem(AI_KEY);
       var parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || typeof parsed !== "object") return { on: false, name: false };
-      return { on: parsed.on === true, name: parsed.name === true };
+      if (!parsed || typeof parsed !== "object") {
+        return { on: false, name: false, journal: false };
+      }
+      return { on: parsed.on === true, name: parsed.name === true,
+        journal: parsed.journal === true };
     } catch (e) {
-      return { on: false, name: false };
+      return { on: false, name: false, journal: false };
     }
   }
 
   function saveAiPrefs(prefs) {
     try {
-      localStorage.setItem(AI_KEY, JSON.stringify({ on: !!prefs.on, name: !!prefs.name }));
+      localStorage.setItem(AI_KEY, JSON.stringify({ on: !!prefs.on, name: !!prefs.name,
+        journal: !!prefs.journal }));
     } catch (e) {
       showError("Couldn't save that setting");
     }
@@ -1346,6 +1422,8 @@
     var shopRetired = retireBoughtShopping();
     var shopPruned = pruneShopTombstones();
     if (shopRetired || shopPruned) saveShopping(shopping);
+    if (pruneMilkTombstones()) saveMilk(milk);
+    if (pruneJournalTombstones()) saveJournal(journal);
     if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
   }
   var intervals = loadIntervals();
@@ -1490,6 +1568,77 @@
     shopList: document.getElementById("shopList"),
     shopQuiet: document.getElementById("shopQuiet"),
     shopAmazonNote: document.getElementById("shopAmazonNote"),
+    screenMilk: document.getElementById("screenMilk"),
+    milkOpenBtn: document.getElementById("milkOpen"),
+    milkBack: document.getElementById("milkBack"),
+    milkTitle: document.getElementById("milkTitle"),
+    milkLangLabel: document.getElementById("milkLangLabel"),
+    milkLangs: document.getElementById("milkLangs"),
+    milkNowBags: document.getElementById("milkNowBags"),
+    milkNowMl: document.getElementById("milkNowMl"),
+    milkAvg: document.getElementById("milkAvg"),
+    milkWarn: document.getElementById("milkWarn"),
+    milkWindowLabel: document.getElementById("milkWindowLabel"),
+    milkWindows: document.getElementById("milkWindows"),
+    milkRate: document.getElementById("milkRate"),
+    milkMlLabel: document.getElementById("milkMlLabel"),
+    milkMl: document.getElementById("milkMl"),
+    milkMlChips: document.getElementById("milkMlChips"),
+    milkBagsLabel: document.getElementById("milkBagsLabel"),
+    milkBags: document.getElementById("milkBags"),
+    milkAdd: document.getElementById("milkAdd"),
+    milkUse: document.getElementById("milkUse"),
+    milkSet: document.getElementById("milkSet"),
+    milkCharts: document.getElementById("milkCharts"),
+    milkDailyTitle: document.getElementById("milkDailyTitle"),
+    milkDailyChart: document.getElementById("milkDailyChart"),
+    milkWeeklyTitle: document.getElementById("milkWeeklyTitle"),
+    milkWeeklyChart: document.getElementById("milkWeeklyChart"),
+    milkLogTitle: document.getElementById("milkLogTitle"),
+    milkLog: document.getElementById("milkLog"),
+    milkEmpty: document.getElementById("milkEmpty"),
+    milkHelp1: document.getElementById("milkHelp1"),
+    milkHelp2: document.getElementById("milkHelp2"),
+    screenJournal: document.getElementById("screenJournal"),
+    journalOpenBtn: document.getElementById("journalOpen"),
+    journalBack: document.getElementById("journalBack"),
+    journalTitle: document.getElementById("journalTitle"),
+    journalLangLabel: document.getElementById("journalLangLabel"),
+    journalLangs: document.getElementById("journalLangs"),
+    journalTodayTitle: document.getElementById("journalTodayTitle"),
+    journalLabelBaby: document.getElementById("journalLabelBaby"),
+    journalRowBaby: document.getElementById("journalRowBaby"),
+    journalLabelMum: document.getElementById("journalLabelMum"),
+    journalRowMum: document.getElementById("journalRowMum"),
+    journalLabelDad: document.getElementById("journalLabelDad"),
+    journalRowDad: document.getElementById("journalRowDad"),
+    journalTextLabel: document.getElementById("journalTextLabel"),
+    journalText: document.getElementById("journalText"),
+    journalTextHint: document.getElementById("journalTextHint"),
+    journalSave: document.getElementById("journalSave"),
+    journalCancel: document.getElementById("journalCancel"),
+    journalTrendTitle: document.getElementById("journalTrendTitle"),
+    journalTrend: document.getElementById("journalTrend"),
+    journalTrendEmpty: document.getElementById("journalTrendEmpty"),
+    journalTallyLabel: document.getElementById("journalTallyLabel"),
+    journalWindows: document.getElementById("journalWindows"),
+    journalFeedTitle: document.getElementById("journalFeedTitle"),
+    journalFeedOrder: document.getElementById("journalFeedOrder"),
+    journalFeed: document.getElementById("journalFeed"),
+    journalFeedEmpty: document.getElementById("journalFeedEmpty"),
+    journalNotesTitle: document.getElementById("journalNotesTitle"),
+    journalNotesHint: document.getElementById("journalNotesHint"),
+    journalNoteAdd: document.getElementById("journalNoteAdd"),
+    journalNoteForm: document.getElementById("journalNoteForm"),
+    journalNoteTitleLabel: document.getElementById("journalNoteTitleLabel"),
+    journalNoteTitle: document.getElementById("journalNoteTitle"),
+    journalNoteTextLabel: document.getElementById("journalNoteTextLabel"),
+    journalNoteText: document.getElementById("journalNoteText"),
+    journalNoteSave: document.getElementById("journalNoteSave"),
+    journalNoteCancel: document.getElementById("journalNoteCancel"),
+    journalNotes: document.getElementById("journalNotes"),
+    journalNotesEmpty: document.getElementById("journalNotesEmpty"),
+    journalPrivacy: document.getElementById("journalPrivacy"),
     handoverWho: document.getElementById("handoverWho"),
     handoverWhen: document.getElementById("handoverWhen"),
     handoverHours: document.getElementById("handoverHours"),
@@ -1570,6 +1719,7 @@
     aiCopy: document.getElementById("aiCopy"),
     aiEnabled: document.getElementById("aiEnabled"),
     aiUseName: document.getElementById("aiUseName"),
+    aiUseJournal: document.getElementById("aiUseJournal"),
     settingsOpenBtn: document.getElementById("settingsOpen"),
     settingsBack: document.getElementById("settingsBack"),
     babyNameDisplay: document.getElementById("babyNameDisplay"),
@@ -1765,6 +1915,22 @@
 
   function cleanText(value, limit) {
     return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, limit);
+  }
+
+  // cleanText flattens a paragraph into one line, which is right for a name
+  // or a shopping item and wrong for a description of a bedroom. This keeps
+  // the line breaks and nothing else: spaces and tabs collapse, a run of
+  // blank lines becomes one, and trailing space on a line goes. Everything
+  // is still put on screen through textContent, so nothing kept here can
+  // change how the text around it is read.
+  function cleanLines(value, limit) {
+    return String(value == null ? "" : value)
+      .replace(/\r\n?/g, "\n")
+      .replace(/[^\S\n]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, limit);
   }
 
   function measureLabelOf(event) {
@@ -4369,7 +4535,8 @@
     // guard on events because that is all they contain, but a family with
     // appointments or a shopping list and nothing logged yet still has
     // something worth saving here.
-    if (!liveEvents().length && !livePlans().length && !liveShopping().length && !liveRotaShifts().length) {
+    if (!liveEvents().length && !livePlans().length && !liveShopping().length &&
+        !liveRotaShifts().length && !liveMilk().length && !liveJournal().length) {
       showToast("Nothing to export yet");
       return;
     }
@@ -4385,6 +4552,8 @@
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
+      milk: milk,
+      journal: journal,
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
@@ -4617,12 +4786,21 @@
     return out;
   }
 
+  // The lists a backup carries alongside the entries. A backup may hold
+  // none of the latter at all — the export guard has always allowed one
+  // carrying only the diary, the shopping list, the rota or the freezer —
+  // and until the freezer arrived nobody had tried restoring such a file to
+  // notice it was refused on the way back in.
+  var BACKUP_LISTS = ["plans", "shopping", "rotaShifts", "milk", "journal"];
+
   function parseJsonImport(text) {
     try {
       var parsed = JSON.parse(text);
       if (Array.isArray(parsed)) return parsed;
-      if (parsed && Array.isArray(parsed.events)) return parsed.events;
-      return null;
+      if (!parsed || typeof parsed !== "object") return null;
+      if (Array.isArray(parsed.events)) return parsed.events;
+      var carries = BACKUP_LISTS.some(function (key) { return Array.isArray(parsed[key]); });
+      return carries ? [] : null;
     } catch (e) {
       return null;
     }
@@ -4734,6 +4912,15 @@
       saveRotaShifts(rotaShifts);
       renderRotaBanner();
       renderRotaWeek();
+    }
+    if (Array.isArray(parsed.milk) && mergeMilk(parsed.milk)) {
+      saveMilk(milk);
+      renderMilk();
+    }
+    if (Array.isArray(parsed.journal) && mergeJournal(parsed.journal)) {
+      saveJournal(journal);
+      loadJournalForm();
+      renderJournal();
     }
   }
 
@@ -4894,6 +5081,13 @@
       return;
     }
     if (isJson) applyBackupSettings(clean);
+    // Everything in a file with no entries has already been taken by the
+    // line above. Running the entry merge over an empty list would answer
+    // "Added 0 entries" on top of work it had nothing to do with.
+    if (isJson && !list.length) {
+      showToast("Backup restored");
+      return;
+    }
     mergeImported(list);
   }
 
@@ -4953,6 +5147,8 @@
     el.screenLeaps.hidden = name !== "leaps";
     el.screenHandover.hidden = name !== "handover";
     el.screenShop.hidden = name !== "shop";
+    el.screenMilk.hidden = name !== "milk";
+    el.screenJournal.hidden = name !== "journal";
     el.screenRota.hidden = name !== "rota";
     el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
@@ -5457,7 +5653,9 @@
       events: events,
       plans: plans,
       shopping: shopping,
-      rotaShifts: rotaShifts
+      rotaShifts: rotaShifts,
+      milk: milk,
+      journal: journal
     };
   }
 
@@ -5598,6 +5796,12 @@
       var remoteRotaShifts = Array.isArray(remoteDoc.rotaShifts) ? remoteDoc.rotaShifts : [];
       var pulledRotaShifts = mergeRotaShifts(remoteRotaShifts);
       if (pulledRotaShifts) saveRotaShifts(rotaShifts);
+      var remoteMilk = Array.isArray(remoteDoc.milk) ? remoteDoc.milk : [];
+      var pulledMilk = mergeMilk(remoteMilk);
+      if (pulledMilk) saveMilk(milk);
+      var remoteJournal = Array.isArray(remoteDoc.journal) ? remoteDoc.journal : [];
+      var pulledJournal = mergeJournal(remoteJournal);
+      if (pulledJournal) saveJournal(journal);
 
       var remoteMeta = remoteDoc.meta;
       applyingRemote = true;
@@ -5638,6 +5842,8 @@
       if (pulledPlans) renderPlans();
       if (pulledShopping) renderShopping();
       if (pulledRotaShifts) { renderRotaBanner(); renderRotaWeek(); }
+      if (pulledMilk) renderMilk();
+      if (pulledJournal) { loadJournalForm(); renderJournal(); }
       if (pulled || pulledVoice || remoteMeta) renderAll();
 
       // Drop what has aged out before comparing, so the cleaned-up log is
@@ -5649,13 +5855,17 @@
       var shopPruned = pruneShopTombstones();
       if (shopRetired || shopPruned) saveShopping(shopping);
       if (pruneRotaShiftTombstones()) saveRotaShifts(rotaShifts);
+      if (pruneMilkTombstones()) saveMilk(milk);
+      if (pruneJournalTombstones()) saveJournal(journal);
 
       var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
         remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
-        remoteRotaShifts.some(tombstoneExpired);
+        remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired) ||
+        remoteJournal.some(tombstoneExpired);
       var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
         remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
-        remoteMissesOurRotaShifts(remoteRotaShifts) ||
+        remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
+        remoteMissesOurJournal(remoteJournal) ||
         metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
       if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
@@ -7704,6 +7914,10 @@
         saveUiLang(lang.id);
         renderHandover();
         renderShopping();
+        applyMilkChrome();
+        renderMilk();
+        applyJournalChrome();
+        renderJournal();
       });
       container.appendChild(btn);
     });
@@ -8434,6 +8648,1425 @@
     });
   });
 
+  // ---------- what is in the freezer ----------
+
+  // Structurally the shopping list again — records with an id, an updatedAt
+  // and a tombstone, merged last-write-wins and carried in the same synced
+  // document. What it stores is a ledger rather than a list: three kinds of
+  // movement, from which the balance on any past day can be worked out. No
+  // bag is tracked individually, so there is no FIFO to keep honest and no
+  // bag left half-used in the data when the real one went in the bin.
+  var MILK_TEXT = {
+    en: {
+      screenTitle: "Milk stash",
+      back: "Back",
+      langLabel: "Language",
+      bags: function (n) { return n + (Math.abs(n) === 1 ? " bag" : " bags"); },
+      ml: function (n) { return n + " ml"; },
+      num: function (n) { return String(n); },
+      perBag: function (n) { return "about " + n + " ml a bag"; },
+      emptyHead: "The freezer is empty.",
+      windowLabel: "Read over",
+      windowChip: function (d) { return d + " days"; },
+      rate: function (bags, ml, days) {
+        return "Going out: " + bags + " a day, " + ml + " ml — over " +
+          (days === 1 ? "one day" : days + " days") + ".";
+      },
+      rateNone: function (days) {
+        return "Nothing taken out in the last " + (days === 1 ? "day" : days + " days") + ".";
+      },
+      lasts: function (days) {
+        if (days < 1) return "At that rate it runs out today.";
+        return "At that rate it lasts about " +
+          (days === 1 ? "one more day" : days + " more days") + ".";
+      },
+      negative: "The count has gone below zero, so a bag left the freezer without " +
+        "being written down. Count what is actually in there and tap Stocktake — " +
+        "nothing before today has to be corrected.",
+      mlLabel: "Millilitres in a bag",
+      bagsLabel: "How many bags",
+      add: "➕ Froze it",
+      use: "➖ Took it out",
+      set: "⚖️ Stocktake — that is what is in there now",
+      added: function (bags, ml) { return "Frozen: " + bags + ", " + ml + " ml"; },
+      used: function (bags, ml) { return "Taken out: " + bags + ", " + ml + " ml"; },
+      stocktook: function (bags, ml) { return "Stocktake: " + bags + ", " + ml + " ml"; },
+      removed: "Entry deleted",
+      needMl: "Type how many millilitres are in a bag.",
+      needBags: "Type how many bags.",
+      dailyTitle: "Left at the end of each day",
+      weeklyTitle: "Left at the end of each week",
+      logTitle: "What has been recorded",
+      logIn: "Froze",
+      logOut: "Took out",
+      logSet: "Stocktake",
+      logLeft: function (bags, ml) { return "left: " + bags + " · " + ml + " ml"; },
+      deleteOne: "Delete this entry",
+      empty: "Nothing recorded yet. Count what is in the freezer and tap Stocktake — " +
+        "that is the whole of the setting up.",
+      help1: "The bag count and the millilitres are two separate running totals, so " +
+        "taking out a 150 ml bag when the average is 120 leaves the average where it " +
+        "should be. There is no first-in-first-out here on purpose: the freezer is a " +
+        "pile, not a queue, and the only questions this page answers are how much is " +
+        "left and how fast it is going.",
+      help2: "Nothing here leaves the phone except through the sync you already set up. " +
+        "A stocktake states the balance outright at the moment you tap it — everything " +
+        "before it is left alone, and everything after it is counted on top. That is the " +
+        "way to correct a week nobody kept up with: count the freezer, tap it once. The " +
+        "rate above counts what was recorded as taken out, so a bag a stocktake quietly " +
+        "corrected away is not in it."
+    },
+    ru: {
+      screenTitle: "Запасы молока",
+      back: "Назад",
+      langLabel: "Язык",
+      bags: function (n) {
+        var a = Math.abs(n);
+        return pluralRu(a, n + " пакетик", n + " пакетика", n + " пакетиков");
+      },
+      ml: function (n) { return n + " мл"; },
+      // Russian writes a decimal with a comma, the same as every other
+      // number this app shows in it.
+      num: function (n) { return String(n).replace(".", ","); },
+      perBag: function (n) { return "примерно " + n + " мл в пакетике"; },
+      emptyHead: "В морозилке пусто.",
+      windowLabel: "Считать за",
+      windowChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
+      rate: function (bags, ml, days) {
+        return "Расход: " + bags + " в день, " + ml + " мл — за " +
+          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
+      },
+      rateNone: function (days) {
+        return "За последние " + pluralRu(days, days + " день", days + " дня", days + " дней") +
+          " ничего не брали.";
+      },
+      lasts: function (days) {
+        if (days < 1) return "При таком расходе закончится сегодня.";
+        return "При таком расходе хватит ещё примерно на " +
+          pluralRu(days, days + " день", days + " дня", days + " дней") + ".";
+      },
+      negative: "Остаток ушёл в минус — значит пакетик достали, а записать забыли. " +
+        "Пересчитайте, что реально лежит, и нажмите «Сверка»: прошлое исправлять не нужно.",
+      mlLabel: "Миллилитров в пакетике",
+      bagsLabel: "Сколько пакетиков",
+      add: "➕ Заморозили",
+      use: "➖ Взяли",
+      set: "⚖️ Сверка — столько лежит сейчас",
+      added: function (bags, ml) { return "Заморозили: " + bags + ", " + ml + " мл"; },
+      used: function (bags, ml) { return "Взяли: " + bags + ", " + ml + " мл"; },
+      stocktook: function (bags, ml) { return "Сверка: " + bags + ", " + ml + " мл"; },
+      removed: "Запись удалена",
+      needMl: "Укажите, сколько миллилитров в пакетике.",
+      needBags: "Укажите, сколько пакетиков.",
+      dailyTitle: "Остаток на конец дня",
+      weeklyTitle: "Остаток на конец недели",
+      logTitle: "Что записано",
+      logIn: "Заморозили",
+      logOut: "Взяли",
+      logSet: "Сверка",
+      logLeft: function (bags, ml) { return "осталось: " + bags + " · " + ml + " мл"; },
+      deleteOne: "Удалить запись",
+      empty: "Пока ничего не записано. Пересчитайте морозилку и нажмите «Сверка» — " +
+        "на этом настройка заканчивается.",
+      help1: "Пакетики и миллилитры считаются по отдельности, поэтому взятый пакетик " +
+        "на 150 мл при среднем 120 не сдвигает среднее туда, куда не надо. FIFO здесь " +
+        "нет намеренно: морозилка — это куча, а не очередь, и страница отвечает только " +
+        "на два вопроса — сколько осталось и как быстро уходит.",
+      help2: "Никуда отсюда ничего не уходит, кроме той синхронизации, которую вы уже " +
+        "настроили. «Сверка» прямо задаёт остаток на момент нажатия: всё, что было до " +
+        "неё, остаётся как есть, всё после — считается сверху. Так и чинится неделя, " +
+        "которую никто не вёл: пересчитать морозилку и нажать один раз. Расход наверху " +
+        "считает только то, что записали как «взяли», — пакетик, который молча списала " +
+        "сверка, в него не попадёт."
+    }
+  };
+
+  function mk() { return MILK_TEXT[uiLang] || MILK_TEXT.en; }
+
+  var milk = loadMilk();
+  var milkWindow = MILK_DEFAULT_WINDOW;
+
+  function loadMilk() {
+    try {
+      var raw = localStorage.getItem(MILK_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read the milk stash");
+      return [];
+    }
+  }
+
+  function saveMilk(list) {
+    try {
+      localStorage.setItem(MILK_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
+    }
+  }
+
+  // Anything arriving from another phone or a file, made safe to store. A
+  // stocktake is the one kind allowed to be zero: "there is nothing left" is
+  // a real thing to record, where "froze nothing" is not.
+  function normaliseMilkRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var at = new Date(String(raw.at || "").trim().replace(" ", "T"));
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    var record = { id: id };
+    if (raw.deleted) {
+      record.deleted = true;
+      record.at = isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString();
+      record.updatedAt = isNaN(stamped.getTime()) ? record.at : stamped.toISOString();
+      return record;
+    }
+    if (isNaN(at.getTime())) return null;
+    if (MILK_KINDS.indexOf(String(raw.kind)) < 0) return null;
+    var bags = Math.round(Number(raw.bags));
+    var ml = Math.round(Number(raw.ml));
+    if (!isFinite(bags) || !isFinite(ml)) return null;
+    if (bags < 0 || ml < 0) return null;
+    if (bags > MAX_MILK_BAGS || ml > MAX_MILK_BAGS * MAX_MILK_ML) return null;
+    if (raw.kind !== "set" && (bags < 1 || ml < 1)) return null;
+    record.kind = String(raw.kind);
+    record.bags = bags;
+    record.ml = ml;
+    record.at = at.toISOString();
+    record.updatedAt = isNaN(stamped.getTime()) ? record.at : stamped.toISOString();
+    return record;
+  }
+
+  function liveMilk() {
+    return milk.filter(function (r) { return !isDeleted(r); });
+  }
+
+  function sortedMilk() {
+    return liveMilk().slice().sort(function (a, b) {
+      return a.at > b.at ? 1 : a.at < b.at ? -1 : 0;
+    });
+  }
+
+  // The whole of the arithmetic. Walking forward and letting a stocktake
+  // overwrite the running total is what makes a stocktake a correction
+  // rather than one more movement to reconcile: everything before it stops
+  // mattering the moment it is passed.
+  function milkBalanceFrom(list, ms) {
+    var bags = 0, ml = 0;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (+new Date(r.at) > ms) break;
+      if (r.kind === "set") { bags = r.bags; ml = r.ml; }
+      else if (r.kind === "out") { bags -= r.bags; ml -= r.ml; }
+      else { bags += r.bags; ml += r.ml; }
+    }
+    return { bags: bags, ml: ml };
+  }
+
+  function milkBalanceNow() {
+    return milkBalanceFrom(sortedMilk(), Date.now());
+  }
+
+  // Millilitres per bag, as the freezer actually stands — not an average of
+  // what was typed, which would drift the moment a big bag went out.
+  function milkPerBag(balance) {
+    if (!balance.bags || balance.ml <= 0) return 0;
+    return Math.round(balance.ml / balance.bags);
+  }
+
+  // Calendar days, built with new Date(y, m, d + n) rather than millisecond
+  // offsets — a week of milliseconds across a clock change lands an hour out
+  // and puts a movement in the wrong bucket.
+  function endOfDayMs(date) {
+    return +new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1) - 1;
+  }
+
+  function milkBalanceRows(count, step) {
+    var list = sortedMilk();
+    var today = new Date();
+    var rows = [];
+    for (var i = count - 1; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i * step);
+      var at = milkBalanceFrom(list, endOfDayMs(d));
+      rows.push({ date: d, bags: at.bags, ml: at.ml });
+    }
+    return rows;
+  }
+
+  // How fast it is going. Averaged over the window asked for, but never over
+  // more days than the log has been kept — a freezer first counted on Tuesday
+  // has not been quietly emptying itself since the previous Wednesday.
+  //
+  // Deliberately the opposite of the way daytime sleep is averaged, where a
+  // day with nothing logged is dropped. Here a day with nothing taken out is
+  // real information: nobody needed a bag.
+  function milkRate(days) {
+    var list = sortedMilk();
+    if (!list.length) return null;
+    var today = new Date();
+    var midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var from = +new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + 1);
+    var first = new Date(list[0].at);
+    var firstDay = new Date(first.getFullYear(), first.getMonth(), first.getDate());
+    var span = days;
+    if (+firstDay > from) span = Math.round((+midnight - +firstDay) / MS_DAY) + 1;
+    if (span < 1) span = 1;
+    var bags = 0, ml = 0;
+    list.forEach(function (r) {
+      if (r.kind !== "out" || +new Date(r.at) < from) return;
+      bags += r.bags;
+      ml += r.ml;
+    });
+    return { days: span, bags: bags / span, ml: ml / span, anyOut: ml > 0 || bags > 0 };
+  }
+
+  function milkDaysLeft(balance, rate) {
+    if (!rate || !rate.ml || balance.ml <= 0) return null;
+    return Math.floor(balance.ml / rate.ml);
+  }
+
+  function addMilkRecord(kind, bags, ml) {
+    var record = { id: uuid(), kind: kind, bags: bags, ml: ml, at: new Date().toISOString() };
+    touch(record);
+    milk.push(record);
+    if (!saveMilk(milk)) return null;
+    renderMilk();
+    return record.id;
+  }
+
+  function deleteMilkRecord(id) {
+    var target = milk.filter(function (r) { return r.id === id; })[0];
+    if (!target) return;
+    var carried = { kind: target.kind, bags: target.bags, ml: target.ml };
+    delete target.kind;
+    delete target.bags;
+    delete target.ml;
+    target.deleted = true;
+    touch(target);
+    if (!saveMilk(milk)) return;
+    renderMilk();
+    showToast(mk().removed, function () {
+      delete target.deleted;
+      target.kind = carried.kind;
+      target.bags = carried.bags;
+      target.ml = carried.ml;
+      touch(target);
+      if (!saveMilk(milk)) return;
+      renderMilk();
+    });
+  }
+
+  function pruneMilkTombstones() {
+    var before = milk.length;
+    milk = milk.filter(function (r) { return !tombstoneExpired(r); });
+    return before - milk.length;
+  }
+
+  function mergeMilk(remoteList) {
+    var byId = {};
+    milk.forEach(function (r) { byId[r.id] = r; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var record = normaliseMilkRecord(raw);
+      if (!record || !record.id) return;
+      if (tombstoneExpired(record)) return;
+      var existing = byId[record.id];
+      if (!existing) {
+        milk.push(record);
+        byId[record.id] = record;
+        changed++;
+      } else if (record.updatedAt > updatedAtOf(existing)) {
+        milk[milk.indexOf(existing)] = record;
+        byId[record.id] = record;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteMissesOurMilk(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (r) {
+      if (r && r.id) remoteById[r.id] = r;
+    });
+    return milk.some(function (r) {
+      var mirror = remoteById[r.id];
+      return !mirror || updatedAtOf(r) > (mirror.updatedAt || "");
+    });
+  }
+
+  // ---------- the freezer, drawn ----------
+
+  // The same hand-drawn bars the statistics screen uses, minus the average
+  // line: a running balance has no average worth drawing a rule at, and the
+  // shape of the slope is the whole of what this chart is for.
+  function milkChartSvg(rows, label) {
+    var WIDTH = 320, LEFT = 2, RIGHT = 2, TOP = 13, BARH = 60, AXIS = 14;
+    var height = TOP + BARH + AXIS;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var n = rows.length;
+    var gap = n > 14 ? 1 : 3;
+    var barW = (plotW - gap * (n - 1)) / n;
+    var max = 1;
+    rows.forEach(function (r) { max = Math.max(max, r.ml); });
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + height +
+      '" role="img" aria-label="' + escapeHtml(label) + '">'];
+    out.push('<line class="ho-rail" x1="' + LEFT + '" y1="' + (TOP + BARH) +
+      '" x2="' + (LEFT + plotW) + '" y2="' + (TOP + BARH) + '"/>');
+
+    var labelEvery = Math.max(1, Math.ceil(n / 6));
+    var T = mk();
+    rows.forEach(function (row, i) {
+      // A negative balance means a bag left unlogged. It draws as nothing
+      // rather than as a bar below the rail: the hint above already names
+      // the problem, and an upside-down bar would only make the chart
+      // harder to read on the days either side of it.
+      var v = Math.max(0, row.ml);
+      var h = (v / max) * BARH;
+      var x = LEFT + i * (barW + gap);
+      var y = TOP + BARH - h;
+      out.push('<rect class="m-milk" x="' + (Math.round(x * 10) / 10) +
+        '" y="' + (Math.round(y * 10) / 10) + '" width="' + (Math.round(Math.max(1, barW) * 10) / 10) +
+        '" height="' + (Math.round(Math.max(0, h) * 10) / 10) + '" rx="1">' +
+        '<title>' + escapeHtml(formatDateShort(row.date) + ': ' +
+          T.bags(row.bags) + ' · ' + T.ml(row.ml)) + '</title></rect>');
+      if (n <= 14 && v > 0) {
+        out.push('<text class="stats-bar-label" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (Math.round(Math.max(9, y - 3) * 10) / 10) +
+          '" text-anchor="middle">' + row.bags + '</text>');
+      }
+      if (n <= 10 || i % labelEvery === 0 || i === n - 1) {
+        out.push('<text class="ho-tick" x="' + (Math.round((x + barW / 2) * 10) / 10) +
+          '" y="' + (height - 2) + '" text-anchor="middle">' + row.date.getDate() + '</text>');
+      }
+    });
+    out.push('</svg>');
+    return out.join("");
+  }
+
+  function milkWhen(date) {
+    return (uiLang === "ru"
+      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
+      : formatDateShort(date)) + ", " + formatClockTime(date);
+  }
+
+  function milkRow(entry) {
+    var T = mk();
+    var record = entry.record;
+    var row = document.createElement("div");
+    row.className = "milk-entry milk-entry-" + record.kind;
+
+    var body = document.createElement("div");
+    body.className = "milk-entry-body";
+
+    var head = document.createElement("div");
+    head.className = "milk-entry-head";
+    var what = record.kind === "in" ? T.logIn : record.kind === "out" ? T.logOut : T.logSet;
+    var sign = record.kind === "in" ? "+" : record.kind === "out" ? "−" : "=";
+    head.textContent = what + " " + sign + " " + T.bags(record.bags) + " · " + T.ml(record.ml);
+
+    var sub = document.createElement("div");
+    sub.className = "milk-entry-sub";
+    sub.textContent = milkWhen(new Date(record.at)) + " · " +
+      T.logLeft(T.bags(entry.after.bags), entry.after.ml);
+
+    body.appendChild(head);
+    body.appendChild(sub);
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "milk-entry-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteMilkRecord(record.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  // Newest first on screen, but the running balance can only be worked out
+  // forwards, so it is built in order and reversed.
+  function milkLedger() {
+    var list = sortedMilk();
+    var bags = 0, ml = 0;
+    var out = [];
+    list.forEach(function (r) {
+      if (r.kind === "set") { bags = r.bags; ml = r.ml; }
+      else if (r.kind === "out") { bags -= r.bags; ml -= r.ml; }
+      else { bags += r.bags; ml += r.ml; }
+      out.push({ record: r, after: { bags: bags, ml: ml } });
+    });
+    return out.reverse();
+  }
+
+  function readMilkNumber(input, max) {
+    var n = Math.round(Number(String(input.value).replace(",", ".")));
+    if (!isFinite(n) || n < 1 || n > max) return null;
+    return n;
+  }
+
+  function submitMilk(kind) {
+    var T = mk();
+    var ml = readMilkNumber(el.milkMl, MAX_MILK_ML);
+    var bags = readMilkNumber(el.milkBags, MAX_MILK_BAGS);
+    // A stocktake of nothing is the one legitimate zero: it is how a freezer
+    // that has just been emptied gets said out loud.
+    if (kind === "set") {
+      if (String(el.milkBags.value).trim() === "0") bags = 0;
+      if (String(el.milkMl.value).trim() === "0") ml = 0;
+      if (bags === 0) ml = 0;
+    }
+    if (ml === null) { showToast(T.needMl); el.milkMl.focus(); return; }
+    if (bags === null) { showToast(T.needBags); el.milkBags.focus(); return; }
+    // The form asks for one bag's worth; the ledger stores the total, so a
+    // batch of four is one record and the chart never has to multiply. Both
+    // numbers are already capped above, so the product cannot run away.
+    var total = ml * bags;
+    if (!addMilkRecord(kind, bags, total)) return;
+    showToast((kind === "in" ? T.added : kind === "out" ? T.used : T.stocktook)(
+      T.bags(bags), total));
+    el.milkBags.value = "1";
+  }
+
+  function buildMilkChips() {
+    MILK_ML_CHOICES.forEach(function (ml) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.textContent = String(ml);
+      btn.addEventListener("click", function () {
+        el.milkMl.value = String(ml);
+        markMilkChips();
+      });
+      el.milkMlChips.appendChild(btn);
+    });
+    MILK_RATE_WINDOWS.forEach(function (days) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.addEventListener("click", function () {
+        milkWindow = days;
+        renderMilk();
+      });
+      el.milkWindows.appendChild(btn);
+    });
+    buildLangChips(el.milkLangs);
+  }
+
+  function markMilkChips() {
+    var typed = String(el.milkMl.value).trim();
+    Array.prototype.forEach.call(el.milkMlChips.children, function (btn, i) {
+      var on = String(MILK_ML_CHOICES[i]) === typed;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    var T = mk();
+    Array.prototype.forEach.call(el.milkWindows.children, function (btn, i) {
+      var on = MILK_RATE_WINDOWS[i] === milkWindow;
+      btn.textContent = T.windowChip(MILK_RATE_WINDOWS[i]);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    markLangChips(el.milkLangs);
+  }
+
+  // The heading and the button that opens it, named in the chosen language
+  // at startup too — so a screen reader has the right word for it before
+  // anybody has been there.
+  function applyMilkChrome() {
+    var T = mk();
+    el.milkTitle.textContent = T.screenTitle;
+    el.milkBack.setAttribute("aria-label", T.back);
+    el.milkOpenBtn.setAttribute("aria-label", T.screenTitle);
+  }
+
+  function renderMilkHead() {
+    var T = mk();
+    var balance = milkBalanceNow();
+    var perBag = milkPerBag(balance);
+    el.milkNowBags.textContent = T.bags(balance.bags);
+    el.milkNowMl.textContent = T.ml(balance.ml);
+    el.milkAvg.textContent = balance.bags > 0 ? T.perBag(perBag)
+      : balance.bags === 0 ? T.emptyHead : "";
+    el.milkWarn.hidden = balance.bags >= 0 && balance.ml >= 0;
+    el.milkWarn.textContent = T.negative;
+
+    var rate = milkRate(milkWindow);
+    if (!rate || !rate.anyOut) {
+      el.milkRate.textContent = T.rateNone(milkWindow);
+    } else {
+      var left = milkDaysLeft(balance, rate);
+      el.milkRate.textContent = T.rate(
+        T.num(Math.round(rate.bags * 10) / 10), Math.round(rate.ml), rate.days) +
+        (left === null ? "" : " " + T.lasts(left));
+    }
+  }
+
+  function renderMilkCharts() {
+    var T = mk();
+    var any = liveMilk().length > 0;
+    el.milkCharts.hidden = !any;
+    if (!any) return;
+    el.milkDailyTitle.textContent = T.dailyTitle;
+    el.milkWeeklyTitle.textContent = T.weeklyTitle;
+    el.milkDailyChart.innerHTML =
+      milkChartSvg(milkBalanceRows(MILK_CHART_DAYS, 1), T.dailyTitle);
+    el.milkWeeklyChart.innerHTML =
+      milkChartSvg(milkBalanceRows(MILK_CHART_WEEKS, 7), T.weeklyTitle);
+  }
+
+  function renderMilkLog() {
+    var T = mk();
+    var ledger = milkLedger();
+    el.milkLog.innerHTML = "";
+    el.milkLogTitle.hidden = !ledger.length;
+    el.milkLogTitle.textContent = T.logTitle;
+    el.milkEmpty.hidden = ledger.length > 0;
+    el.milkEmpty.textContent = T.empty;
+    ledger.slice(0, MILK_LOG_ROWS).forEach(function (entry) {
+      el.milkLog.appendChild(milkRow(entry));
+    });
+  }
+
+  function renderMilk() {
+    if (el.screenMilk.hidden) return;
+    applyMilkChrome();
+    var T = mk();
+    el.milkLangLabel.textContent = T.langLabel;
+    el.milkWindowLabel.textContent = T.windowLabel;
+    el.milkMlLabel.textContent = T.mlLabel;
+    el.milkBagsLabel.textContent = T.bagsLabel;
+    el.milkAdd.textContent = T.add;
+    el.milkUse.textContent = T.use;
+    el.milkSet.textContent = T.set;
+    el.milkHelp1.textContent = T.help1;
+    el.milkHelp2.textContent = T.help2;
+    markMilkChips();
+    renderMilkHead();
+    renderMilkCharts();
+    renderMilkLog();
+  }
+
+  buildMilkChips();
+  applyMilkChrome();
+
+  el.milkOpenBtn.addEventListener("click", function () {
+    showScreen("milk");
+    // Pre-filled with what the freezer averages, so the usual "took one out"
+    // is two taps and no typing. An empty freezer has no average to offer.
+    var perBag = milkPerBag(milkBalanceNow());
+    el.milkMl.value = String(perBag || MILK_DEFAULT_ML);
+    el.milkBags.value = "1";
+    renderMilk();
+  });
+  el.milkBack.addEventListener("click", showMain);
+  el.milkAdd.addEventListener("click", function () { submitMilk("in"); });
+  el.milkUse.addEventListener("click", function () { submitMilk("out"); });
+  el.milkSet.addEventListener("click", function () { submitMilk("set"); });
+  el.milkMl.addEventListener("input", markMilkChips);
+
+  // Read out in the summary the AI screen builds, because "how much is in the
+  // freezer" is exactly the sort of thing a feeding question turns on — and
+  // because a model told nothing about it will invent a number from the
+  // bottle feeds it can see.
+  function milkSummaryLines() {
+    if (!liveMilk().length) return [];
+    var balance = milkBalanceNow();
+    var rate = milkRate(MILK_DEFAULT_WINDOW);
+    var out = ["Frozen milk in the freezer: " + balance.bags + " bags, " +
+      balance.ml + " ml in total" +
+      (balance.bags > 0 ? " — about " + milkPerBag(balance) + " ml a bag" : "") + "."];
+    if (rate && rate.anyOut) {
+      var left = milkDaysLeft(balance, rate);
+      out.push("Taken out of the freezer: " + (Math.round(rate.bags * 10) / 10) +
+        " bags a day, " + Math.round(rate.ml) + " ml, averaged over the last " +
+        rate.days + (rate.days === 1 ? " day" : " days") +
+        (left === null ? "" : " — about " + left + " days' worth left at that rate") + ".");
+    } else {
+      out.push("Nothing has been taken out of the freezer in the last " +
+        MILK_DEFAULT_WINDOW + " days.");
+    }
+    return out;
+  }
+
+  // ---------- the diary ----------
+
+  // Same record shape and the same last-write-wins merge as the shopping
+  // list and the freezer. What is different is that nothing here is ever
+  // worked out: a rating is what somebody said the day was like, and the
+  // app's job is to keep it and lay it beside the other two, not to grade it.
+  var JOURNAL_TEXT = {
+    en: {
+      screenTitle: "Diary",
+      back: "Back",
+      langLabel: "Language",
+      todayTitle: "How was today",
+      whoLabel: { baby: "Baby", mum: "Mum", dad: "Dad" },
+      // Read out by a screen reader instead of the face, which it would
+      // otherwise announce by its Unicode name.
+      faceLabel: ["a hard day", "a trying day", "an ordinary day",
+        "a good day", "a lovely day"],
+      clearRating: "no answer",
+      textLabel: "Anything worth remembering",
+      textHint: "A line is plenty. Nobody reads this but you two.",
+      save: "Save today",
+      saved: "Saved",
+      updated: "Updated",
+      removed: "Entry deleted",
+      nothing: "Nothing to save yet — tap a face, or write a line.",
+      trendTitle: "The last fortnight",
+      tallyLabel: "Count over",
+      tallyChip: function (d) { return d + " days"; },
+      // Short enough to sit on the end of the strip it belongs to. The
+      // sentence behind it is what a screen reader and a long press get.
+      tallyBadge: function (good, hard) {
+        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
+      },
+      tallyLong: function (who, good, hard, days) {
+        return who + ", over " + days + " days: " +
+          good + (good === 1 ? " good day" : " good days") + ", " +
+          hard + (hard === 1 ? " hard day" : " hard days");
+      },
+      faceOrder: "The faces run baby, mum, dad.",
+      trendEmpty: "Rate a day or two and the strip fills in.",
+      feedTitle: "Days written down",
+      feedEmpty: "Nothing written down yet.",
+      notesTitle: "Notes for a specialist",
+      notesHint: "Not about a day. A description of the bedroom, the bedtime routine, " +
+        "how feeds actually go — the things a sleep or feeding consultant asks for and " +
+        "nobody can recall on the spot. Kept where they can be read out or pasted.",
+      noteAdd: "＋ Add a note",
+      noteTitleLabel: "What it is about",
+      noteTextLabel: "The note",
+      noteSave: "Save the note",
+      noteSaved: "Note saved",
+      noteRemoved: "Note deleted",
+      noteNothing: "Give the note a name and something to say.",
+      noteEmpty: "No notes yet.",
+      cancel: "Cancel",
+      edit: "Edit",
+      deleteOne: "Delete",
+      editing: function (when) { return "Editing " + when; },
+      editingToday: "Editing today",
+      privacy: "This stays on your phones and in your own repository, like everything " +
+        "else here. It is the one part of the log nobody else has written a word of, so " +
+        "it is also the part worth thinking twice about before it goes into a summary " +
+        "for an AI — that is a switch under Settings, and it is off until you turn it on."
+    },
+    ru: {
+      screenTitle: "Дневник",
+      back: "Назад",
+      langLabel: "Язык",
+      todayTitle: "Как прошёл день",
+      whoLabel: { baby: "Ребёнок", mum: "Мама", dad: "Папа" },
+      faceLabel: ["тяжёлый день", "трудный день", "обычный день",
+        "хороший день", "прекрасный день"],
+      clearRating: "без ответа",
+      textLabel: "Что стоит запомнить",
+      textHint: "Хватит одной строки. Это читаете только вы двое.",
+      save: "Сохранить день",
+      saved: "Сохранено",
+      updated: "Изменено",
+      removed: "Запись удалена",
+      nothing: "Пока нечего сохранять — выберите лицо или напишите строку.",
+      trendTitle: "Последние две недели",
+      tallyLabel: "Считать за",
+      tallyChip: function (d) { return pluralRu(d, d + " день", d + " дня", d + " дней"); },
+      tallyBadge: function (good, hard) {
+        return "\u{1F60A}" + good + " · \u{1F629}" + hard;
+      },
+      tallyLong: function (who, good, hard, days) {
+        return who + ", за " +
+          pluralRu(days, days + " день", days + " дня",
+            days + " дней") + ": " +
+          pluralRu(good, good + " хороший день",
+            good + " хороших дня",
+            good + " хороших дней") + ", " +
+          pluralRu(hard, hard + " тяжёлый день",
+            hard + " тяжёлых дня",
+            hard + " тяжёлых дней");
+      },
+      faceOrder: "Лица идут по порядку: ребёнок, мама, папа.",
+      trendEmpty: "Оцените день-другой, и полоса заполнится.",
+      feedTitle: "Записанные дни",
+      feedEmpty: "Пока ничего не записано.",
+      notesTitle: "Заметки для специалиста",
+      notesHint: "Это не про день. Описание спальни, ритуал засыпания, как на самом деле " +
+        "идут кормления — то, о чём спрашивает консультант по сну или по кормлению и чего " +
+        "с ходу не вспомнить. Лежит там, откуда можно зачитать или скопировать.",
+      noteAdd: "＋ Добавить заметку",
+      noteTitleLabel: "О чём заметка",
+      noteTextLabel: "Текст",
+      noteSave: "Сохранить заметку",
+      noteSaved: "Заметка сохранена",
+      noteRemoved: "Заметка удалена",
+      noteNothing: "Дайте заметке название и текст.",
+      noteEmpty: "Заметок пока нет.",
+      cancel: "Отмена",
+      edit: "Изменить",
+      deleteOne: "Удалить",
+      editing: function (when) { return "Правим " + when; },
+      editingToday: "Правим сегодняшний день",
+      privacy: "Всё это остаётся на ваших телефонах и в вашем репозитории, как и остальное. " +
+        "Это единственная часть журнала, к которой никто посторонний не приложил ни слова, — " +
+        "поэтому и подумать дважды стоит именно о ней, прежде чем она попадёт в выгрузку для " +
+        "ИИ. Это отдельный переключатель в настройках, и он выключен, пока вы его не включите."
+    }
+  };
+
+  function jr() { return JOURNAL_TEXT[uiLang] || JOURNAL_TEXT.en; }
+
+  var journal = loadJournal();
+  var journalWindow = JOURNAL_DEFAULT_WINDOW;
+  // Which day the form is pointed at. Today unless somebody tapped an older
+  // entry to edit it.
+  var journalDay = null;
+  var editingNoteId = null;
+  var noteFormOpen = false;
+
+  function loadJournal() {
+    try {
+      var raw = localStorage.getItem(JOURNAL_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      showError("Couldn't read the diary");
+      return [];
+    }
+  }
+
+  function saveJournal(list) {
+    try {
+      localStorage.setItem(JOURNAL_KEY, JSON.stringify(list));
+      hideError();
+      scheduleSync();
+      return true;
+    } catch (e) {
+      showError("Couldn't save — this browser's storage is full");
+      return false;
+    }
+  }
+
+  function safeRating(raw) {
+    var n = Math.round(Number(raw));
+    return isFinite(n) && n >= 1 && n <= JOURNAL_FACES.length ? n : null;
+  }
+
+  // Anything arriving from another phone or a file, made safe to store. A
+  // dated entry with neither a rating nor a word in it is not an entry —
+  // it is what is left when somebody cleared the form, and it is dropped
+  // rather than kept as a blank row on the other phone.
+  function normaliseJournalEntry(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) return null;
+    var at = new Date(String(raw.at || "").trim().replace(" ", "T"));
+    var stamped = new Date(String(raw.updatedAt || "").trim().replace(" ", "T"));
+    var entry = { id: id };
+    if (raw.deleted) {
+      entry.deleted = true;
+      entry.at = isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString();
+      entry.updatedAt = isNaN(stamped.getTime()) ? entry.at : stamped.toISOString();
+      return entry;
+    }
+    if (isNaN(at.getTime())) return null;
+    if (JOURNAL_KINDS.indexOf(String(raw.kind)) < 0) return null;
+    entry.kind = String(raw.kind);
+    entry.at = at.toISOString();
+    entry.updatedAt = isNaN(stamped.getTime()) ? entry.at : stamped.toISOString();
+    var text = cleanLines(raw.text, MAX_JOURNAL_TEXT);
+    if (entry.kind === "note") {
+      var title = cleanText(raw.title, MAX_JOURNAL_TITLE);
+      if (!title || !text) return null;
+      entry.title = title;
+      entry.text = text;
+      return entry;
+    }
+    var day = String(raw.day || "").trim();
+    if (!SHOP_ETA_RE.test(day) || isNaN(new Date(day + "T00:00:00").getTime())) return null;
+    entry.day = day;
+    var any = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var score = safeRating(raw[who]);
+      if (score !== null) { entry[who] = score; any = true; }
+    });
+    if (text) entry.text = text;
+    if (!any && !text) return null;
+    return entry;
+  }
+
+  function liveJournal() {
+    return journal.filter(function (e) { return !isDeleted(e); });
+  }
+
+  // Newest day first. Two entries on the same day cannot happen through the
+  // form — it edits the one that is there — but a merge from a phone that
+  // was offline can produce them, and they are shown rather than hidden.
+  function journalDays() {
+    return liveJournal().filter(function (e) { return e.kind === "day"; })
+      .sort(function (a, b) {
+        if (a.day !== b.day) return a.day > b.day ? -1 : 1;
+        return a.at > b.at ? -1 : 1;
+      });
+  }
+
+  function journalNotes() {
+    return liveJournal().filter(function (e) { return e.kind === "note"; })
+      .sort(function (a, b) { return a.updatedAt > b.updatedAt ? -1 : 1; });
+  }
+
+  function entryForDay(day) {
+    return journalDays().filter(function (e) { return e.day === day; })[0] || null;
+  }
+
+  function currentDay() {
+    return journalDay || dayKeyOf(new Date());
+  }
+
+  // ---------- the trend ----------
+
+  // One row per person, oldest on the left, so the strip reads the way a
+  // fortnight is remembered. A day nobody rated draws as an outline rather
+  // than as a middling score: "we did not say" and "it was ordinary" are
+  // different answers and the strip must not conflate them.
+  function journalTrendRows(who) {
+    var byDay = {};
+    journalDays().forEach(function (e) {
+      if (byDay[e.day] === undefined && e[who] !== undefined) byDay[e.day] = e[who];
+    });
+    var today = new Date();
+    var out = [];
+    for (var i = JOURNAL_TREND_DAYS - 1; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      var key = dayKeyOf(d);
+      out.push({ date: d, day: key, score: byDay[key] === undefined ? null : byDay[key] });
+    }
+    return out;
+  }
+
+  // Counted over the window asked for, and only over the days that carry an
+  // answer — an unrated day is not a good one and not a hard one either.
+  function journalTally(who, days) {
+    var today = new Date();
+    var from = dayKeyOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + 1));
+    var good = 0, hard = 0, rated = 0;
+    var seen = {};
+    journalDays().forEach(function (e) {
+      if (e.day < from || e[who] === undefined || seen[e.day]) return;
+      seen[e.day] = true;
+      rated++;
+      if (e[who] >= JOURNAL_GOOD) good++;
+      else if (e[who] <= JOURNAL_HARD) hard++;
+    });
+    return { good: good, hard: hard, rated: rated };
+  }
+
+  // ---------- writing it down ----------
+
+  function saveJournalDay() {
+    var T = jr();
+    var day = currentDay();
+    var text = cleanLines(el.journalText.value, MAX_JOURNAL_TEXT);
+    var scores = {};
+    var any = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var picked = journalPicked[who];
+      if (picked !== null) { scores[who] = picked; any = true; }
+    });
+    var existing = entryForDay(day);
+    if (!any && !text) {
+      // Clearing everything out of a day that had something in it is a
+      // deletion, not a refusal — otherwise there would be no way to undo
+      // having written it.
+      if (existing) { deleteJournalEntry(existing.id); return; }
+      showToast(T.nothing);
+      return;
+    }
+    var entry = existing || { id: uuid(), kind: "day", day: day, at: new Date().toISOString() };
+    JOURNAL_WHO.forEach(function (who) { delete entry[who]; });
+    JOURNAL_WHO.forEach(function (who) {
+      if (scores[who] !== undefined) entry[who] = scores[who];
+    });
+    if (text) entry.text = text; else delete entry.text;
+    touch(entry);
+    if (!existing) journal.push(entry);
+    if (!saveJournal(journal)) return;
+    journalDay = null;
+    loadJournalForm();
+    renderJournal();
+    showToast(existing ? T.updated : T.saved);
+  }
+
+  function saveJournalNote() {
+    var T = jr();
+    var title = cleanText(el.journalNoteTitle.value, MAX_JOURNAL_TITLE);
+    var text = cleanLines(el.journalNoteText.value, MAX_JOURNAL_TEXT);
+    if (!title || !text) { showToast(T.noteNothing); return; }
+    var existing = editingNoteId
+      ? journal.filter(function (e) { return e.id === editingNoteId; })[0] : null;
+    var entry = existing || { id: uuid(), kind: "note", at: new Date().toISOString() };
+    entry.title = title;
+    entry.text = text;
+    touch(entry);
+    if (!existing) journal.push(entry);
+    if (!saveJournal(journal)) return;
+    closeNoteForm();
+    renderJournal();
+    showToast(T.noteSaved);
+  }
+
+  function deleteJournalEntry(id) {
+    var T = jr();
+    var target = journal.filter(function (e) { return e.id === id; })[0];
+    if (!target) return;
+    var carried = { kind: target.kind, day: target.day, title: target.title, text: target.text,
+      baby: target.baby, mum: target.mum, dad: target.dad };
+    var note = target.kind === "note";
+    delete target.kind;
+    delete target.day;
+    delete target.title;
+    delete target.text;
+    JOURNAL_WHO.forEach(function (who) { delete target[who]; });
+    target.deleted = true;
+    touch(target);
+    if (!saveJournal(journal)) return;
+    if (journalDay && carried.day === journalDay) journalDay = null;
+    loadJournalForm();
+    renderJournal();
+    showToast(note ? T.noteRemoved : T.removed, function () {
+      delete target.deleted;
+      Object.keys(carried).forEach(function (key) {
+        if (carried[key] !== undefined) target[key] = carried[key];
+      });
+      touch(target);
+      if (!saveJournal(journal)) return;
+      loadJournalForm();
+      renderJournal();
+    });
+  }
+
+  function pruneJournalTombstones() {
+    var before = journal.length;
+    journal = journal.filter(function (e) { return !tombstoneExpired(e); });
+    return before - journal.length;
+  }
+
+  function mergeJournal(remoteList) {
+    var byId = {};
+    journal.forEach(function (e) { byId[e.id] = e; });
+    var changed = 0;
+    (remoteList || []).forEach(function (raw) {
+      var entry = normaliseJournalEntry(raw);
+      if (!entry || !entry.id) return;
+      if (tombstoneExpired(entry)) return;
+      var existing = byId[entry.id];
+      if (!existing) {
+        journal.push(entry);
+        byId[entry.id] = entry;
+        changed++;
+      } else if (entry.updatedAt > updatedAtOf(existing)) {
+        journal[journal.indexOf(existing)] = entry;
+        byId[entry.id] = entry;
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  function remoteMissesOurJournal(remoteList) {
+    var remoteById = {};
+    (remoteList || []).forEach(function (e) {
+      if (e && e.id) remoteById[e.id] = e;
+    });
+    return journal.some(function (e) {
+      var mirror = remoteById[e.id];
+      return !mirror || updatedAtOf(e) > (mirror.updatedAt || "");
+    });
+  }
+
+  // ---------- the diary, drawn ----------
+
+  // The three rows have ids of their own in the markup rather than being
+  // found by a data attribute, so a typo is a missing element at startup
+  // and not a row that silently never responds to a tap.
+  function whoCap(who) { return who.charAt(0).toUpperCase() + who.slice(1); }
+  function journalRowId(who) { return "journalRow" + whoCap(who); }
+  function journalLabelId(who) { return "journalLabel" + whoCap(who); }
+
+  // What the three rows of faces currently say. Kept out of the DOM because
+  // a rating can be cleared, and "nothing chosen" has no element to hold it.
+  var journalPicked = { baby: null, mum: null, dad: null };
+
+  function buildJournalFaces() {
+    JOURNAL_WHO.forEach(function (who) {
+      var row = el[journalRowId(who)];
+      JOURNAL_FACES.forEach(function (face, i) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "jr-face";
+        btn.textContent = face;
+        btn.addEventListener("click", function () {
+          // Tapping the face already chosen clears it, which is the only
+          // way back to "we did not say" once something has been tapped.
+          journalPicked[who] = journalPicked[who] === i + 1 ? null : i + 1;
+          markJournalFaces();
+        });
+        row.appendChild(btn);
+      });
+    });
+    JOURNAL_TALLY_WINDOWS.forEach(function (days) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ho-chip";
+      btn.addEventListener("click", function () {
+        journalWindow = days;
+        renderJournal();
+      });
+      el.journalWindows.appendChild(btn);
+    });
+    buildLangChips(el.journalLangs);
+  }
+
+  function markJournalFaces() {
+    var T = jr();
+    JOURNAL_WHO.forEach(function (who) {
+      el[journalLabelId(who)].textContent = T.whoLabel[who];
+      Array.prototype.forEach.call(el[journalRowId(who)].children, function (btn, i) {
+        var on = journalPicked[who] === i + 1;
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        btn.setAttribute("aria-label", T.whoLabel[who] + ": " +
+          (on ? T.clearRating : T.faceLabel[i]));
+      });
+    });
+    Array.prototype.forEach.call(el.journalWindows.children, function (btn, i) {
+      var on = JOURNAL_TALLY_WINDOWS[i] === journalWindow;
+      btn.textContent = T.tallyChip(JOURNAL_TALLY_WINDOWS[i]);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    markLangChips(el.journalLangs);
+  }
+
+  // Fills the form from whatever is stored for the day it is pointed at, so
+  // opening the screen twice in an evening shows what was written the first
+  // time rather than an empty box over the top of it.
+  function loadJournalForm() {
+    var entry = entryForDay(currentDay());
+    JOURNAL_WHO.forEach(function (who) {
+      journalPicked[who] = entry && entry[who] !== undefined ? entry[who] : null;
+    });
+    el.journalText.value = entry && entry.text ? entry.text : "";
+    markJournalFaces();
+  }
+
+  function journalWhen(day) {
+    var parts = String(day).split("-");
+    var date = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    return uiLang === "ru"
+      ? date.getDate() + " " + MONTHS_RU[date.getMonth()]
+      : formatDateShort(date);
+  }
+
+  function renderJournalForm() {
+    var T = jr();
+    var day = currentDay();
+    var today = dayKeyOf(new Date());
+    el.journalTodayTitle.textContent = day === today ? T.todayTitle : T.editing(journalWhen(day));
+    el.journalTextLabel.textContent = T.textLabel;
+    el.journalTextHint.textContent = T.textHint;
+    el.journalSave.textContent = T.save;
+    el.journalCancel.hidden = day === today;
+    el.journalCancel.textContent = T.cancel;
+  }
+
+  function renderJournalTrend() {
+    var T = jr();
+    el.journalTrendTitle.textContent = T.trendTitle;
+    el.journalTallyLabel.textContent = T.tallyLabel;
+    el.journalTrend.innerHTML = "";
+    var anyRated = false;
+    JOURNAL_WHO.forEach(function (who) {
+      var rows = journalTrendRows(who);
+      var line = document.createElement("div");
+      line.className = "jr-trend-row";
+      var label = document.createElement("span");
+      label.className = "jr-trend-label";
+      label.textContent = T.whoLabel[who];
+      var strip = document.createElement("div");
+      strip.className = "jr-strip";
+      rows.forEach(function (row) {
+        var cell = document.createElement("i");
+        cell.className = "jr-cell" + (row.score === null ? " jr-cell-none" : " jr-s" + row.score);
+        cell.title = journalWhen(row.day) +
+          (row.score === null ? "" : " · " + JOURNAL_FACES[row.score - 1] +
+            " " + T.faceLabel[row.score - 1]);
+        if (row.score !== null) anyRated = true;
+        strip.appendChild(cell);
+      });
+
+      // The count sits on the end of the strip rather than under it: a
+      // sentence below each row pushed the next person's label away from
+      // their own strip, and three rows meant to be read against each other
+      // stopped looking like three rows.
+      var tally = journalTally(who, journalWindow);
+      var badge = document.createElement("span");
+      badge.className = "jr-tally";
+      badge.textContent = T.tallyBadge(tally.good, tally.hard);
+      badge.title = T.tallyLong(T.whoLabel[who], tally.good, tally.hard, journalWindow);
+
+      line.appendChild(label);
+      line.appendChild(strip);
+      line.appendChild(badge);
+      line.setAttribute("aria-label",
+        T.tallyLong(T.whoLabel[who], tally.good, tally.hard, journalWindow));
+      el.journalTrend.appendChild(line);
+    });
+    el.journalTrendEmpty.hidden = anyRated;
+    el.journalTrendEmpty.textContent = T.trendEmpty;
+  }
+
+  function journalDayRow(entry) {
+    var T = jr();
+    var row = document.createElement("div");
+    row.className = "jr-entry";
+
+    var body = document.createElement("button");
+    body.type = "button";
+    body.className = "jr-entry-body";
+    body.setAttribute("aria-label", T.edit + " — " + journalWhen(entry.day));
+
+    var head = document.createElement("div");
+    head.className = "jr-entry-head";
+    var when = document.createElement("span");
+    when.className = "jr-entry-when";
+    when.textContent = journalWhen(entry.day);
+    head.appendChild(when);
+    JOURNAL_WHO.forEach(function (who) {
+      if (entry[who] === undefined) return;
+      var face = document.createElement("span");
+      face.className = "jr-entry-face";
+      face.textContent = JOURNAL_FACES[entry[who] - 1];
+      face.title = T.whoLabel[who] + ": " + T.faceLabel[entry[who] - 1];
+      head.appendChild(face);
+    });
+    body.appendChild(head);
+
+    if (entry.text) {
+      var said = document.createElement("div");
+      said.className = "jr-entry-text";
+      said.textContent = entry.text;
+      body.appendChild(said);
+    }
+    body.addEventListener("click", function () {
+      journalDay = entry.day;
+      loadJournalForm();
+      renderJournal();
+      el.journalText.focus();
+      window.scrollTo(0, 0);
+    });
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "jr-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteJournalEntry(entry.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function journalNoteRow(entry) {
+    var T = jr();
+    var row = document.createElement("div");
+    row.className = "jr-entry jr-note";
+
+    var body = document.createElement("button");
+    body.type = "button";
+    body.className = "jr-entry-body";
+    body.setAttribute("aria-label", T.edit + " — " + entry.title);
+    var title = document.createElement("div");
+    title.className = "jr-note-title";
+    title.textContent = entry.title;
+    var said = document.createElement("div");
+    said.className = "jr-entry-text";
+    said.textContent = entry.text;
+    body.appendChild(title);
+    body.appendChild(said);
+    body.addEventListener("click", function () { openNoteForm(entry.id); });
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "jr-del";
+    remove.textContent = "✕";
+    remove.setAttribute("aria-label", T.deleteOne);
+    remove.addEventListener("click", function () { deleteJournalEntry(entry.id); });
+
+    row.appendChild(body);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function openNoteForm(id) {
+    var entry = id ? journal.filter(function (e) { return e.id === id; })[0] : null;
+    editingNoteId = entry ? entry.id : null;
+    noteFormOpen = true;
+    el.journalNoteTitle.value = entry ? entry.title : "";
+    el.journalNoteText.value = entry ? entry.text : "";
+    renderJournal();
+    el.journalNoteTitle.focus();
+  }
+
+  function closeNoteForm() {
+    editingNoteId = null;
+    noteFormOpen = false;
+    el.journalNoteTitle.value = "";
+    el.journalNoteText.value = "";
+  }
+
+  function renderJournalFeed() {
+    var T = jr();
+    var days = journalDays();
+    el.journalFeedTitle.hidden = !days.length;
+    el.journalFeedTitle.textContent = T.feedTitle;
+    el.journalFeedOrder.textContent = T.faceOrder;
+    el.journalFeedOrder.hidden = !days.length;
+    el.journalFeedEmpty.hidden = days.length > 0;
+    el.journalFeedEmpty.textContent = T.feedEmpty;
+    el.journalFeed.innerHTML = "";
+    days.slice(0, JOURNAL_FEED_ROWS).forEach(function (entry) {
+      el.journalFeed.appendChild(journalDayRow(entry));
+    });
+  }
+
+  function renderJournalNotes() {
+    var T = jr();
+    var notes = journalNotes();
+    el.journalNotesTitle.textContent = T.notesTitle;
+    el.journalNotesHint.textContent = T.notesHint;
+    el.journalNoteAdd.textContent = T.noteAdd;
+    el.journalNoteAdd.hidden = noteFormOpen;
+    el.journalNoteForm.hidden = !noteFormOpen;
+    el.journalNoteTitleLabel.textContent = T.noteTitleLabel;
+    el.journalNoteTextLabel.textContent = T.noteTextLabel;
+    el.journalNoteSave.textContent = T.noteSave;
+    el.journalNoteCancel.textContent = T.cancel;
+    el.journalNotesEmpty.hidden = notes.length > 0 || noteFormOpen;
+    el.journalNotesEmpty.textContent = T.noteEmpty;
+    el.journalNotes.innerHTML = "";
+    notes.forEach(function (entry) {
+      el.journalNotes.appendChild(journalNoteRow(entry));
+    });
+  }
+
+  function applyJournalChrome() {
+    var T = jr();
+    el.journalTitle.textContent = T.screenTitle;
+    el.journalBack.setAttribute("aria-label", T.back);
+    el.journalOpenBtn.setAttribute("aria-label", T.screenTitle);
+  }
+
+  function renderJournal() {
+    if (el.screenJournal.hidden) return;
+    applyJournalChrome();
+    var T = jr();
+    el.journalLangLabel.textContent = T.langLabel;
+    el.journalPrivacy.textContent = T.privacy;
+    markJournalFaces();
+    renderJournalForm();
+    renderJournalTrend();
+    renderJournalFeed();
+    renderJournalNotes();
+  }
+
+  buildJournalFaces();
+  applyJournalChrome();
+
+  el.journalOpenBtn.addEventListener("click", function () {
+    showScreen("journal");
+    journalDay = null;
+    closeNoteForm();
+    loadJournalForm();
+    renderJournal();
+  });
+  el.journalBack.addEventListener("click", showMain);
+  el.journalSave.addEventListener("click", saveJournalDay);
+  el.journalCancel.addEventListener("click", function () {
+    journalDay = null;
+    loadJournalForm();
+    renderJournal();
+  });
+  el.journalNoteAdd.addEventListener("click", function () { openNoteForm(null); });
+  el.journalNoteSave.addEventListener("click", saveJournalNote);
+  el.journalNoteCancel.addEventListener("click", function () {
+    closeNoteForm();
+    renderJournal();
+  });
+
+  // What the diary contributes to the summary the AI screen builds. Behind
+  // its own switch, off until somebody turns it on: everything else in the
+  // summary is a count of something that happened, and this is the one part
+  // where a person wrote down how they were coping.
+  function journalSummaryLines() {
+    if (!loadAiPrefs().journal) return [];
+    var days = journalDays();
+    var notes = journalNotes();
+    if (!days.length && !notes.length) return [];
+    var out = [];
+    var names = { baby: "the baby", mum: "mum", dad: "dad" };
+    var tallies = [];
+    JOURNAL_WHO.forEach(function (who) {
+      var tally = journalTally(who, journalWindow);
+      if (!tally.rated) return;
+      tallies.push(names[who] + " " + tally.good + " good, " + tally.hard + " hard, out of " +
+        tally.rated + " rated");
+    });
+    if (tallies.length) {
+      out.push("How the days have felt, rated by hand from 1 (hardest) to 5 (easiest), " +
+        "over the last " + journalWindow + " days — " + tallies.join("; ") + ".");
+    }
+    var written = days.filter(function (e) { return e.text; }).slice(0, JOURNAL_AI_ENTRIES);
+    if (written.length) {
+      out.push("");
+      out.push("What was written on those days, most recent first:");
+      written.forEach(function (entry) {
+        var faces = [];
+        JOURNAL_WHO.forEach(function (who) {
+          if (entry[who] !== undefined) faces.push(names[who] + " " + entry[who] + "/5");
+        });
+        out.push(entry.day + (faces.length ? " (" + faces.join(", ") + ")" : "") + ": " +
+          shorten(entry.text, JOURNAL_AI_CHARS));
+      });
+    }
+    if (notes.length) {
+      out.push("");
+      out.push("Standing notes the parents keep, which describe how things are set up " +
+        "rather than how one day went:");
+      notes.slice(0, JOURNAL_AI_NOTES).forEach(function (entry) {
+        out.push(entry.title + ": " + shorten(entry.text, JOURNAL_AI_NOTE_CHARS));
+      });
+    }
+    return out;
+  }
+
+  // Cut on a word rather than mid-syllable, and say that it was cut — a
+  // model handed a sentence that simply stops will finish it itself.
+  function shorten(text, limit) {
+    var flat = String(text).replace(/\s+/g, " ").trim();
+    if (flat.length <= limit) return flat;
+    var cut = flat.slice(0, limit);
+    var space = cut.lastIndexOf(" ");
+    return (space > limit * 0.6 ? cut.slice(0, space) : cut) + "… (cut short)";
+  }
+
   // ---------- ask an AI ----------
 
   // Counts for one calendar day, in the same shape the day headings already
@@ -8789,6 +10422,18 @@
       measures.forEach(function (line) { out.push(line); });
     }
 
+    var freezer = milkSummaryLines();
+    if (freezer.length) {
+      out.push("");
+      freezer.forEach(function (line) { out.push(line); });
+    }
+
+    var diary = journalSummaryLines();
+    if (diary.length) {
+      out.push("");
+      diary.forEach(function (line) { out.push(line); });
+    }
+
     // What is coming, so "what should I ask on Thursday" has something to
     // work with. Only the near future: a jab due in eight months is not what
     // the question is about.
@@ -8919,6 +10564,7 @@
     var prefs = loadAiPrefs();
     el.aiEnabled.checked = prefs.on;
     el.aiUseName.checked = prefs.name;
+    el.aiUseJournal.checked = prefs.journal;
     el.aiRow.hidden = !prefs.on;
   }
 
@@ -8942,6 +10588,13 @@
     var prefs = loadAiPrefs();
     prefs.name = el.aiUseName.checked;
     saveAiPrefs(prefs);
+  });
+
+  el.aiUseJournal.addEventListener("change", function () {
+    var prefs = loadAiPrefs();
+    prefs.journal = el.aiUseJournal.checked;
+    saveAiPrefs(prefs);
+    renderAiPreview();
   });
 
   el.aiOpen.addEventListener("click", openAi);
