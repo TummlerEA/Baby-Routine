@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "83";
+    var fallback = "84";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1606,6 +1606,8 @@
     journalLangLabel: document.getElementById("journalLangLabel"),
     journalLangs: document.getElementById("journalLangs"),
     journalTodayTitle: document.getElementById("journalTodayTitle"),
+    journalDateLabel: document.getElementById("journalDateLabel"),
+    journalDate: document.getElementById("journalDate"),
     journalLabelBaby: document.getElementById("journalLabelBaby"),
     journalRowBaby: document.getElementById("journalRowBaby"),
     journalLabelMum: document.getElementById("journalLabelMum"),
@@ -9307,6 +9309,8 @@
       back: "Back",
       langLabel: "Language",
       todayTitle: "How was today",
+      dayLabel: "Which day",
+      pickDay: function (when) { return "Fill in " + when; },
       whoLabel: { baby: "Baby", mum: "Mum", dad: "Dad" },
       // Read out by a screen reader instead of the face, which it would
       // otherwise announce by its Unicode name.
@@ -9364,6 +9368,8 @@
       back: "Назад",
       langLabel: "Язык",
       todayTitle: "Как прошёл день",
+      dayLabel: "Какой день",
+      pickDay: function (when) { return "Заполнить " + when; },
       whoLabel: { baby: "Ребёнок", mum: "Мама", dad: "Папа" },
       faceLabel: ["тяжёлый день", "трудный день", "обычный день",
         "хороший день", "прекрасный день"],
@@ -9527,6 +9533,26 @@
 
   function currentDay() {
     return journalDay || dayKeyOf(new Date());
+  }
+
+  // Both ways into an older day come through here — the date field and a tap
+  // on the strip — so there is one rule about what a day may be and one place
+  // that repaints after it changes. Today is stored as null rather than as
+  // today's key: the screen can be left open across midnight, and a form
+  // pinned to yesterday's date because that is what it was when it opened
+  // would be the worst kind of wrong.
+  function pointFormAt(day) {
+    var today = dayKeyOf(new Date());
+    // A native date input hands back a bare YYYY-MM-DD when it is picked,
+    // and whatever was typed when it is typed into. A day in the future is
+    // not a day anybody can say how they got through.
+    if (!SHOP_ETA_RE.test(day) || isNaN(new Date(day + "T00:00:00").getTime()) ||
+        day > today) {
+      day = today;
+    }
+    journalDay = day === today ? null : day;
+    loadJournalForm();
+    renderJournal();
   }
 
   // ---------- the trend ----------
@@ -9779,6 +9805,12 @@
     var day = currentDay();
     var today = dayKeyOf(new Date());
     el.journalTodayTitle.textContent = day === today ? T.todayTitle : T.editing(journalWhen(day));
+    el.journalDateLabel.textContent = T.dayLabel;
+    el.journalDate.value = day;
+    // Nothing later than today is offerable, and the check in pointFormAt
+    // still refuses one — a date input's max is a hint to the picker, not a
+    // guarantee about what arrives.
+    el.journalDate.max = today;
     el.journalTextLabel.textContent = T.textLabel;
     el.journalTextHint.textContent = T.textHint;
     el.journalSave.textContent = T.save;
@@ -9802,11 +9834,21 @@
       var strip = document.createElement("div");
       strip.className = "jr-strip";
       rows.forEach(function (row) {
-        var cell = document.createElement("i");
+        // A button, not a swatch: the commonest thing anybody wants from
+        // this strip is to fill in the gap they can see in it. Each cell is
+        // narrower than a fingertip and there is no way around that with a
+        // fortnight across a phone — so the date field below is the reliable
+        // way in, and a mistap here lands on the day next door, which the
+        // heading then names and one more tap corrects.
+        var cell = document.createElement("button");
+        cell.type = "button";
         cell.className = "jr-cell" + (row.score === null ? " jr-cell-none" : " jr-s" + row.score);
         cell.title = journalWhen(row.day) +
           (row.score === null ? "" : " · " + JOURNAL_FACES[row.score - 1] +
             " " + T.faceLabel[row.score - 1]);
+        cell.setAttribute("aria-label", T.pickDay(journalWhen(row.day)) +
+          (row.score === null ? "" : " — " + T.faceLabel[row.score - 1]));
+        cell.addEventListener("click", function () { pointFormAt(row.day); });
         if (row.score !== null) anyRated = true;
         strip.appendChild(cell);
       });
@@ -9865,9 +9907,7 @@
       body.appendChild(said);
     }
     body.addEventListener("click", function () {
-      journalDay = entry.day;
-      loadJournalForm();
-      renderJournal();
+      pointFormAt(entry.day);
       el.journalText.focus();
       window.scrollTo(0, 0);
     });
@@ -10000,9 +10040,10 @@
   el.journalBack.addEventListener("click", showMain);
   el.journalSave.addEventListener("click", saveJournalDay);
   el.journalCancel.addEventListener("click", function () {
-    journalDay = null;
-    loadJournalForm();
-    renderJournal();
+    pointFormAt(dayKeyOf(new Date()));
+  });
+  el.journalDate.addEventListener("change", function () {
+    pointFormAt(el.journalDate.value);
   });
   el.journalNoteAdd.addEventListener("click", function () { openNoteForm(null); });
   el.journalNoteSave.addEventListener("click", saveJournalNote);

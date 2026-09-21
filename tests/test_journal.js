@@ -215,6 +215,80 @@ const NOW = '2026-03-12T20:00:00Z';
   ok('cancel returns the form to today', s.cancel === false, s);
   ok('cancel leaves the form empty again', s.text === '', s.text);
 
+  // ---------- filling in a day that has no entry ----------
+
+  // The feed only lists days somebody already wrote down, so before this
+  // there was no way to reach a Tuesday nobody filled in. Two ways in now:
+  // the date field, and a tap on the gap in the strip.
+  await seed([{ daysAgo: 1, baby: 4 }]);
+  const backThen = await page.evaluate(() => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  });
+  await page.fill('#journalDate', backThen);
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('the date field points the form at an older day', s.cancel === true, s);
+  ok('a day with nothing in it comes up blank',
+    s.text === '' && JSON.stringify(s.picked) === JSON.stringify([-1, -1, -1]), s);
+
+  await face('Baby', 2);
+  await face('Dad', 1);
+  await page.click('#journalSave');
+  await page.waitForTimeout(400);
+  all = await stored();
+  ok('a day rated after the fact is stored', all.length === 2, all.length);
+  const filled = all.filter(e => e.day === backThen)[0];
+  ok('it lands on the day that was picked', !!filled, all);
+  ok('with the ratings that were tapped',
+    filled && filled.baby === 2 && filled.dad === 1, filled);
+  s = await shown();
+  ok('saving points the form back at today', s.cancel === false, s);
+
+  // The date field will not take a day that has not happened.
+  const ahead = await page.evaluate(() => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  });
+  const capped = await page.evaluate(() => document.getElementById('journalDate').max);
+  ok('the date field offers nothing later than today',
+    capped === new Date().toISOString().slice(0, 10) || /^\d{4}-\d{2}-\d{2}$/.test(capped),
+    capped);
+  await page.fill('#journalDate', ahead);
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('a day in the future is refused', s.cancel === false, s);
+  ok('and the field snaps back to today',
+    await page.inputValue('#journalDate') === new Date().toISOString().slice(0, 10) ||
+    (await page.inputValue('#journalDate')) !== ahead, await page.inputValue('#journalDate'));
+
+  // A tap on the strip is the other way in. The strip runs oldest to newest
+  // and the last cell is today, so the third from the end is two days back.
+  const twoBack = await page.evaluate(() => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  });
+  await page.click('#journalTrend .jr-trend-row:first-child .jr-cell:nth-last-child(3)');
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('tapping the strip points the form at that day', s.cancel === true, s);
+  ok('the strip and the date field agree about which day',
+    await page.inputValue('#journalDate') === twoBack,
+    { field: await page.inputValue('#journalDate'), twoBack });
+
+  // Tapping today's own cell puts it back, rather than pinning the form to
+  // today's date as if it were an older day.
+  await page.click('#journalTrend .jr-trend-row:first-child .jr-cell:last-child');
+  await page.waitForTimeout(400);
+  s = await shown();
+  ok('tapping today on the strip returns the form to today', s.cancel === false, s);
+
   // ---------- the tally ----------
 
   // Four good (4 or 5), three hard (1 or 2), one ordinary (3) — and 3 counts

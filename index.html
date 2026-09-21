@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=83">
+<link rel="stylesheet" href="style.css?v=84">
 </head>
 <body>
 
@@ -892,6 +892,10 @@
 
         <div class="data-panel">
           <h3 class="jr-head" id="journalTodayTitle">How was today</h3>
+          <label class="jr-rate jr-day">
+            <span class="jr-who" id="journalDateLabel">Which day</span>
+            <input id="journalDate" class="manual-input jr-date" type="date">
+          </label>
           <div class="jr-rate">
             <span class="jr-who" id="journalLabelBaby">Baby</span>
             <div class="jr-faces" id="journalRowBaby"></div>
@@ -1315,6 +1319,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=83"></script>
+<script src="app.js?v=84"></script>
 </body>
 </html>
