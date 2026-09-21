@@ -2994,11 +2994,19 @@ body {
   flex: 1;
   gap: 2px;
 }
+/* Taller than it needs to be to be read, because it is also a target: a
+   fortnight across a phone leaves each day about 18px wide and no layout
+   fixes that, so the height is what there is to give. The date field above
+   is the reliable way into an older day; this is the quick one. */
 .jr-cell {
+  border: none;
   border-radius: 2px;
+  cursor: pointer;
   flex: 1;
-  height: 16px;
+  height: 22px;
+  padding: 0;
 }
+.jr-cell:active { opacity: 0.6; }
 /* One to five, hardest to easiest. A day nobody answered for is an outline
    and not a middling colour: "we did not say" and "it was ordinary" are
    different answers, and a strip that blurs them is worse than no strip. */
@@ -3011,6 +3019,12 @@ body {
 .jr-s3 { background: var(--text-faint); }
 .jr-s4 { background: var(--accent-diaper); opacity: 0.6; }
 .jr-s5 { background: var(--accent-diaper); }
+.jr-day { margin-bottom: 2px; }
+.jr-date {
+  flex: 1;
+  min-width: 0;
+}
+
 .jr-tally {
   color: var(--text-faint);
   flex: 0 0 auto;
