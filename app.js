@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "88";
+    var fallback = "89";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1601,7 +1601,6 @@
     noiseOpenBtn: document.getElementById("noiseOpen"),
     noiseBack: document.getElementById("noiseBack"),
     noisePlayer: document.getElementById("noisePlayer"),
-    noisePlayerB: document.getElementById("noisePlayerB"),
     noisePlay: document.getElementById("noisePlay"),
     noisePlayIcon: document.getElementById("noisePlayIcon"),
     noisePlayLabel: document.getElementById("noisePlayLabel"),
@@ -10083,20 +10082,27 @@
   ];
   var NOISE_TIMERS = [15, 30, 45, 60, 0];
   var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false };
-  var NOISE_RATE = 44100;
-  // Twenty seconds. Noise has no tune to notice coming round again, so the
-  // only things length buys are render time — the gap between tapping the
-  // button at 3am and the room going quiet — and how often the handoff below
-  // has to happen. Twenty is the compromise.
-  var NOISE_LOOP_SECONDS = 20;
-  // How long the two ends overlap at a handoff, and so how much of each end
-  // of the sound is a fade. Long enough that a timeupdate, which arrives four
-  // times a second, cannot miss the window; short enough to stay inaudible.
-  var NOISE_OVERLAP_SECONDS = 0.75;
-  // The timer does not cut out, it fades, because silence arriving all at
-  // once is itself a noise. This is the length of the fade, played after the
-  // chosen time rather than taken out of it.
-  var NOISE_FADE_SECONDS = 30;
+  // Generated at 44.1kHz, because the pink filter's coefficients are tuned
+  // for that rate — run it at any other and its poles land in the wrong
+  // places and what comes out is not pink. It is reduced afterwards by
+  // averaging every fifth sample, which drops the rate and serves as the
+  // anti-alias filter in the same pass.
+  var NOISE_GEN_RATE = 44100;
+  var NOISE_DECIMATE = 5;
+  // 8820Hz keeps everything below 4.4kHz. Nothing in a sleep sound lives
+  // above that, and the rate is what decides whether a whole session fits in
+  // one file — which, below, is the difference between working and not.
+  var NOISE_RATE = NOISE_GEN_RATE / NOISE_DECIMATE;
+  // One block of noise, repeated to whatever length is wanted. Its end is
+  // crossfaded into its own start, so a repeat joins the one before it with
+  // nothing to hear.
+  var NOISE_BLOCK_SECONDS = 30;
+  var NOISE_SEAM_SECONDS = 0.5;
+  // A timer with no end still has to be a file of some length. Fifteen
+  // minutes is the one place left where the browser is asked to loop, and
+  // asking it once a quarter of an hour is a different proposition from
+  // asking it twice a minute.
+  var NOISE_OPEN_MINUTES = 15;
   var NOISE_HOLD_MS = 500;
   // Keeping the level out of the WAV and off the element is not an option:
   // iOS ignores .volume on a media element entirely, so the only volume
@@ -10145,7 +10151,11 @@
   // by Paul Kellet's filter — six one-pole filters summed, which is the
   // cheapest thing that is actually pink rather than merely darker. Brown
   // falls twice as fast and is the one that sounds like the inside of a body.
-  function noiseSamples(kind, count) {
+  //
+  // Levelling happens after the rate is reduced, not here: averaging five
+  // samples together changes how loud the result is, and by a different
+  // amount for each of the three.
+  function rawNoise(kind, count) {
     var out = new Float32Array(count);
     var i;
     if (kind === "white") {
@@ -10170,7 +10180,23 @@
         out[i] = last;
       }
     }
-    return normaliseNoise(out);
+    return out;
+  }
+
+  // Five samples averaged into one. A plain boxcar is a poor anti-alias
+  // filter in general, but it has its nulls exactly where the folding happens
+  // and what folds is noise onto noise, which is the one signal that does not
+  // mind.
+  function decimateNoise(samples) {
+    var count = Math.floor(samples.length / NOISE_DECIMATE);
+    var out = new Float32Array(count);
+    for (var i = 0; i < count; i++) {
+      var sum = 0;
+      var base = i * NOISE_DECIMATE;
+      for (var k = 0; k < NOISE_DECIMATE; k++) sum += samples[base + k];
+      out[i] = sum / NOISE_DECIMATE;
+    }
+    return out;
   }
 
   // Levelled by RMS, not by peak, so the three sounds are about as loud as
@@ -10193,70 +10219,81 @@
     return samples;
   }
 
-  // A stretch of noise that fades up at the start and down at the end, both
-  // on a quarter-cosine. It is never looped — it is played against a second
-  // copy of itself, offset so that one fade-up sits exactly on top of the
-  // other's fade-down.
-  //
-  // The curve is what makes that join silent. Two different stretches of
-  // noise are uncorrelated, so their powers add rather than their amplitudes,
-  // and sin² + cos² = 1 means the total power across the overlap is flat. A
-  // straight-line fade would add up to a dip in the middle, which on noise is
-  // heard as a breath.
-  function noiseLoopSamples(kind) {
-    var len = Math.round(NOISE_RATE * NOISE_LOOP_SECONDS);
-    var over = Math.round(NOISE_RATE * NOISE_OVERLAP_SECONDS);
-    var out = noiseSamples(kind, len);
-    for (var i = 0; i < over; i++) {
-      var gain = Math.sin(Math.PI / 2 * (i / over));
-      out[i] *= gain;
-      out[len - 1 - i] *= gain;
+  // One block, whose end runs into its own beginning. The extra half second
+  // at the end is crossfaded across the first half second on a quarter-
+  // cosine: two different stretches of noise are uncorrelated, so it is their
+  // powers that add and sin² + cos² = 1 keeps the join at the same level. A
+  // straight-line fade would dip 3dB in the middle of it, which on noise is
+  // heard as a breath every time the block comes round.
+  function noiseBlockSamples(kind) {
+    var len = Math.round(NOISE_RATE * NOISE_BLOCK_SECONDS);
+    var seam = Math.round(NOISE_RATE * NOISE_SEAM_SECONDS);
+    var small = decimateNoise(rawNoise(kind, (len + seam) * NOISE_DECIMATE));
+    var out = new Float32Array(len);
+    var i;
+    for (i = 0; i < len; i++) out[i] = small[i];
+    for (i = 0; i < seam; i++) {
+      var turn = Math.PI / 2 * (i / seam);
+      out[i] = small[i] * Math.sin(turn) + small[len + i] * Math.cos(turn);
     }
-    return out;
+    return normaliseNoise(out);
   }
 
-  // The tail, played once when the timer runs out. A raised cosine rather
-  // than a straight line: it leaves quietly at both ends instead of stepping
-  // off a cliff at the finish.
-  function noiseTailSamples(kind) {
-    var len = Math.round(NOISE_RATE * NOISE_FADE_SECONDS);
-    var out = noiseSamples(kind, len);
-    for (var i = 0; i < len; i++) {
-      out[i] *= 0.5 * (1 + Math.cos(Math.PI * (i / len)));
-    }
-    return out;
-  }
-
-  function wavUrl(samples, gain) {
+  function encodeNoise(samples, gain, fadeOut) {
     var count = samples.length;
-    var buffer = new ArrayBuffer(44 + count * 2);
-    var head = new DataView(buffer);
-    var pos = 0;
-    function str(text) {
-      for (var i = 0; i < text.length; i++) head.setUint8(pos++, text.charCodeAt(i));
-    }
-    function u32(value) { head.setUint32(pos, value, true); pos += 4; }
-    function u16(value) { head.setUint16(pos, value, true); pos += 2; }
-    str("RIFF"); u32(36 + count * 2); str("WAVE");
-    str("fmt "); u32(16); u16(1); u16(1);
-    u32(NOISE_RATE); u32(NOISE_RATE * 2); u16(2); u16(16);
-    str("data"); u32(count * 2);
-
-    var body = new Int16Array(buffer, 44, count);
+    var bytes = new Uint8Array(count * 2);
+    var body = new Int16Array(bytes.buffer);
     for (var i = 0; i < count; i++) {
       var v = samples[i] * gain;
+      if (fadeOut) v *= 0.5 * (1 + Math.cos(Math.PI * (i / count)));
       if (v > 1) v = 1; else if (v < -1) v = -1;
       body[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
     }
     // Every machine this runs on is little-endian, but a WAV that assumed so
     // silently would be white noise of a different and much worse kind.
     if (!LITTLE_ENDIAN) {
-      var bytes = new Uint8Array(buffer, 44, count * 2);
       for (var j = 0; j < bytes.length; j += 2) {
         var t = bytes[j]; bytes[j] = bytes[j + 1]; bytes[j + 1] = t;
       }
     }
-    return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+    return bytes;
+  }
+
+  function wavHeader(dataLength) {
+    var head = new ArrayBuffer(44);
+    var view = new DataView(head);
+    var pos = 0;
+    function str(text) {
+      for (var i = 0; i < text.length; i++) view.setUint8(pos++, text.charCodeAt(i));
+    }
+    function u32(value) { view.setUint32(pos, value, true); pos += 4; }
+    function u16(value) { view.setUint16(pos, value, true); pos += 2; }
+    str("RIFF"); u32(36 + dataLength); str("WAVE");
+    str("fmt "); u32(16); u16(1); u16(1);
+    u32(NOISE_RATE); u32(NOISE_RATE * 2); u16(2); u16(16);
+    str("data"); u32(dataLength);
+    return head;
+  }
+
+  // The file is the whole session. One block is made and then handed to the
+  // Blob over and over — the bytes are copied into the blob's own storage, so
+  // nothing here ever holds forty megabytes of JavaScript array, and only
+  // thirty seconds of noise is ever actually computed.
+  //
+  // Everything about this is in aid of one thing: once play() is called,
+  // nothing in this file has to run again. A phone stops running a page's
+  // JavaScript when the screen goes off, which is exactly when this sound
+  // matters most, so anything that needed a timer, an event or a second
+  // element to keep going would stop a minute after it was needed.
+  function buildNoiseFile(minutes) {
+    var block = encodeNoise(noiseSamplesCached(), noiseGain(), false);
+    var blocks = Math.ceil((minutes || NOISE_OPEN_MINUTES) * 60 / NOISE_BLOCK_SECONDS);
+    var tail = minutes ? encodeNoise(noiseSamplesCached(), noiseGain(), true) : null;
+    var length = block.length * blocks + (tail ? tail.length : 0);
+    var parts = [wavHeader(length)];
+    for (var i = 0; i < blocks; i++) parts.push(block);
+    if (tail) parts.push(tail);
+    return URL.createObjectURL(new Blob(parts, { type: "audio/wav" }));
   }
 
   function noiseGain() {
@@ -10266,76 +10303,31 @@
     return NOISE_LEVELS[1].gain;
   }
 
-  // One rendered sound is held at a time and thrown away when the choice
-  // changes. Three sounds at four volumes is twelve blobs of two megabytes,
-  // and none of them is worth keeping for a tap that may never come.
-  var noiseMade = { key: null, loop: null, tail: null };
-  var noiseBin = [];
+  // The block itself does not depend on the volume or the timer, so it
+  // survives a change to either and only a change of sound costs anything.
+  var noiseBlockCache = { sound: null, samples: null };
 
-  // Revoking a blob the media element may still be reading from is how a
-  // browser ends up playing silence, so what is no longer wanted waits in a
-  // bin and the bin is emptied once nothing is playing.
-  function emptyNoiseBin() {
-    while (noiseBin.length) URL.revokeObjectURL(noiseBin.pop());
-  }
-
-  function binNoise() {
-    // Whatever was already in the bin is two generations old by now and
-    // certainly not what anything is still reading, so it goes now rather
-    // than waiting for a stop that a run of quick changes leaves far off.
-    emptyNoiseBin();
-    if (noiseMade.loop) noiseBin.push(noiseMade.loop);
-    if (noiseMade.tail) noiseBin.push(noiseMade.tail);
-    noiseMade = { key: null, loop: null, tail: null };
-  }
-
-  function noiseLoopUrl() {
-    var key = noise.sound + ":" + noise.level;
-    if (noiseMade.key !== key) {
-      binNoise();
-      noiseMade.key = key;
-      noiseMade.loop = wavUrl(noiseLoopSamples(noise.sound), noiseGain());
+  function noiseSamplesCached() {
+    if (noiseBlockCache.sound !== noise.sound) {
+      noiseBlockCache.sound = noise.sound;
+      noiseBlockCache.samples = noiseBlockSamples(noise.sound);
     }
-    return noiseMade.loop;
+    return noiseBlockCache.samples;
   }
 
-  function noiseTailUrl() {
-    noiseLoopUrl();
-    if (!noiseMade.tail) {
-      noiseMade.tail = wavUrl(noiseTailSamples(noise.sound), noiseGain());
-    }
-    return noiseMade.tail;
+  // One rendered file is held at a time. At up to sixty-four megabytes it is
+  // not something to keep a spare of, and it is thrown away the moment the
+  // element has stopped reading it.
+  var noiseFileUrl = null;
+
+  function releaseNoiseFile() {
+    if (noiseFileUrl) URL.revokeObjectURL(noiseFileUrl);
+    noiseFileUrl = null;
   }
 
   // ---------- playing it ----------
 
-  // Safari leaves a gap of most of a second every time a media element loops,
-  // which on a ten-second loop is a hole in the sound every ten seconds. So
-  // nothing here loops. Two elements share one stretch of noise and take it
-  // in turns: while one is playing out its fade, the other is already started
-  // at the matching point of its fade-in, and the two sum to a flat, seamless
-  // whole. What the browser is asked to do is play a file from beginning to
-  // end, which is the one thing every browser does properly.
-
   var noiseOn = false;
-  var noiseEndsAt = 0;
-  var noiseFading = false;
-  var noiseLive = 0;
-
-  function noisePair() {
-    return [el.noisePlayer, el.noisePlayerB];
-  }
-
-  function noiseLiveEl() {
-    return noisePair()[noiseLive];
-  }
-
-  function noiseMinutesLeft() {
-    if (!noiseOn) return null;
-    if (noiseFading) return 0;
-    if (!noiseEndsAt) return null;
-    return Math.max(0, Math.ceil((noiseEndsAt - Date.now()) / 60000));
-  }
 
   function describeNoiseSound(id) {
     for (var i = 0; i < NOISE_SOUNDS.length; i++) {
@@ -10344,75 +10336,73 @@
     return id;
   }
 
-  function hushNoise(player) {
-    try {
-      player.pause();
-      player.removeAttribute("src");
-      player.load();
-    } catch (e) { /* it is quiet either way */ }
+  // Read off the element rather than off a clock. It is the element that
+  // knows how far through it is, and it goes on knowing while the screen is
+  // off and nothing else in here is running — so the count is right when the
+  // app is opened again rather than frozen at whatever it last saw.
+  function noiseMinutesLeft() {
+    if (!noiseOn || !noise.timer) return null;
+    var player = el.noisePlayer;
+    if (!player.duration || isNaN(player.duration)) return noise.timer;
+    var left = player.duration - NOISE_BLOCK_SECONDS - player.currentTime;
+    return Math.max(0, Math.ceil(left / 60));
+  }
+
+  function noiseIsFading() {
+    if (!noiseOn || !noise.timer) return false;
+    var player = el.noisePlayer;
+    if (!player.duration || isNaN(player.duration)) return false;
+    return player.currentTime > player.duration - NOISE_BLOCK_SECONDS;
   }
 
   function noiseStart() {
-    if (!el.noisePlayer || !el.noisePlayerB) return;
-    var url = noiseLoopUrl();
-    var pair = noisePair();
-    noiseLive = 0;
+    var player = el.noisePlayer;
+    if (!player) return;
+    var url;
     try {
-      // Assigning src is what rewinds them; writing currentTime here would
-      // throw in a browser that has not read the metadata yet, and take the
-      // play() calls below down with it.
-      pair.forEach(function (player) {
-        player.pause();
-        player.loop = false;
-        player.src = url;
-      });
-      var started = pair[0].play();
+      url = buildNoiseFile(noise.timer);
+    } catch (e) {
+      showError("Couldn't make the sound");
+      return;
+    }
+    try {
+      player.pause();
+      // Looped only when there is no timer, and then on a quarter-hour file.
+      // Safari leaves a hole most of a second wide wherever it loops, which
+      // is why the timed files simply run to their end instead.
+      player.loop = !noise.timer;
+      player.src = url;
+      var started = player.play();
       if (started && started.catch) {
         started.catch(function () {
           noiseStop();
           showError("Couldn't start the sound. On an iPhone, check the ring/silent switch.");
         });
       }
-      // The second one is woken inside the same tap, played for an instant
-      // and stopped again. A phone will not begin playing audio outside a
-      // gesture, and the tap that starts the sound is the only gesture there
-      // is going to be — without this the first handoff would be refused and
-      // the room would go quiet twenty seconds later. The instant it plays
-      // for is silent on its own account: a fresh source starts at the very
-      // beginning of the fade-in, where there is nothing yet to hear.
-      var woken = pair[1].play();
-      if (woken && woken.then) {
-        woken.then(function () { if (noiseLive === 0) pair[1].pause(); },
-          function () { /* it was refused, and the handoff will try again */ });
-      } else {
-        pair[1].pause();
-      }
     } catch (e) {
+      URL.revokeObjectURL(url);
       showError("Couldn't start the sound");
       return;
     }
+    releaseNoiseFile();
+    noiseFileUrl = url;
     noiseOn = true;
-    noiseFading = false;
-    noiseEndsAt = noise.timer ? Date.now() + noise.timer * 60000 : 0;
     describeNoiseToSystem();
-    // Rendered after playback has begun, so the first tap is not waiting on
-    // half a minute of samples it will not need for another three quarters
-    // of an hour.
-    if (noise.timer) setTimeout(function () { if (noiseOn) noiseTailUrl(); }, 0);
-    armNoiseTimer();
     renderNoise();
   }
 
   function noiseStop() {
+    var player = el.noisePlayer;
     noiseOn = false;
-    noiseFading = false;
-    noiseEndsAt = 0;
-    if (noiseTimerId) clearTimeout(noiseTimerId);
-    noiseTimerId = null;
-    noisePair().forEach(hushNoise);
-    noiseLive = 0;
+    if (player) {
+      try {
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+      } catch (e) { /* the sound is over either way */ }
+    }
+    releaseNoiseFile();
     clearNoiseFromSystem();
-    emptyNoiseBin();
     renderNoise();
   }
 
@@ -10429,82 +10419,15 @@
     else if (noiseOn) noiseStop();
   }
 
-  // The handoff. Driven by the live element's own timeupdate, which the media
-  // pipeline fires about four times a second whether or not anybody is
-  // looking at the screen — and the screen being off is the whole point here.
-  //
-  // Where the next one is started from is worked out rather than assumed. The
-  // event can arrive anywhere inside the window, so the reply is "you are
-  // this far into your fade-out, so begin exactly that far into your fade-in"
-  // and the two line up however late the news came.
-  function noiseHandoff(player) {
-    if (!noiseOn || noiseFading) return;
-    var pair = noisePair();
-    var live = pair[noiseLive];
-    if (player !== live) return;
-    var length = live.duration;
-    if (!length || isNaN(length)) return;
-    var into = live.currentTime - (length - NOISE_OVERLAP_SECONDS);
-    if (into < 0) return;
-    var next = pair[1 - noiseLive];
-    if (!next.paused) return;
-    try {
-      next.currentTime = Math.min(Math.max(into, 0), NOISE_OVERLAP_SECONDS);
-      var started = next.play();
-      if (started && started.catch) started.catch(function () { /* the one still playing covers it */ });
-    } catch (e) {
-      return;
-    }
-    noiseLive = 1 - noiseLive;
-  }
-
-  // Started by the timer running out, not by anything the user did. The tail
-  // is a different file played once; noise has no phase to match, so the join
-  // cannot be heard.
-  function noiseBeginFade() {
-    if (!noiseOn || noiseFading) return;
-    noiseFading = true;
-    noiseEndsAt = 0;
-    var pair = noisePair();
-    var live = pair[noiseLive];
-    try {
-      pair[1 - noiseLive].pause();
-      live.loop = false;
-      live.src = noiseTailUrl();
-      var started = live.play();
-      if (started && started.catch) started.catch(function () { noiseStop(); });
-    } catch (e) {
-      noiseStop();
-      return;
-    }
-    renderNoise();
-  }
-
-  // Driven by the media element rather than by a timer, because a timer is
-  // exactly what a phone stops running once the screen is off — and the
-  // screen being off is the whole point of this feature.
-  function noiseWatch() {
-    if (!noiseOn || noiseFading || !noiseEndsAt) return;
-    if (Date.now() >= noiseEndsAt) noiseBeginFade();
-  }
-
-  // And a plain timer besides, for the browsers that keep them running. Both
-  // routes end at the same guarded function, so whichever arrives first is
-  // the one that matters and the other finds the work already done.
-  var noiseTimerId = null;
-
-  function armNoiseTimer() {
-    if (noiseTimerId) clearTimeout(noiseTimerId);
-    noiseTimerId = null;
-    if (!noiseOn || !noiseEndsAt) return;
-    noiseTimerId = setTimeout(noiseWatch, Math.max(0, noiseEndsAt - Date.now()));
-  }
-
-  // An element reaching its end is ordinary: it is the one that has just
-  // handed over, and it has finished its fade. Only the fade-out tail ending
-  // means the sound is over.
-  function noiseEnded(player) {
-    if (noiseFading && player === noiseLiveEl()) noiseStop();
+  // The file reaching its end is the timer going off. Nothing had to be
+  // watching for it — but if the screen was off when it happened, nothing
+  // here heard it either, so the state is reconciled whenever the app is
+  // looked at again.
+  function reconcileNoise() {
+    if (!noiseOn) return;
+    var player = el.noisePlayer;
+    if (!player) return;
+    if (player.ended || (player.paused && player.currentTime > 0)) noiseStop();
   }
 
   function describeNoiseToSystem() {
@@ -10553,7 +10476,7 @@
     el.noisePlay.classList.toggle("playing", noiseOn);
     el.noisePlayIcon.textContent = noiseOn ? "⏹" : "▶";
     el.noisePlayLabel.textContent = noiseOn ? "Stop" : "Play";
-    el.noisePlayNote.textContent = noiseFading ? "Fading out"
+    el.noisePlayNote.textContent = noiseIsFading() ? "Fading out"
       : noiseOn && left !== null ? describeNoiseSound(noise.sound) + " · " + left + " min left"
       : noiseOn ? describeNoiseSound(noise.sound) + " · until you stop it"
       : describeNoiseSound(noise.sound) + " · " + describeNoiseTimer(noise.timer);
@@ -10616,13 +10539,10 @@
     if (noise[field] === value) return;
     noise[field] = value;
     saveNoisePrefs(noise);
-    if (field !== "timer") binNoise();
-    if (noiseOn && field === "timer" && !noiseFading) {
-      noiseEndsAt = value ? Date.now() + value * 60000 : 0;
-      armNoiseTimer();
-    } else if (noiseOn) {
-      noiseStart();
-    }
+    // The timer is the length of the file now, so changing any of the three
+    // means a different file and starting again. On noise that is inaudible,
+    // which is the one place in this app where beginning again costs nothing.
+    if (noiseOn) noiseStart();
     renderNoise();
   }
 
@@ -10672,15 +10592,11 @@
     noiseToggle();
   });
 
-  // Both elements report, and each handler works out for itself whether the
-  // one that spoke is the one that matters.
-  noisePair().forEach(function (player) {
-    player.addEventListener("timeupdate", function () {
-      noiseWatch();
-      noiseHandoff(player);
-    });
-    player.addEventListener("ended", function () { noiseEnded(player); });
-  });
+  // The only two things left to listen for. Neither is needed for the sound
+  // to keep playing — that is the point of the file being the whole session —
+  // and both are about keeping the screen honest about what is happening.
+  el.noisePlayer.addEventListener("ended", noiseStop);
+  el.noisePlayer.addEventListener("timeupdate", renderNoise);
 
 
   // ---------- ask an AI ----------
@@ -11399,6 +11315,7 @@
     // The progress panel only: the list below it holds time inputs somebody
     // may be part-way through setting, and a periodic rebuild would drop them.
     if (!el.screenRoutine.hidden) renderRoutineProgress();
+    reconcileNoise();
     renderNoise();
     if (withLog) renderLog();
   }
