@@ -97,13 +97,20 @@ function readWav(bytes) {
     await page.waitForTimeout(250);
   }
 
+  // Two elements now, so every question about "the sound" is a question
+  // about the pair: whether either is playing, how many at once, and whether
+  // anything is still holding a source.
   const player = () => page.evaluate(() => {
-    const a = document.getElementById('noisePlayer');
+    const els = [document.getElementById('noisePlayer'),
+                 document.getElementById('noisePlayerB')];
+    const live = els.filter(a => !a.paused);
     return {
-      playing: !a.paused,
-      loop: a.loop,
-      seconds: Math.round(a.duration || 0),
-      src: a.getAttribute('src')
+      playing: live.length > 0,
+      voices: live.length,
+      seconds: live.length ? Math.round(live[0].duration || 0) : 0,
+      looping: els.some(a => a.loop),
+      holding: els.filter(a => a.getAttribute('src')).length,
+      sameSource: els[0].getAttribute('src') === els[1].getAttribute('src')
     };
   });
 
@@ -183,8 +190,8 @@ function readWav(bytes) {
     { format: brown.format, channels: brown.channels, bits: brown.bits, rate: brown.rate });
   ok('the header declares the length the file actually has',
     brown.declared === brown.actual, [brown.declared, brown.actual]);
-  ok('the loop is ten seconds long',
-    Math.round(brown.samples.length / brown.rate) === 10, brown.samples.length / brown.rate);
+  ok('the stretch is twenty seconds long',
+    Math.round(brown.samples.length / brown.rate) === 20, brown.samples.length / brown.rate);
 
   // -3dB and -6dB an octave are what the words pink and brown mean. A sound
   // labelled "deep" that measured flat would be a bug nobody would ever find
@@ -225,17 +232,39 @@ function readWav(bytes) {
     [brown, pink, white].every(w => peak(w.samples) < 0.99),
     [brown, pink, white].map(w => peak(w.samples).toFixed(2)));
 
-  // The join is crossfaded, so the step from the last sample back to the
-  // first is an ordinary step and not a click.
-  function seamRatio(s) {
-    let typical = 0;
-    for (let i = 1; i < 20000; i++) typical += Math.abs(s[i] - s[i - 1]);
-    typical /= 20000;
-    return Math.abs(s[0] - s[s.length - 1]) / typical;
+  // Nothing loops any more, so there is no seam to check. What matters
+  // instead is the shape of the two ends: each stretch has to fade up from
+  // nothing and down to nothing, and the two curves have to add up to the
+  // level in the middle — or the handoff is heard as a breath.
+  const OVERLAP = Math.round(44100 * 0.75);
+
+  function windowRms(samples, from, count) {
+    let sum = 0;
+    for (let i = 0; i < count; i++) sum += samples[from + i] * samples[from + i];
+    return Math.sqrt(sum / count);
   }
-  ok('the loop does not click where it joins',
-    [brown, pink, white].every(w => seamRatio(w.samples) < 4),
-    [brown, pink, white].map(w => seamRatio(w.samples).toFixed(2)));
+
+  ok('every stretch begins from silence',
+    [brown, pink, white].every(w => Math.abs(w.samples[0]) < 1e-4),
+    [brown, pink, white].map(w => w.samples[0]));
+  ok('and ends in silence',
+    [brown, pink, white].every(w => Math.abs(w.samples[w.samples.length - 1]) < 1e-4),
+    [brown, pink, white].map(w => w.samples[w.samples.length - 1]));
+  ok('the fades are only at the ends, not over the whole thing',
+    windowRms(white.samples, OVERLAP * 2, 4000) > windowRms(white.samples, 0, 4000) * 3);
+
+  // The real check. At any point inside the overlap one stretch is on its way
+  // down and the other on its way up; noise is uncorrelated, so it is their
+  // powers that add, and sin² + cos² = 1 is what keeps the total flat.
+  const middle = windowRms(white.samples, 5 * 44100, 8000);
+  const errors = [0.25, 0.5, 0.75].map(where => {
+    const at = Math.round(OVERLAP * where);
+    const head = windowRms(white.samples, at, 2000);
+    const tail = windowRms(white.samples, white.samples.length - OVERLAP + at, 2000);
+    return 20 * Math.log10(Math.sqrt(head * head + tail * tail) / middle);
+  });
+  ok('the two ends add up to the level in the middle, all the way across',
+    errors.every(e => Math.abs(e) < 0.7), errors.map(e => e.toFixed(2)));
 
   // ---------- volume is in the file, because iOS ignores it anywhere else ----------
 
@@ -264,7 +293,11 @@ function readWav(bytes) {
   await page.waitForTimeout(700);
   let state = await player();
   ok('play starts something', state.playing, state);
-  ok('and it loops', state.loop);
+  ok('and nothing is asked to loop, because Safari leaves a hole where it does',
+    !state.looping);
+  ok('one voice at a time, between handoffs', state.voices === 1, state.voices);
+  ok('both elements are loaded with the same stretch, ready to take over',
+    state.holding === 2 && state.sameSource, state);
   ok('the button turns into a stop', await page.textContent('#noisePlayLabel') === 'Stop');
   ok('the screen counts down', /45 min left/.test(await page.textContent('#noisePlayNote')),
     await page.textContent('#noisePlayNote'));
@@ -289,7 +322,7 @@ function readWav(bytes) {
   await page.waitForTimeout(400);
   state = await player();
   ok('one tap on the shortcut stops it', !state.playing);
-  ok('and lets go of the source', state.src === null, state.src);
+  ok('and both elements let go of the source', state.holding === 0, state);
   ok('the shortcut goes quiet with it', !(await fab()).playing);
   ok('and hides again once it is off and we are elsewhere', (await fab()).hidden);
 
@@ -300,6 +333,59 @@ function readWav(bytes) {
   await page.click('#noiseFab');
   await page.waitForTimeout(700);
   ok('and one tap starts it', (await player()).playing);
+  await page.click('#noiseFab');
+  await page.waitForTimeout(300);
+
+  // ---------- the handoff ----------
+
+  // The point of the whole two-element arrangement. Rather than wait twenty
+  // seconds for it to come round, the live element is dropped a second from
+  // its end and the takeover is watched as it happens.
+  await page.click('#noiseFab');
+  await page.waitForTimeout(700);
+  ok('one voice before the handoff', (await player()).voices === 1);
+
+  const over = await page.evaluate(async () => {
+    const els = [document.getElementById('noisePlayer'),
+                 document.getElementById('noisePlayerB')];
+    const live = els.find(a => !a.paused);
+    const other = els.find(a => a !== live);
+    const seen = [];
+    const before = live.getAttribute('src');
+    let startedAt = null;
+    live.currentTime = live.duration - 1;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 50));
+      if (startedAt === null && !other.paused) startedAt = other.currentTime;
+      seen.push(els.filter(a => !a.paused).length);
+      if (seen.length > 6 && live.paused) break;
+    }
+    return {
+      seen: seen,
+      overlapped: seen.filter(n => n === 2).length,
+      silent: seen.filter(n => n === 0).length,
+      otherTookOver: !other.paused,
+      startedAt: startedAt,
+      sameStretch: other.getAttribute('src') === before
+    };
+  });
+
+  ok('the other element takes over', over.otherTookOver, over);
+  ok('the two overlap rather than meeting end to end', over.overlapped > 0, over.seen);
+  ok('and the sound is never left with nothing playing', over.silent === 0, over.seen);
+  // It is started at the point of its fade-in that matches how far the other
+  // is into its fade-out, so it begins somewhere inside the overlap rather
+  // than at nought.
+  ok('the one taking over starts inside its own fade-in, not from the top',
+    over.startedAt !== null && over.startedAt >= 0 && over.startedAt < 0.9,
+    over.startedAt);
+  ok('both are playing the same stretch', over.sameStretch);
+
+  await page.waitForTimeout(1500);
+  ok('and once the handover is done it is one voice again',
+    (await player()).voices === 1, (await player()).voices);
+  ok('still playing after it', (await player()).playing);
+
   await page.click('#noiseFab');
   await page.waitForTimeout(300);
 
@@ -332,14 +418,14 @@ function readWav(bytes) {
   await ctx.clock.runFor('10:30');
   await page.waitForTimeout(400);
   ok('the count comes down as the time goes', (await fab()).left === '5m', (await fab()).left);
-  ok('and it is still the loop', (await player()).loop);
+  ok('and it is still the twenty-second stretch', (await player()).seconds === 20);
 
   await ctx.clock.runFor('05:00');
   await page.waitForTimeout(600);
   state = await player();
-  ok('when the time is up it fades rather than cutting out',
-    state.playing && !state.loop, state);
+  ok('when the time is up it fades rather than cutting out', state.playing, state);
   ok('the fade is half a minute long', state.seconds === 30, state.seconds);
+  ok('and only the one element carries it', state.voices === 1, state.voices);
   ok('and the screen says so', await page.textContent('#noisePlayNote') === 'Fading out');
 
   // The tail is a real thirty seconds of audio, so rather than wait it out,
@@ -351,7 +437,7 @@ function readWav(bytes) {
   await page.waitForTimeout(2200);
   state = await player();
   ok('and when the fade runs out it stops itself', !state.playing, state);
-  ok('and lets go of the source', state.src === null);
+  ok('and lets go of the source', state.holding === 0);
   ok('the screen is back to offering to play', await page.textContent('#noisePlayLabel') === 'Play');
   ok('the shortcut is dark again', !(await fab()).playing);
 
@@ -367,7 +453,8 @@ function readWav(bytes) {
   await ctx.clock.runFor('02:00:00');
   await page.waitForTimeout(500);
   state = await player();
-  ok('and two hours later it is still going', state.playing && state.loop, state);
+  ok('and two hours later it is still going',
+    state.playing && state.seconds === 20, state);
 
   // ---------- changing it mid-flight ----------
 
