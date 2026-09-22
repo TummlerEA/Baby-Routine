@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=88">
+<link rel="stylesheet" href="style.css?v=89">
 </head>
 <body>
 
@@ -1359,18 +1359,17 @@
 
 </div>
 
-<!-- Two of them, alternating. Safari leaves a gap of most of a second
-     every time a media element loops, so nothing here ever loops: the
-     second one is started a moment before the first runs out, and the
-     two overlap across a crossfade baked into the sound itself. -->
+<!-- One element, handed one file that is the whole session. Once it is
+     playing, nothing in app.js has to run again for the sound to continue
+     or for the timer to go off — which is what it takes to survive the
+     screen being switched off. -->
 <audio id="noisePlayer" playsinline preload="auto"></audio>
-<audio id="noisePlayerB" playsinline preload="auto"></audio>
 
 <div class="toast" id="toast" hidden>
   <span id="toastText"></span>
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=88"></script>
+<script src="app.js?v=89"></script>
 </body>
 </html>
