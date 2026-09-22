@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=87">
+<link rel="stylesheet" href="style.css?v=88">
 </head>
 <body>
 
@@ -1359,13 +1359,18 @@
 
 </div>
 
-<audio id="noisePlayer" playsinline preload="none"></audio>
+<!-- Two of them, alternating. Safari leaves a gap of most of a second
+     every time a media element loops, so nothing here ever loops: the
+     second one is started a moment before the first runs out, and the
+     two overlap across a crossfade baked into the sound itself. -->
+<audio id="noisePlayer" playsinline preload="auto"></audio>
+<audio id="noisePlayerB" playsinline preload="auto"></audio>
 
 <div class="toast" id="toast" hidden>
   <span id="toastText"></span>
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=87"></script>
+<script src="app.js?v=88"></script>
 </body>
 </html>

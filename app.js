@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "87";
+    var fallback = "88";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1601,6 +1601,7 @@
     noiseOpenBtn: document.getElementById("noiseOpen"),
     noiseBack: document.getElementById("noiseBack"),
     noisePlayer: document.getElementById("noisePlayer"),
+    noisePlayerB: document.getElementById("noisePlayerB"),
     noisePlay: document.getElementById("noisePlay"),
     noisePlayIcon: document.getElementById("noisePlayIcon"),
     noisePlayLabel: document.getElementById("noisePlayLabel"),
@@ -10083,13 +10084,15 @@
   var NOISE_TIMERS = [15, 30, 45, 60, 0];
   var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false };
   var NOISE_RATE = 44100;
-  // Ten seconds. Noise has no tune to notice coming round again, so the only
-  // thing length buys is render time — and render time is the gap between
-  // tapping the button at 3am and the room going quiet.
-  var NOISE_LOOP_SECONDS = 10;
-  // The join is crossfaded over this much, or the loop clicks once every
-  // twenty seconds, all night.
-  var NOISE_SEAM_SECONDS = 0.5;
+  // Twenty seconds. Noise has no tune to notice coming round again, so the
+  // only things length buys are render time — the gap between tapping the
+  // button at 3am and the room going quiet — and how often the handoff below
+  // has to happen. Twenty is the compromise.
+  var NOISE_LOOP_SECONDS = 20;
+  // How long the two ends overlap at a handoff, and so how much of each end
+  // of the sound is a fade. Long enough that a timeupdate, which arrives four
+  // times a second, cannot miss the window; short enough to stay inaudible.
+  var NOISE_OVERLAP_SECONDS = 0.75;
   // The timer does not cut out, it fades, because silence arriving all at
   // once is itself a noise. This is the length of the fade, played after the
   // chosen time rather than taken out of it.
@@ -10190,19 +10193,24 @@
     return samples;
   }
 
-  // A loop whose end runs into its own beginning. The extra half second at
-  // the end is faded across the first half second, so the sample after the
-  // last one is the one it was already next to.
+  // A stretch of noise that fades up at the start and down at the end, both
+  // on a quarter-cosine. It is never looped — it is played against a second
+  // copy of itself, offset so that one fade-up sits exactly on top of the
+  // other's fade-down.
+  //
+  // The curve is what makes that join silent. Two different stretches of
+  // noise are uncorrelated, so their powers add rather than their amplitudes,
+  // and sin² + cos² = 1 means the total power across the overlap is flat. A
+  // straight-line fade would add up to a dip in the middle, which on noise is
+  // heard as a breath.
   function noiseLoopSamples(kind) {
     var len = Math.round(NOISE_RATE * NOISE_LOOP_SECONDS);
-    var seam = Math.round(NOISE_RATE * NOISE_SEAM_SECONDS);
-    var raw = noiseSamples(kind, len + seam);
-    var out = new Float32Array(len);
-    var i;
-    for (i = 0; i < len; i++) out[i] = raw[i];
-    for (i = 0; i < seam; i++) {
-      var k = i / seam;
-      out[i] = raw[i] * k + raw[len + i] * (1 - k);
+    var over = Math.round(NOISE_RATE * NOISE_OVERLAP_SECONDS);
+    var out = noiseSamples(kind, len);
+    for (var i = 0; i < over; i++) {
+      var gain = Math.sin(Math.PI / 2 * (i / over));
+      out[i] *= gain;
+      out[len - 1 - i] *= gain;
     }
     return out;
   }
@@ -10301,9 +10309,26 @@
 
   // ---------- playing it ----------
 
+  // Safari leaves a gap of most of a second every time a media element loops,
+  // which on a ten-second loop is a hole in the sound every ten seconds. So
+  // nothing here loops. Two elements share one stretch of noise and take it
+  // in turns: while one is playing out its fade, the other is already started
+  // at the matching point of its fade-in, and the two sum to a flat, seamless
+  // whole. What the browser is asked to do is play a file from beginning to
+  // end, which is the one thing every browser does properly.
+
   var noiseOn = false;
   var noiseEndsAt = 0;
   var noiseFading = false;
+  var noiseLive = 0;
+
+  function noisePair() {
+    return [el.noisePlayer, el.noisePlayerB];
+  }
+
+  function noiseLiveEl() {
+    return noisePair()[noiseLive];
+  }
 
   function noiseMinutesLeft() {
     if (!noiseOn) return null;
@@ -10319,18 +10344,48 @@
     return id;
   }
 
-  function noiseStart() {
-    var player = el.noisePlayer;
-    if (!player) return;
+  function hushNoise(player) {
     try {
-      player.src = noiseLoopUrl();
-      player.loop = true;
-      var started = player.play();
+      player.pause();
+      player.removeAttribute("src");
+      player.load();
+    } catch (e) { /* it is quiet either way */ }
+  }
+
+  function noiseStart() {
+    if (!el.noisePlayer || !el.noisePlayerB) return;
+    var url = noiseLoopUrl();
+    var pair = noisePair();
+    noiseLive = 0;
+    try {
+      // Assigning src is what rewinds them; writing currentTime here would
+      // throw in a browser that has not read the metadata yet, and take the
+      // play() calls below down with it.
+      pair.forEach(function (player) {
+        player.pause();
+        player.loop = false;
+        player.src = url;
+      });
+      var started = pair[0].play();
       if (started && started.catch) {
         started.catch(function () {
           noiseStop();
           showError("Couldn't start the sound. On an iPhone, check the ring/silent switch.");
         });
+      }
+      // The second one is woken inside the same tap, played for an instant
+      // and stopped again. A phone will not begin playing audio outside a
+      // gesture, and the tap that starts the sound is the only gesture there
+      // is going to be — without this the first handoff would be refused and
+      // the room would go quiet twenty seconds later. The instant it plays
+      // for is silent on its own account: a fresh source starts at the very
+      // beginning of the fade-in, where there is nothing yet to hear.
+      var woken = pair[1].play();
+      if (woken && woken.then) {
+        woken.then(function () { if (noiseLive === 0) pair[1].pause(); },
+          function () { /* it was refused, and the handoff will try again */ });
+      } else {
+        pair[1].pause();
       }
     } catch (e) {
       showError("Couldn't start the sound");
@@ -10349,19 +10404,13 @@
   }
 
   function noiseStop() {
-    var player = el.noisePlayer;
     noiseOn = false;
     noiseFading = false;
     noiseEndsAt = 0;
     if (noiseTimerId) clearTimeout(noiseTimerId);
     noiseTimerId = null;
-    if (player) {
-      try {
-        player.pause();
-        player.removeAttribute("src");
-        player.load();
-      } catch (e) { /* the sound is over either way */ }
-    }
+    noisePair().forEach(hushNoise);
+    noiseLive = 0;
     clearNoiseFromSystem();
     emptyNoiseBin();
     renderNoise();
@@ -10380,6 +10429,35 @@
     else if (noiseOn) noiseStop();
   }
 
+  // The handoff. Driven by the live element's own timeupdate, which the media
+  // pipeline fires about four times a second whether or not anybody is
+  // looking at the screen — and the screen being off is the whole point here.
+  //
+  // Where the next one is started from is worked out rather than assumed. The
+  // event can arrive anywhere inside the window, so the reply is "you are
+  // this far into your fade-out, so begin exactly that far into your fade-in"
+  // and the two line up however late the news came.
+  function noiseHandoff(player) {
+    if (!noiseOn || noiseFading) return;
+    var pair = noisePair();
+    var live = pair[noiseLive];
+    if (player !== live) return;
+    var length = live.duration;
+    if (!length || isNaN(length)) return;
+    var into = live.currentTime - (length - NOISE_OVERLAP_SECONDS);
+    if (into < 0) return;
+    var next = pair[1 - noiseLive];
+    if (!next.paused) return;
+    try {
+      next.currentTime = Math.min(Math.max(into, 0), NOISE_OVERLAP_SECONDS);
+      var started = next.play();
+      if (started && started.catch) started.catch(function () { /* the one still playing covers it */ });
+    } catch (e) {
+      return;
+    }
+    noiseLive = 1 - noiseLive;
+  }
+
   // Started by the timer running out, not by anything the user did. The tail
   // is a different file played once; noise has no phase to match, so the join
   // cannot be heard.
@@ -10387,10 +10465,13 @@
     if (!noiseOn || noiseFading) return;
     noiseFading = true;
     noiseEndsAt = 0;
+    var pair = noisePair();
+    var live = pair[noiseLive];
     try {
-      el.noisePlayer.src = noiseTailUrl();
-      el.noisePlayer.loop = false;
-      var started = el.noisePlayer.play();
+      pair[1 - noiseLive].pause();
+      live.loop = false;
+      live.src = noiseTailUrl();
+      var started = live.play();
       if (started && started.catch) started.catch(function () { noiseStop(); });
     } catch (e) {
       noiseStop();
@@ -10417,6 +10498,13 @@
     noiseTimerId = null;
     if (!noiseOn || !noiseEndsAt) return;
     noiseTimerId = setTimeout(noiseWatch, Math.max(0, noiseEndsAt - Date.now()));
+  }
+
+  // An element reaching its end is ordinary: it is the one that has just
+  // handed over, and it has finished its fade. Only the fade-out tail ending
+  // means the sound is over.
+  function noiseEnded(player) {
+    if (noiseFading && player === noiseLiveEl()) noiseStop();
   }
 
   function describeNoiseToSystem() {
@@ -10584,9 +10672,14 @@
     noiseToggle();
   });
 
-  el.noisePlayer.addEventListener("timeupdate", noiseWatch);
-  el.noisePlayer.addEventListener("ended", function () {
-    if (noiseFading) noiseStop();
+  // Both elements report, and each handler works out for itself whether the
+  // one that spoke is the one that matters.
+  noisePair().forEach(function (player) {
+    player.addEventListener("timeupdate", function () {
+      noiseWatch();
+      noiseHandoff(player);
+    });
+    player.addEventListener("ended", function () { noiseEnded(player); });
   });
 
 
