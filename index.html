@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=90">
+<link rel="stylesheet" href="style.css?v=91">
 </head>
 <body>
 
@@ -977,6 +977,10 @@
             <span class="nz-play-note" id="noisePlayNote">—</span>
           </span>
         </button>
+        <div class="nz-awake" id="noiseAwake" hidden>
+          <div class="nz-awake-count" id="noiseAwakeCount">—</div>
+          <div class="nz-awake-verdict" id="noiseAwakeVerdict">—</div>
+        </div>
       </section>
 
       <section class="data-panel">
@@ -1010,7 +1014,6 @@
         <p class="data-hint">The sound is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button.</p>
         <p class="data-hint">These settings belong to this phone. They are not synced, exported or shared, because the right sound and volume depend on the room.</p>
         <p class="data-hint" id="noiseSilentHint">On an iPhone the ring/silent switch has to be on, or the phone plays nothing.</p>
-        <p class="data-hint" id="noiseAwakeLine" hidden></p>
       </section>
 
     </main>
@@ -1381,6 +1384,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=90"></script>
+<script src="app.js?v=91"></script>
 </body>
 </html>
