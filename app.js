@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "90";
+    var fallback = "91";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1610,7 +1610,9 @@
     noiseTimers: document.getElementById("noiseTimers"),
     noisePrev: document.getElementById("noisePrev"),
     noiseNext: document.getElementById("noiseNext"),
-    noiseAwakeLine: document.getElementById("noiseAwakeLine"),
+    noiseAwake: document.getElementById("noiseAwake"),
+    noiseAwakeCount: document.getElementById("noiseAwakeCount"),
+    noiseAwakeVerdict: document.getElementById("noiseAwakeVerdict"),
     noiseAuto: document.getElementById("noiseAuto"),
     noiseFab: document.getElementById("noiseFab"),
     noiseFabIcon: document.getElementById("noiseFabIcon"),
@@ -10383,18 +10385,42 @@
   // a phone goes on running this page's timers once the screen is off. If it
   // does, the marks come in all night and a reminder is possible; if they
   // stop, the idea is dead and there is no point building on it.
-  var noiseAwake = { ticks: 0, timer: null };
+  // Minutes the screen was off are counted apart from minutes in total,
+  // because only the first kind answers anything: a run watched the whole way
+  // through proves nothing about a phone in a pocket. Locking the screen
+  // fires visibilitychange before anything is frozen, so the stretch itself
+  // is measured off the wall clock and is right however dead the page went.
+  var noiseAwake = { ticks: 0, dark: 0, darkMs: 0, since: 0, timer: null };
 
   function startCountingAwake() {
     stopCountingAwake();
     noiseAwake.ticks = 0;
-    noiseAwake.timer = setInterval(function () { noiseAwake.ticks++; }, NOISE_AWAKE_MS);
+    noiseAwake.dark = 0;
+    noiseAwake.darkMs = 0;
+    noiseAwake.since = document.hidden ? Date.now() : 0;
+    noiseAwake.timer = setInterval(function () {
+      noiseAwake.ticks++;
+      if (document.hidden) noiseAwake.dark++;
+    }, NOISE_AWAKE_MS);
   }
 
   function stopCountingAwake() {
     if (noiseAwake.timer) clearInterval(noiseAwake.timer);
     noiseAwake.timer = null;
+    closeDarkStretch();
   }
+
+  function closeDarkStretch() {
+    if (!noiseAwake.since) return;
+    noiseAwake.darkMs += Date.now() - noiseAwake.since;
+    noiseAwake.since = 0;
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!noiseOn) return;
+    if (document.hidden) noiseAwake.since = Date.now();
+    else closeDarkStretch();
+  });
 
   // Minutes of audio that really came out, against minutes this page was
   // awake for. The first is read off the element, which keeps counting
@@ -10402,9 +10428,14 @@
   function recordAwake(playedSeconds) {
     var played = Math.floor((playedSeconds || 0) / 60);
     if (played < 2) return;
+    closeDarkStretch();
     try {
-      localStorage.setItem(NOISE_AWAKE_KEY,
-        JSON.stringify({ played: played, awake: noiseAwake.ticks }));
+      localStorage.setItem(NOISE_AWAKE_KEY, JSON.stringify({
+        played: played,
+        awake: noiseAwake.ticks,
+        dark: Math.round(noiseAwake.darkMs / 60000),
+        darkAwake: noiseAwake.dark
+      }));
     } catch (e) { /* a diagnostic is not worth an error message */ }
   }
 
@@ -10412,7 +10443,8 @@
     try {
       var parsed = JSON.parse(localStorage.getItem(NOISE_AWAKE_KEY) || "null");
       if (!parsed || typeof parsed.played !== "number") return null;
-      return parsed;
+      return { played: parsed.played, awake: parsed.awake || 0,
+        dark: parsed.dark || 0, darkAwake: parsed.darkAwake || 0 };
     } catch (e) {
       return null;
     }
@@ -10675,13 +10707,33 @@
 
   // Deliberately plain, and deliberately kept. It is a diagnostic first —
   // whether a reminder while the screen is off is possible at all turns on
-  // it — but it goes on being worth knowing which phone stays awake.
+  // it — but it goes on being worth knowing which phone stays awake. It says
+  // what the numbers mean rather than leaving them to be remembered, because
+  // the whole point is the answer and not the arithmetic.
   function renderAwakeLine() {
     var last = lastAwake();
-    el.noiseAwakeLine.hidden = !last;
+    el.noiseAwake.hidden = !last;
     if (!last) return;
-    el.noiseAwakeLine.textContent = "Last run: played " + last.played +
-      " min, and the app stayed awake for " + last.awake + " of them.";
+    el.noiseAwakeCount.textContent = last.played + " min of sound \u00b7 screen off for " +
+      last.dark + " \u00b7 app running for " + last.darkAwake + " of those";
+    el.noiseAwakeVerdict.textContent = readAwake(last);
+  }
+
+  function readAwake(last) {
+    if (last.dark < 2) {
+      return "The screen stayed on almost the whole time, so this says nothing " +
+        "yet about a phone in a pocket. Try a run with it locked.";
+    }
+    if (last.darkAwake >= last.dark - 1) {
+      return "This phone keeps the app running with the screen off, so a " +
+        "reminder while it is locked would arrive on time.";
+    }
+    if (last.darkAwake <= last.dark * 0.3) {
+      return "This phone stops the app once the screen is off, so a reminder " +
+        "while it is locked is not possible without a server.";
+    }
+    return "This phone slows the app down with the screen off, so a reminder " +
+      "would arrive, but late.";
   }
 
   function chipStates(row, value) {

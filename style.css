@@ -3235,3 +3235,27 @@ body {
 }
 
 .noise-fab.remote .noise-fab-left { color: var(--accent-awake); }
+
+/* The result of a measurement, not a footnote. It was a fourth grey paragraph
+   at the bottom of the screen and went unread, which is the one thing it
+   could not afford to be. */
+.nz-awake {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-2);
+}
+
+.nz-awake-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.nz-awake-verdict {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
