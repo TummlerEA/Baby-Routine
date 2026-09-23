@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=91">
+<link rel="stylesheet" href="style.css?v=92">
 </head>
 <body>
 
@@ -776,6 +776,17 @@
           </label>
           <p class="settings-hint">Off, nothing changes: <strong>📈 What's next</strong> keeps working from the planned intervals under ⚙️ Settings. On, the main screen gains a line saying what the routine asks for next and how long your baby has been awake against it.</p>
         </div>
+        <div class="settings-panel">
+          <label class="settings-check">
+            <input type="checkbox" id="remindOn">
+            <span class="settings-label">Nudge me when the wake window is up</span>
+          </label>
+          <p class="settings-hint">A notification on the phone, and on your watch with it, at the minute the routine wants her down. Nothing is sent anywhere — the phone is talking to itself.</p>
+          <div class="nz-label" id="remindLeadLabel" hidden>How much warning</div>
+          <div class="nz-chips" id="remindLeads" hidden></div>
+          <p class="rm-state" id="remindState" hidden>—</p>
+          <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. So logging a wake-up starts the silent remote, which keeps the clock going and costs nothing you can hear. Putting her down stops it again.</p>
+        </div>
       </section>
 
       <section>
@@ -1384,6 +1395,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=91"></script>
+<script src="app.js?v=92"></script>
 </body>
 </html>

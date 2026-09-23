@@ -3259,3 +3259,22 @@ body {
   line-height: 1.45;
   color: var(--text-dim);
 }
+
+/* Whether the nudge will actually arrive. Said plainly and in the open,
+   because a switch that is on and a switch that works are different things
+   here, and the difference is not the user's fault. */
+.rm-state {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-2);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.rm-state.rm-ready {
+  border-color: var(--accent-diaper);
+  color: var(--text);
+}

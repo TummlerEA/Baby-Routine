@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "91";
+    var fallback = "92";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1610,6 +1610,10 @@
     noiseTimers: document.getElementById("noiseTimers"),
     noisePrev: document.getElementById("noisePrev"),
     noiseNext: document.getElementById("noiseNext"),
+    remindOn: document.getElementById("remindOn"),
+    remindLeads: document.getElementById("remindLeads"),
+    remindLeadLabel: document.getElementById("remindLeadLabel"),
+    remindState: document.getElementById("remindState"),
     noiseAwake: document.getElementById("noiseAwake"),
     noiseAwakeCount: document.getElementById("noiseAwakeCount"),
     noiseAwakeVerdict: document.getElementById("noiseAwakeVerdict"),
@@ -4225,6 +4229,7 @@
   function openRoutine() {
     showScreen("routine");
     renderRoutineScreen();
+    renderRemind();
   }
 
   el.routineOpenBtn.addEventListener("click", openRoutine);
@@ -4239,6 +4244,9 @@
     }
     renderRoutineNow();
     renderRoutineStrip();
+    // Switching the routine off takes the nudge with it, since the minute it
+    // would fire at is worked out from the routine and nothing else.
+    renderRemind();
     // The sleep forecast takes its hour from the routine while it is on, and
     // the sleep banner steps aside for it, so both have to change hands the
     // moment this does rather than on the next tick — switched off mid-sleep,
@@ -4392,7 +4400,7 @@
     // is always followed by. Started here rather than after the card opens,
     // so it is still the same gesture as far as the browser is concerned —
     // a phone will not begin playing audio for anything else.
-    if (id) noiseFollowSleep(!sleeping);
+    if (id) afterSleepLogged(!sleeping);
     // Waking up does not start a new gap, so there is nothing to plan there —
     // but the card still opens for it, purely for the time correction below,
     // which renderNextUp hides the forecast half of when the event is a wake.
@@ -4416,7 +4424,7 @@
       WAKE_CHANGE_FEED_MIN);
     var ids = [wakeId, nappyId, feedId].filter(Boolean);
 
-    noiseFollowSleep(false);
+    afterSleepLogged(false);
 
     var atWake = eventById(wakeId), atNappy = eventById(nappyId), atFeed = eventById(feedId);
     var summary = "Logged: woke " + (atWake ? formatClockTime(new Date(atWake.time)) : "") +
@@ -10058,6 +10066,175 @@
     return (space > limit * 0.6 ? cut.slice(0, space) : cut) + "… (cut short)";
   }
 
+  // ---------- the nudge when the wake window is up ----------
+
+  // The one thing this app could never do: say something at a particular
+  // minute, on a phone in a pocket. It can now, but only just, and the
+  // qualifier is the whole design.
+  //
+  // A phone suspends a page's timers when the screen goes off — except while
+  // that page is playing audio, which is why the white noise survives a
+  // locked screen. Measured on a real phone: fifteen minutes of sound with
+  // the screen off, and the minute marks came in fifteen times out of
+  // fifteen. So the reminder rides on the same thing the sound does. No
+  // audio, no timers, no reminder — which is what the silent remote is for,
+  // and why logging a wake-up starts it.
+
+  // The same face as the app icon, inline, because a notification asking a
+  // phone to fetch a picture would be this app's first request of any kind.
+  var NOTIFY_ICON = "data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+    '<rect width="100" height="100" rx="20" fill="#0b0c10"/>' +
+    '<text x="50" y="68" font-size="60" text-anchor="middle">\uD83D\uDC76</text></svg>');
+  var REMIND_KEY = "baby-tracker-remind";
+  var REMIND_LEADS = [0, 5, 10, 15];
+  var REMIND_DEFAULTS = { on: false, lead: 5, done: 0 };
+  // Past this, the moment has gone. Opening the app at teatime should not
+  // fire a notification about a nap that was due at eleven.
+  var REMIND_STALE_MS = 30 * 60 * 1000;
+
+  function loadRemind() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(REMIND_KEY) || "null");
+      if (!parsed || typeof parsed !== "object") return copyRemind(REMIND_DEFAULTS);
+      return {
+        on: parsed.on === true,
+        lead: REMIND_LEADS.indexOf(parsed.lead) !== -1 ? parsed.lead : REMIND_DEFAULTS.lead,
+        done: typeof parsed.done === "number" ? parsed.done : 0
+      };
+    } catch (e) {
+      return copyRemind(REMIND_DEFAULTS);
+    }
+  }
+
+  function copyRemind(prefs) {
+    return { on: prefs.on, lead: prefs.lead, done: prefs.done };
+  }
+
+  function saveRemind() {
+    try {
+      localStorage.setItem(REMIND_KEY, JSON.stringify(copyRemind(remind)));
+    } catch (e) {
+      showError("Couldn't save that setting");
+    }
+  }
+
+  var remind = loadRemind();
+
+  // On an iPhone a web page may only show notifications once it has been
+  // added to the Home Screen. Opened as a tab in Safari, the whole API is
+  // missing — so the absence of it is the test, and the Home Screen is the
+  // answer to give.
+  function remindCanNotify() {
+    return !!(window.Notification && navigator.serviceWorker);
+  }
+
+  function remindAllowed() {
+    try {
+      return remindCanNotify() && Notification.permission === "granted";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function askToNotify() {
+    if (!remindCanNotify()) {
+      showError(isStandalone()
+        ? "This browser cannot show notifications."
+        : "Add the app to your Home Screen first — a tab in Safari cannot show notifications.");
+      return false;
+    }
+    try {
+      var asked = Notification.requestPermission();
+      if (asked && asked.then) {
+        asked.then(function (answer) {
+          if (answer !== "granted") {
+            remind.on = false;
+            saveRemind();
+            showError("Notifications are not allowed. You can turn them on in iOS Settings.");
+          }
+          renderRemind();
+        });
+      }
+    } catch (e) {
+      return false;
+    }
+    return true;
+  }
+
+  // Everything that has to be true for the nudge to arrive, said in the order
+  // it would go wrong, so the screen never claims it is ready when it is not.
+  function remindState() {
+    if (!remind.on) return { ready: false, line: "" };
+    if (!remindCanNotify()) {
+      return { ready: false, line: isStandalone()
+        ? "This browser cannot show notifications."
+        : "Add the app to your Home Screen — a tab in Safari cannot show notifications." };
+    }
+    if (!remindAllowed()) {
+      return { ready: false, line: "Notifications are not allowed yet. Turn them on for this app in iOS Settings." };
+    }
+    if (!routine.on) {
+      return { ready: false, line: "Turn on Follow this routine above — the time to nudge you is worked out from it." };
+    }
+    if (!noiseOn) {
+      return { ready: false, line: "Waiting. The app can only keep time while it is playing something, so it starts the silent remote when you log a wake-up." };
+    }
+    var status = routineStatus(new Date());
+    if (status.sleeping) return { ready: true, line: "Ready. Nothing to count while she is down." };
+    if (!status.dueAt) return { ready: true, line: "Ready, but this routine has no sleep to count towards." };
+    var at = new Date(+status.dueAt - remind.lead * 60000);
+    return { ready: true, line: "Ready — you will be nudged at " + formatClockTime(at) + "." };
+  }
+
+  // Checked wherever the screen is redrawn, which is every half minute while
+  // anything is playing. No timer of its own: one more thing to arm and
+  // cancel, for a check that costs nothing.
+  function checkRemind() {
+    if (!remind.on || !remindAllowed() || !routine.on) return;
+    var now = new Date();
+    var status = routineStatus(now);
+    if (status.sleeping || !status.dueAt) return;
+    var fireAt = +status.dueAt - remind.lead * 60000;
+    if (+now < fireAt) return;
+    if (remind.done === fireAt) return;
+    remind.done = fireAt;
+    saveRemind();
+    // Long past is not a reminder, it is a surprise. Marked done above so it
+    // is not reconsidered every half minute for the rest of the day.
+    if (+now - fireAt > REMIND_STALE_MS) return;
+    sendRemind(status, now);
+  }
+
+  function remindBody(status, now) {
+    var parts = [];
+    if (status.awakeSince) parts.push("Awake " + formatDuration(now - status.awakeSince));
+    if (status.dueAt) {
+      parts.push(+now < +status.dueAt
+        ? "due at " + formatClockTime(status.dueAt)
+        : "the routine asked for it at " + formatClockTime(status.dueAt));
+    }
+    return parts.join(" · ");
+  }
+
+  // Through the service worker rather than the Notification constructor: iOS
+  // does not support the constructor at all, and the worker is registered
+  // here anyway. The name is deliberately left out — a notification lands on
+  // a lock screen anyone can read.
+  function sendRemind(status, now) {
+    try {
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification("Time for a nap", {
+          body: remindBody(status, now),
+          tag: "wake-window",
+          renotify: true,
+          icon: NOTIFY_ICON,
+          badge: NOTIFY_ICON
+        });
+      }).catch(function () { /* nothing to be done about it from here */ });
+    } catch (e) { /* the banner on the main screen still says it */ }
+  }
+
   // ---------- white noise ----------
 
   // Made here, sample by sample, rather than fetched: a noise file good enough
@@ -10335,8 +10512,13 @@
     return URL.createObjectURL(new Blob(parts, { type: "audio/wav" }));
   }
 
+  // Either because it was chosen, or because something asked for the app to
+  // be kept awake without a sound — the reminder does, when a wake-up is
+  // logged. The second kind leaves the preferred sound alone.
+  var noiseSilent = false;
+
   function noiseIsRemote() {
-    return noise.sound === NOISE_REMOTE;
+    return noiseSilent || noise.sound === NOISE_REMOTE;
   }
 
   function noiseGain() {
@@ -10476,6 +10658,11 @@
     return player.currentTime > player.duration - NOISE_BLOCK_SECONDS;
   }
 
+  function noiseStartSilent() {
+    noiseSilent = true;
+    noiseStart();
+  }
+
   function noiseStart() {
     var player = el.noisePlayer;
     if (!player) return;
@@ -10515,6 +10702,7 @@
 
   function noiseStop() {
     var player = el.noisePlayer;
+    noiseSilent = false;
     if (noiseOn && player) recordAwake(player.currentTime);
     stopCountingAwake();
     noiseOn = false;
@@ -10548,6 +10736,24 @@
     } else if (noiseOn) {
       noiseStop();
     }
+  }
+
+  // Everything a logged sleep or wake-up does to what is playing, in one
+  // place, because two of them want the same moment for opposite reasons and
+  // the order they happen in matters.
+  function afterSleepLogged(goingDown) {
+    if (goingDown && noiseSilent) {
+      // The window is over, so the thing that was only keeping time can stop.
+      noiseStop();
+    }
+    noiseFollowSleep(goingDown);
+    if (!goingDown && remind.on && remindAllowed() && routine.on && !noiseOn) {
+      // A wake-up starts the window, and the window needs the app awake to
+      // be counted. This is the gesture that pays for it: a phone will not
+      // begin playing audio outside one.
+      noiseStartSilent();
+    }
+    renderNoise();
   }
 
   // The file reaching its end is the timer going off. Nothing had to be
@@ -10612,7 +10818,7 @@
       : wasSleeping ? "Woke" : "Asleep";
     noiseSaid = name + " " + formatClockTime(at);
     noiseSaidAt = Date.now();
-    if (job === "sleep") noiseFollowSleep(!wasSleeping);
+    if (job === "sleep") afterSleepLogged(!wasSleeping);
     tellTheWatch(true);
     renderAll();
     showToast("From the watch: " + noiseSaid, function () {
@@ -10710,6 +10916,35 @@
   // it — but it goes on being worth knowing which phone stays awake. It says
   // what the numbers mean rather than leaving them to be remembered, because
   // the whole point is the answer and not the arithmetic.
+  function renderRemind() {
+    if (el.screenRoutine.hidden) return;
+    el.remindOn.checked = remind.on;
+    var state = remindState();
+    el.remindState.hidden = !remind.on;
+    el.remindState.textContent = state.line;
+    el.remindState.classList.toggle("rm-ready", state.ready);
+    el.remindLeads.hidden = !remind.on;
+    el.remindLeadLabel.hidden = !remind.on;
+    var chips = el.remindLeads.querySelectorAll(".nz-chip");
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].classList.toggle("on", chips[i].dataset.value === String(remind.lead));
+    }
+  }
+
+  function buildRemindChips() {
+    REMIND_LEADS.forEach(function (minutes) {
+      buildNoiseChip(el.remindLeads, minutes,
+        minutes ? minutes + " min before" : "On the dot", null)
+        .addEventListener("click", function () {
+          if (remind.lead === minutes) return;
+          remind.lead = minutes;
+          remind.done = 0;
+          saveRemind();
+          renderRemind();
+        });
+    });
+  }
+
   function renderAwakeLine() {
     var last = lastAwake();
     el.noiseAwake.hidden = !last;
@@ -10808,6 +11043,17 @@
   }
 
   buildNoiseChips();
+  buildRemindChips();
+
+  el.remindOn.addEventListener("change", function () {
+    remind.on = el.remindOn.checked;
+    remind.done = 0;
+    saveRemind();
+    // The ask has to ride on this tick of the checkbox: a phone will not open
+    // that question for a page that was not asked to.
+    if (remind.on && !remindAllowed()) askToNotify();
+    renderRemind();
+  });
 
   el.noiseOpenBtn.addEventListener("click", function () {
     showScreen("noise");
@@ -11578,6 +11824,8 @@
     if (!el.screenRoutine.hidden) renderRoutineProgress();
     reconcileNoise();
     renderNoise();
+    checkRemind();
+    renderRemind();
     if (withLog) renderLog();
   }
 

@@ -4,7 +4,7 @@
 
 // Bumped together with index.html, version.json and the fallback in app.js.
 // A test fails if the four ever disagree.
-var VERSION = "91";
+var VERSION = "92";
 var CACHE = "baby-tracker-" + VERSION;
 
 // The page is always kept and looked up under this one name, whatever address
@@ -53,6 +53,21 @@ self.addEventListener("activate", function (event) {
         return name === CACHE ? null : caches.delete(name);
       }));
     }).then(function () { return self.clients.claim(); })
+  );
+});
+
+// Tapping the nudge should land in the app rather than opening a second copy
+// of it. Any window already open is brought forward; only if there is none is
+// a new one opened.
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (open) {
+      for (var i = 0; i < open.length; i++) {
+        if ("focus" in open[i]) return open[i].focus();
+      }
+      return self.clients.openWindow ? self.clients.openWindow(PAGE) : null;
+    })
   );
 });
 
