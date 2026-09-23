@@ -154,7 +154,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "89";
+    var fallback = "90";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1608,6 +1608,9 @@
     noiseSounds: document.getElementById("noiseSounds"),
     noiseLevels: document.getElementById("noiseLevels"),
     noiseTimers: document.getElementById("noiseTimers"),
+    noisePrev: document.getElementById("noisePrev"),
+    noiseNext: document.getElementById("noiseNext"),
+    noiseAwakeLine: document.getElementById("noiseAwakeLine"),
     noiseAuto: document.getElementById("noiseAuto"),
     noiseFab: document.getElementById("noiseFab"),
     noiseFabIcon: document.getElementById("noiseFabIcon"),
@@ -10070,7 +10073,8 @@
   var NOISE_SOUNDS = [
     { id: "brown", label: "Deep", note: "low rumble" },
     { id: "pink", label: "Soft", note: "steady rush" },
-    { id: "white", label: "Bright", note: "full hiss" }
+    { id: "white", label: "Bright", note: "full hiss" },
+    { id: "remote", label: "Remote", note: "no sound" }
   ];
   // Four steps that sound evenly spaced, which is not four evenly spaced
   // numbers: loudness roughly doubles every time the amplitude does.
@@ -10081,7 +10085,33 @@
     { id: 4, label: "Full", gain: 1 }
   ];
   var NOISE_TIMERS = [15, 30, 45, 60, 0];
-  var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false };
+  // A fourth choice that makes no sound. Its whole job is to exist: a phone
+  // shows Now Playing, and hands its buttons to the watch, only while
+  // something is playing. So this plays — at about -60dB, which is inaudible
+  // but is not the digital silence a phone would be within its rights to
+  // ignore — and the watch gets a remote control out of it.
+  var NOISE_REMOTE = "remote";
+  // Said as a level in the file rather than as a multiplier, because the
+  // level is the thing that matters: about -70dBFS. Far below anything a
+  // person will hear out of a phone, and far above the digital silence that
+  // would leave nothing playing at all.
+  var NOISE_SILENT_RMS = 0.0003;
+  // What the two buttons either side of play/pause on the watch can be put
+  // to. Sleep is one button rather than two because it is a toggle already:
+  // it means "went down" or "woke up" depending on which is true now.
+  var NOISE_BUTTONS = [
+    { id: "", label: "Off" },
+    { id: "feed", label: "Feed" },
+    { id: "diaper", label: "Nappy" },
+    { id: "sleep", label: "Sleep" }
+  ];
+  // How long the watch keeps saying what was just logged before going back to
+  // saying how things stand.
+  var NOISE_SAID_MS = 25000;
+  var NOISE_AWAKE_MS = 60000;
+  var NOISE_AWAKE_KEY = "baby-tracker-noise-awake";
+  var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false,
+    next: "feed", prev: "sleep" };
   // Generated at 44.1kHz, because the pink filter's coefficients are tuned
   // for that rate — run it at any other and its poles land in the wrong
   // places and what comes out is not pink. It is reduced afterwards by
@@ -10125,14 +10155,21 @@
         ? parsed.level : NOISE_DEFAULTS.level;
       var timer = NOISE_TIMERS.indexOf(parsed.timer) !== -1
         ? parsed.timer : NOISE_DEFAULTS.timer;
-      return { sound: sound, level: level, timer: timer, auto: parsed.auto === true };
+      return { sound: sound, level: level, timer: timer, auto: parsed.auto === true,
+        next: noiseButtonOr(parsed.next, NOISE_DEFAULTS.next),
+        prev: noiseButtonOr(parsed.prev, NOISE_DEFAULTS.prev) };
     } catch (e) {
       return copyOf(NOISE_DEFAULTS);
     }
   }
 
+  function noiseButtonOr(value, fallback) {
+    return NOISE_BUTTONS.some(function (b) { return b.id === value; }) ? value : fallback;
+  }
+
   function copyOf(prefs) {
-    return { sound: prefs.sound, level: prefs.level, timer: prefs.timer, auto: prefs.auto };
+    return { sound: prefs.sound, level: prefs.level, timer: prefs.timer, auto: prefs.auto,
+      next: prefs.next, prev: prefs.prev };
   }
 
   function saveNoisePrefs(prefs) {
@@ -10296,11 +10333,22 @@
     return URL.createObjectURL(new Blob(parts, { type: "audio/wav" }));
   }
 
+  function noiseIsRemote() {
+    return noise.sound === NOISE_REMOTE;
+  }
+
   function noiseGain() {
+    if (noiseIsRemote()) return NOISE_SILENT_RMS / NOISE_TARGET_RMS;
     for (var i = 0; i < NOISE_LEVELS.length; i++) {
       if (NOISE_LEVELS[i].id === noise.level) return NOISE_LEVELS[i].gain;
     }
     return NOISE_LEVELS[1].gain;
+  }
+
+  // The remote makes no sound of its own, so there is nothing to generate for
+  // it — it is the deep one with the volume taken off.
+  function noiseSoundToMake() {
+    return noiseIsRemote() ? "brown" : noise.sound;
   }
 
   // The block itself does not depend on the volume or the timer, so it
@@ -10308,9 +10356,10 @@
   var noiseBlockCache = { sound: null, samples: null };
 
   function noiseSamplesCached() {
-    if (noiseBlockCache.sound !== noise.sound) {
-      noiseBlockCache.sound = noise.sound;
-      noiseBlockCache.samples = noiseBlockSamples(noise.sound);
+    var wanted = noiseSoundToMake();
+    if (noiseBlockCache.sound !== wanted) {
+      noiseBlockCache.sound = wanted;
+      noiseBlockCache.samples = noiseBlockSamples(wanted);
     }
     return noiseBlockCache.samples;
   }
@@ -10328,6 +10377,46 @@
   // ---------- playing it ----------
 
   var noiseOn = false;
+
+  // A minute mark, written while the sound plays. It answers a question I
+  // could not answer from here and would otherwise have to guess at: whether
+  // a phone goes on running this page's timers once the screen is off. If it
+  // does, the marks come in all night and a reminder is possible; if they
+  // stop, the idea is dead and there is no point building on it.
+  var noiseAwake = { ticks: 0, timer: null };
+
+  function startCountingAwake() {
+    stopCountingAwake();
+    noiseAwake.ticks = 0;
+    noiseAwake.timer = setInterval(function () { noiseAwake.ticks++; }, NOISE_AWAKE_MS);
+  }
+
+  function stopCountingAwake() {
+    if (noiseAwake.timer) clearInterval(noiseAwake.timer);
+    noiseAwake.timer = null;
+  }
+
+  // Minutes of audio that really came out, against minutes this page was
+  // awake for. The first is read off the element, which keeps counting
+  // whatever the page is doing; the second is the marks above.
+  function recordAwake(playedSeconds) {
+    var played = Math.floor((playedSeconds || 0) / 60);
+    if (played < 2) return;
+    try {
+      localStorage.setItem(NOISE_AWAKE_KEY,
+        JSON.stringify({ played: played, awake: noiseAwake.ticks }));
+    } catch (e) { /* a diagnostic is not worth an error message */ }
+  }
+
+  function lastAwake() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(NOISE_AWAKE_KEY) || "null");
+      if (!parsed || typeof parsed.played !== "number") return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  }
 
   function describeNoiseSound(id) {
     for (var i = 0; i < NOISE_SOUNDS.length; i++) {
@@ -10387,12 +10476,15 @@
     releaseNoiseFile();
     noiseFileUrl = url;
     noiseOn = true;
+    startCountingAwake();
     describeNoiseToSystem();
     renderNoise();
   }
 
   function noiseStop() {
     var player = el.noisePlayer;
+    if (noiseOn && player) recordAwake(player.currentTime);
+    stopCountingAwake();
     noiseOn = false;
     if (player) {
       try {
@@ -10413,10 +10505,17 @@
   // Only when asked for. Off by default, because an app that starts making
   // noise because you logged something would be a bad surprise exactly once,
   // and it would be at night.
+  // The remote is not a sleep aid, it is a set of buttons, so the sleep
+  // button leaves it alone — stopping it on a wake-up would take away the
+  // very control that was just used. And a sound already playing is left to
+  // play rather than started again, which would only reset its timer.
   function noiseFollowSleep(goingDown) {
-    if (!noise.auto) return;
-    if (goingDown) noiseStart();
-    else if (noiseOn) noiseStop();
+    if (!noise.auto || noiseIsRemote()) return;
+    if (goingDown) {
+      if (!noiseOn) noiseStart();
+    } else if (noiseOn) {
+      noiseStop();
+    }
   }
 
   // The file reaching its end is the timer going off. Nothing had to be
@@ -10430,20 +10529,97 @@
     if (player.ended || (player.paused && player.currentTime > 0)) noiseStop();
   }
 
+  // ---------- the watch ----------
+
+  // A phone that is playing something puts it on the lock screen, in Control
+  // Centre and on a paired watch, with the buttons either side of play. None
+  // of that needed writing: it is the Media Session API, and all it asks for
+  // is a title and a handler per button.
+  //
+  // So the two buttons that would skip a track are given something better to
+  // do. It is the only remote control this app can have — a watch cannot run
+  // a web page, and nothing else on it can reach one.
+
+  var noiseSaid = "";
+  var noiseSaidAt = 0;
+  var noiseToldSystem = "";
+
+  // What the watch says when nothing has just happened. It is read at a
+  // glance on a wrist, in the dark, so it is short before it is complete —
+  // the watch gives it about twenty-four characters before it cuts.
+  function noiseStatusLine() {
+    var now = Date.now();
+    var parts = [];
+    var feeds = sortedByTimeAsc(eventsOfKind("feed"));
+    var last = feeds[feeds.length - 1];
+    if (last) parts.push("Fed " + formatDuration(now - new Date(last.time)));
+    var asleep = analyzeSleep();
+    if (asleep.active) {
+      parts.push("asleep " + formatDuration(now - new Date(asleep.active.time)));
+    }
+    return parts.join(" \u00b7 ") || "Baby Tracker";
+  }
+
+  function noiseNowPlaying() {
+    if (noiseSaid && Date.now() - noiseSaidAt < NOISE_SAID_MS) return noiseSaid;
+    return noiseStatusLine();
+  }
+
+  // Pressed on the wrist, with the phone in a pocket and the screen off. The
+  // toast and the redraw are for whenever the phone is next looked at; the
+  // answer that matters now goes back to the watch, as the title.
+  function noiseButtonPressed(job) {
+    if (!job) return;
+    var wasSleeping = isSleepingNow();
+    var type = job === "sleep" ? (wasSleeping ? "sleep_end" : "sleep_start") : job;
+    var id = addEvent(type);
+    if (!id) return;
+    var saved = eventById(id);
+    var at = new Date(saved ? saved.time : Date.now());
+    var name = job === "feed" ? "Fed" : job === "diaper" ? "Nappy"
+      : wasSleeping ? "Woke" : "Asleep";
+    noiseSaid = name + " " + formatClockTime(at);
+    noiseSaidAt = Date.now();
+    if (job === "sleep") noiseFollowSleep(!wasSleeping);
+    tellTheWatch(true);
+    renderAll();
+    showToast("From the watch: " + noiseSaid, function () {
+      if (!tombstoneEventQuiet(id)) return;
+      saveEvents(events);
+      renderAll();
+    });
+  }
+
+  function tellTheWatch(force) {
+    var line = noiseOn ? noiseNowPlaying() : "";
+    if (!force && line === noiseToldSystem) return;
+    noiseToldSystem = line;
+    try {
+      if (!navigator.mediaSession || !window.MediaMetadata || !noiseOn) return;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: line,
+        artist: noiseIsRemote() ? "Baby Tracker \u00b7 remote"
+          : "Baby Tracker \u00b7 " + describeNoiseSound(noise.sound)
+      });
+    } catch (e) { /* the sound plays without the watch knowing what it is */ }
+  }
+
   function describeNoiseToSystem() {
     try {
       if (!navigator.mediaSession) return;
-      if (window.MediaMetadata) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: describeNoiseSound(noise.sound) + " noise",
-          artist: "Baby Tracker"
-        });
-      }
+      noiseToldSystem = "";
+      tellTheWatch(true);
       navigator.mediaSession.setActionHandler("pause", noiseStop);
       navigator.mediaSession.setActionHandler("stop", noiseStop);
       navigator.mediaSession.setActionHandler("play", function () {
         if (!noiseOn) noiseStart();
       });
+      // Registering nothing leaves the button on the watch doing nothing,
+      // which is what "Off" has to mean.
+      navigator.mediaSession.setActionHandler("nexttrack", noise.next
+        ? function () { noiseButtonPressed(noise.next); } : null);
+      navigator.mediaSession.setActionHandler("previoustrack", noise.prev
+        ? function () { noiseButtonPressed(noise.prev); } : null);
     } catch (e) { /* the sound plays without the lock screen knowing what it is */ }
   }
 
@@ -10462,12 +10638,16 @@
   function renderNoiseFab() {
     var left = noiseMinutesLeft();
     el.noiseFab.classList.toggle("playing", noiseOn);
+    el.noiseFab.classList.toggle("remote", noiseOn && noiseIsRemote());
     el.noiseFab.hidden = !noiseOn && currentScreen !== "main";
-    el.noiseFabIcon.textContent = noiseOn ? "🔊" : "🔈";
+    // Three states worth telling apart at a glance: off, making a sound, and
+    // running silently so the watch has something to press.
+    el.noiseFabIcon.textContent = !noiseOn ? "🔈"
+      : noiseIsRemote() ? "🎛" : "🔊";
     el.noiseFabLeft.hidden = !noiseOn || left === null;
     if (left !== null) el.noiseFabLeft.textContent = left + "m";
-    el.noiseFab.setAttribute("aria-label",
-      noiseOn ? "Stop the white noise" : "Play white noise");
+    el.noiseFab.setAttribute("aria-label", !noiseOn ? "Play white noise"
+      : noiseIsRemote() ? "Stop the watch remote" : "Stop the white noise");
   }
 
   function renderNoiseScreen() {
@@ -10476,15 +10656,32 @@
     el.noisePlay.classList.toggle("playing", noiseOn);
     el.noisePlayIcon.textContent = noiseOn ? "⏹" : "▶";
     el.noisePlayLabel.textContent = noiseOn ? "Stop" : "Play";
+    var what = noiseIsRemote() ? "Remote, no sound" : describeNoiseSound(noise.sound);
     el.noisePlayNote.textContent = noiseIsFading() ? "Fading out"
-      : noiseOn && left !== null ? describeNoiseSound(noise.sound) + " · " + left + " min left"
-      : noiseOn ? describeNoiseSound(noise.sound) + " · until you stop it"
-      : describeNoiseSound(noise.sound) + " · " + describeNoiseTimer(noise.timer);
+      : noiseOn && left !== null ? what + " · " + left + " min left"
+      : noiseOn ? what + " · until you stop it"
+      : what + " · " + describeNoiseTimer(noise.timer);
 
     chipStates(el.noiseSounds, noise.sound);
     chipStates(el.noiseLevels, noise.level);
     chipStates(el.noiseTimers, noise.timer);
+    chipStates(el.noisePrev, noise.prev);
+    chipStates(el.noiseNext, noise.next);
+    // Nothing to set the volume of when there is no sound.
+    el.noiseLevels.hidden = noiseIsRemote();
     el.noiseAuto.checked = noise.auto;
+    renderAwakeLine();
+  }
+
+  // Deliberately plain, and deliberately kept. It is a diagnostic first —
+  // whether a reminder while the screen is off is possible at all turns on
+  // it — but it goes on being worth knowing which phone stays awake.
+  function renderAwakeLine() {
+    var last = lastAwake();
+    el.noiseAwakeLine.hidden = !last;
+    if (!last) return;
+    el.noiseAwakeLine.textContent = "Last run: played " + last.played +
+      " min, and the app stayed awake for " + last.awake + " of them.";
   }
 
   function chipStates(row, value) {
@@ -10497,6 +10694,7 @@
   function renderNoise() {
     renderNoiseFab();
     renderNoiseScreen();
+    tellTheWatch(false);
   }
 
   function buildNoiseChip(row, value, label, note) {
@@ -10530,6 +10728,12 @@
       buildNoiseChip(el.noiseTimers, minutes, minutes ? minutes + " min" : "No limit", null)
         .addEventListener("click", function () { pickNoise("timer", minutes); });
     });
+    [["prev", el.noisePrev], ["next", el.noiseNext]].forEach(function (pair) {
+      NOISE_BUTTONS.forEach(function (job) {
+        buildNoiseChip(pair[1], job.id, job.label, null)
+          .addEventListener("click", function () { pickNoise(pair[0], job.id); });
+      });
+    });
   }
 
   // Changing the sound or the volume while it is running means a different
@@ -10539,10 +10743,15 @@
     if (noise[field] === value) return;
     noise[field] = value;
     saveNoisePrefs(noise);
-    // The timer is the length of the file now, so changing any of the three
-    // means a different file and starting again. On noise that is inaudible,
-    // which is the one place in this app where beginning again costs nothing.
-    if (noiseOn) noiseStart();
+    // Which button does what is not in the file, so it is handed straight to
+    // the phone. The other three are, so they mean a new file and starting
+    // again — on noise that is inaudible, which is the one place in this app
+    // where beginning again costs nothing.
+    if (field === "next" || field === "prev") {
+      if (noiseOn) describeNoiseToSystem();
+    } else if (noiseOn) {
+      noiseStart();
+    }
     renderNoise();
   }
 
