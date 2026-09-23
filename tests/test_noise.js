@@ -115,7 +115,10 @@ function rms(s, from, count) {
     await page.waitForTimeout(300);
   }
 
+  // Idempotent on purpose. Sections get added and reordered, and one of them
+  // asking for a screen that is already up should not be a broken run.
   async function openNoise() {
+    if (await page.isVisible('#screenNoise')) return;
     await page.click('#moreOpen');
     await page.waitForTimeout(150);
     await page.click('#noiseOpen');
@@ -184,7 +187,11 @@ function rms(s, from, count) {
     (await page.$$('audio')).length === 1);
 
   const chips = row => page.$$eval(row + ' .nz-chip', n => n.map(x => x.dataset.value));
-  ok('three sounds', (await chips('#noiseSounds')).join() === 'brown,pink,white');
+  ok('three sounds and a silent fourth',
+    (await chips('#noiseSounds')).join() === 'brown,pink,white,remote');
+  ok('either watch button can be turned off or given one of three jobs',
+    (await chips('#noisePrev')).join() === ',feed,diaper,sleep' &&
+    (await chips('#noiseNext')).join() === ',feed,diaper,sleep');
   ok('four volumes', (await chips('#noiseLevels')).join() === '1,2,3,4');
   ok('a no-limit option sits with the timers',
     (await chips('#noiseTimers')).join() === '15,30,45,60,0');
@@ -195,6 +202,9 @@ function rms(s, from, count) {
   ok('the default timer is 45 minutes', await picked('#noiseTimers') === '45');
   ok('it does not follow the sleep button until asked',
     !(await page.isChecked('#noiseAuto')));
+  ok('the right-hand watch button logs a feed to begin with',
+    await picked('#noiseNext') === 'feed');
+  ok('and the left-hand one the sleep', await picked('#noisePrev') === 'sleep');
   ok('the button says what it will do',
     (await page.textContent('#noisePlayNote')) === 'Deep · 45 min');
 
@@ -450,6 +460,134 @@ function rms(s, from, count) {
   ok('holding the shortcut opens the screen', await page.isVisible('#screenNoise'));
   ok('and holding it does not also start the sound', !(await player()).playing);
 
+  // ---------- the watch ----------
+
+  // A phone hands whatever it is playing to a paired watch, with a button
+  // either side of play, and those two are given something better to do than
+  // skip a track. None of it can be tested on a watch from here, so what is
+  // tested is everything on this side of the system: that the handlers are
+  // registered, that calling one logs the right entry, and that what goes
+  // back for the watch to display says what just happened.
+
+  await fresh();
+  await page.evaluate(() => {
+    // Keep hold of what the page hands to the system, and of the handlers it
+    // registers, so a press can be made without a watch.
+    window.__titles = [];
+    const own = Object.getOwnPropertyDescriptor(MediaSession.prototype, 'metadata');
+    Object.defineProperty(navigator.mediaSession, 'metadata', {
+      set(v) {
+        window.__titles.push(v ? { title: v.title, artist: v.artist } : null);
+        own.set.call(navigator.mediaSession, v);
+      },
+      get() { return own.get.call(navigator.mediaSession); }
+    });
+    window.__press = {};
+    const real = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession);
+    navigator.mediaSession.setActionHandler = (name, fn) => {
+      window.__press[name] = fn;
+      real(name, fn);
+    };
+  });
+
+  await openNoise();
+  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseTimers .nz-chip[data-value="0"]');
+  await page.waitForTimeout(150);
+
+  ok('the remote has nothing to set the volume of', await page.isHidden('#noiseLevels'));
+  ok('and says as much before it starts',
+    await page.textContent('#noisePlayNote') === 'Remote, no sound · Until I stop it',
+    await page.textContent('#noisePlayNote'));
+
+  await page.click('#noisePlay');
+  await page.waitForTimeout(1200);
+  ok('the remote plays like anything else', (await player()).playing);
+
+  // Inaudible, but not nothing: a file of digital silence is a file a phone
+  // may decide is not worth keeping alive, and then there is no Now Playing
+  // and no buttons.
+  const quiet = rms(toSamples(await firstBlock(), 44));
+  const quietDb = 20 * Math.log10(quiet);
+  ok('the remote is far too quiet to hear', quietDb < -60, quietDb.toFixed(0));
+  ok('but it is a real signal rather than silence', quietDb > -85, quietDb.toFixed(0));
+
+  const handlers = () => page.evaluate(() =>
+    Object.keys(window.__press).filter(k => window.__press[k]));
+  ok('both of the watch buttons are claimed',
+    (await handlers()).indexOf('nexttrack') !== -1 &&
+    (await handlers()).indexOf('previoustrack') !== -1, await handlers());
+
+  const shown = () => page.evaluate(() => window.__titles[window.__titles.length - 1]);
+  const logged = () => page.evaluate(() =>
+    JSON.parse(localStorage.getItem('baby-tracker-events') || '[]')
+      .filter(e => !e.deleted).map(e => e.type));
+  const press = (button) => page.evaluate(b => window.__press[b](), button);
+
+  ok('with nothing logged the watch is told the app name',
+    (await shown()).title === 'Baby Tracker', await shown());
+  ok('and which of the sounds is running',
+    /remote/.test((await shown()).artist), await shown());
+
+  await press('nexttrack');
+  await page.waitForTimeout(400);
+  ok('the right-hand button logs a feed', (await logged()).join() === 'feed', await logged());
+  ok('and the watch is told what it just did',
+    /^Fed \d\d:\d\d$/.test((await shown()).title), await shown());
+  ok('and so is the phone, for when it is next looked at',
+    /From the watch: Fed/.test(await page.textContent('#toastText')),
+    await page.textContent('#toastText'));
+
+  // Sleep is one button because it is a toggle: which way it goes depends on
+  // whether anyone is asleep at the time.
+  await press('previoustrack');
+  await page.waitForTimeout(400);
+  ok('the left-hand button puts the baby down',
+    (await logged()).join() === 'feed,sleep_start', await logged());
+  ok('and says so', (await shown()).title.indexOf('Asleep') === 0, await shown());
+
+  await press('previoustrack');
+  await page.waitForTimeout(400);
+  ok('and pressed again it is the waking up',
+    (await logged()).join() === 'feed,sleep_start,sleep_end', await logged());
+  ok('and says that instead', (await shown()).title.indexOf('Woke') === 0, await shown());
+
+  // A mis-press from a pocket is the obvious failure here, so it has to be
+  // undoable from the phone like anything else.
+  await page.click('#toastAction');
+  await page.waitForTimeout(400);
+  ok('a press can be taken back', (await logged()).join() === 'feed,sleep_start',
+    await logged());
+
+  // Once it stops saying what happened it goes back to saying how things are.
+  await page.evaluate(() => {
+    const now = Date.now;
+    Date.now = () => now() + 60000;
+  });
+  await page.evaluate(() => { window.dispatchEvent(new Event('focus')); });
+  await page.waitForTimeout(400);
+  ok('after a while the watch goes back to how things stand',
+    /^Fed /.test((await shown()).title), await shown());
+  ok('and carries the sleep alongside it',
+    /asleep/.test((await shown()).title), await shown());
+
+  await page.click('#noisePrev .nz-chip[data-value=""]');
+  await page.waitForTimeout(300);
+  ok('a button set to Off is handed back to the phone',
+    await page.evaluate(() => window.__press.previoustrack === null));
+
+  await page.click('#noiseNext .nz-chip[data-value="diaper"]');
+  await page.waitForTimeout(300);
+  await press('nexttrack');
+  await page.waitForTimeout(400);
+  ok('and one given another job does that job instead',
+    (await logged()).join() === 'feed,sleep_start,diaper', await logged());
+  ok('changing which button does what does not interrupt the sound',
+    (await player()).playing);
+
+  await page.click('#noisePlay');
+  await page.waitForTimeout(300);
+
   // ---------- following the sleep button ----------
 
   await fresh();
@@ -479,6 +617,95 @@ function rms(s, from, count) {
   await page.waitForTimeout(500);
   ok('the combined wake button counts as a wake-up too', !(await player()).playing);
 
+  // ---------- the remote is not a sleep aid ----------
+
+  // Following the sleep button is for a sound that helps a baby off. The
+  // remote is a set of buttons, and stopping it on a wake-up would take away
+  // the very control that had just been used.
+  await fresh();
+  await openNoise();
+  await page.check('#noiseAuto');
+  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseTimers .nz-chip[data-value="0"]');
+  await page.waitForTimeout(150);
+  await page.click('#noisePlay');
+  await page.waitForTimeout(1200);
+  ok('the remote is running', (await player()).playing);
+
+  await page.click('#noiseBack');
+  await page.waitForTimeout(250);
+  await page.click('#btnSleep');
+  await page.waitForTimeout(600);
+  ok('logging a sleep leaves the remote alone', (await player()).playing);
+  await page.click('#btnSleep');
+  await page.waitForTimeout(600);
+  ok('and so does waking up, or the buttons would vanish when used',
+    (await player()).playing);
+
+  // A sound that is a sound still follows it, and still is not restarted
+  // from the top just because another sleep was logged.
+  await openNoise();
+  await page.click('#noiseSounds .nz-chip[data-value="brown"]');
+  await page.click('#noiseTimers .nz-chip[data-value="15"]');
+  await page.waitForTimeout(150);
+  await page.click('#noisePlay');
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { document.getElementById('noisePlayer').currentTime = 120; });
+  await page.click('#noiseBack');
+  await page.waitForTimeout(250);
+  await page.click('#btnSleep');
+  await page.waitForTimeout(700);
+  ok('a sound already playing is not started again by another sleep',
+    (await player()).at > 100, (await player()).at);
+  await page.click('#btnSleep');
+  await page.waitForTimeout(500);
+  ok('but waking up does stop it', !(await player()).playing);
+
+  // ---------- how much of it the app was awake for ----------
+
+  // The count that says whether this phone goes on running timers with the
+  // screen off. Here nothing is asleep and the run lasts seconds, so what is
+  // checked is that the two numbers are recorded and shown, not what they are.
+  await fresh();
+  await openNoise();
+  await page.click('#noiseTimers .nz-chip[data-value="15"]');
+  await page.waitForTimeout(150);
+  await page.click('#noisePlay');
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => { document.getElementById('noisePlayer').currentTime = 3 * 60; });
+  await page.waitForTimeout(300);
+  await page.click('#noisePlay');
+  await page.waitForTimeout(400);
+
+  const awake = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('baby-tracker-noise-awake') || 'null'));
+  ok('the minutes played are taken from the element, which always knows',
+    awake && awake.played === 3, awake);
+  ok('and the minutes the app was awake for are counted separately',
+    awake && awake.awake === 0, awake);
+  ok('and it is shown plainly', /played 3 min.*awake for 0 of them/
+    .test(await page.textContent('#noiseAwakeLine')),
+    await page.textContent('#noiseAwakeLine'));
+
+  await page.evaluate(() => localStorage.setItem('baby-tracker-noise-awake',
+    '{"played":45,"awake":44}'));
+  await page.reload();
+  await page.waitForTimeout(400);
+  await openNoise();
+  ok('a previous night is still there the next morning',
+    /played 45 min.*awake for 44 of them/.test(await page.textContent('#noiseAwakeLine')),
+    await page.textContent('#noiseAwakeLine'));
+
+  await page.evaluate(() => localStorage.setItem('baby-tracker-noise-awake', 'rubbish'));
+  await page.reload();
+  await page.waitForTimeout(400);
+  await openNoise();
+  ok('and rubbish in its place says nothing rather than breaking the screen',
+    await page.isHidden('#noiseAwakeLine'));
+
+  await page.click('#noiseBack');
+  await page.waitForTimeout(250);
+
   // ---------- catching up on what happened while nobody was running ----------
 
   // The screen being off means none of this code ran, so the sound can have
@@ -505,6 +732,9 @@ function rms(s, from, count) {
 
   // ---------- what is remembered, and where ----------
 
+  await openNoise();
+  await page.check('#noiseAuto');
+  await page.waitForTimeout(150);
   await page.reload();
   await page.waitForTimeout(500);
   await openNoise();
@@ -527,6 +757,12 @@ function rms(s, from, count) {
 
   // Which sound suits the room is this phone's business. It has no place in
   // a backup meant for another phone, and none at all in a link.
+  await page.click('#noiseBack');
+  await page.waitForTimeout(250);
+  await page.click('#btnFeed');
+  await page.waitForTimeout(400);
+  await page.click('#nextUpClose');
+  await page.waitForTimeout(250);
   const backup = await page.evaluate(() => {
     const el = document.getElementById('exportJson');
     let captured = null;

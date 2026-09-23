@@ -3225,3 +3225,13 @@ body {
 .nz-chip-note { font-size: 11px; color: var(--text-faint); }
 
 .nz-chip.on .nz-chip-note { color: var(--text-dim); }
+
+/* The remote is the same player with the sound taken off, so it shares the
+   shortcut — but not its look, since "running silently" and "making a noise"
+   are different enough at 3am to want telling apart. */
+.noise-fab.remote {
+  border-color: var(--accent-awake);
+  background: #2e2717;
+}
+
+.noise-fab.remote .noise-fab-left { color: var(--accent-awake); }

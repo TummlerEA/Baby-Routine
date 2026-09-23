@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=89">
+<link rel="stylesheet" href="style.css?v=90">
 </head>
 <body>
 
@@ -989,17 +989,28 @@
       </section>
 
       <section class="data-panel">
+        <div class="nz-label">From the Apple Watch</div>
+        <p class="data-hint">While this is playing, your watch shows it under Now Playing with a button either side of play. Those two are yours — a press logs an entry on the phone without taking it out of your pocket.</p>
+        <div class="nz-label">⏮ Left button</div>
+        <div class="nz-chips" id="noisePrev"></div>
+        <div class="nz-label">⏭ Right button</div>
+        <div class="nz-chips" id="noiseNext"></div>
+        <p class="data-hint">The watch also shows how things stand — how long since the last feed, and how long your baby has been down — and says what it logged for a few seconds after you press.</p>
+      </section>
+
+      <section class="data-panel">
         <label class="settings-check">
           <input type="checkbox" id="noiseAuto">
           <span class="settings-label">Start it when I log a <strong>sleep</strong></span>
         </label>
-        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark.</p>
+        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark. The remote is left alone either way — stopping it on a wake-up would take away the very button you had just pressed.</p>
       </section>
 
       <section class="data-panel">
         <p class="data-hint">The sound is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button.</p>
         <p class="data-hint">These settings belong to this phone. They are not synced, exported or shared, because the right sound and volume depend on the room.</p>
         <p class="data-hint" id="noiseSilentHint">On an iPhone the ring/silent switch has to be on, or the phone plays nothing.</p>
+        <p class="data-hint" id="noiseAwakeLine" hidden></p>
       </section>
 
     </main>
@@ -1370,6 +1381,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=89"></script>
+<script src="app.js?v=90"></script>
 </body>
 </html>
