@@ -160,7 +160,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "93";
+    var fallback = "94";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -10905,13 +10905,17 @@
     el.noiseFab.classList.toggle("remote", noiseOn && noiseIsRemote());
     el.noiseFab.hidden = !noiseOn && currentScreen !== "main";
     // Three states worth telling apart at a glance: off, making a sound, and
-    // running silently so the watch has something to press.
+    // running silently. The silent one is a speech balloon rather than a set
+    // of knobs because of what it is mostly for now: the app is awake and
+    // will say something when the wake window is up. The buttons it also
+    // hands a watch are the smaller half of it, and only on a wrist that
+    // has one.
     el.noiseFabIcon.textContent = !noiseOn ? "🔈"
-      : noiseIsRemote() ? "🎛" : "🔊";
+      : noiseIsRemote() ? "💬" : "🔊";
     el.noiseFabLeft.hidden = !noiseOn || left === null;
     if (left !== null) el.noiseFabLeft.textContent = left + "m";
     el.noiseFab.setAttribute("aria-label", !noiseOn ? "Play white noise"
-      : noiseIsRemote() ? "Stop the watch remote" : "Stop the white noise");
+      : noiseIsRemote() ? "Stop the silent remote" : "Stop the white noise");
   }
 
   function renderNoiseScreen() {
