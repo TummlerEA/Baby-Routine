@@ -282,7 +282,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "98";
+    var fallback = "99";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1281,6 +1281,7 @@
       dueAt: null,
       lateBy: 0,
       wakeDue: null,
+      windowUpAt: null,
       tally: routineTally(analysis, now)
     };
     if (sleeping) {
@@ -1296,7 +1297,13 @@
     status.planned = nextSleep ? nextSleep.at : null;
     if (analysis.awakeActive) {
       status.awakeSince = new Date(analysis.awakeActive.time);
-      if (status.windowMs !== null) status.dueAt = new Date(+status.awakeSince + status.windowMs);
+      if (status.windowMs !== null) {
+        status.dueAt = new Date(+status.awakeSince + status.windowMs);
+        // Kept as it was before the table is allowed to pull it about. The
+        // hour on the screen may be rounded to the routine; the minute this
+        // baby has actually been awake her stretch may not.
+        status.windowUpAt = status.dueAt;
+      }
     }
     // Near enough to the table, the table wins: naming the same hour every
     // day is how a routine is learned, and a quarter of an hour either way is
@@ -10407,8 +10414,29 @@
     var status = routineStatus(new Date());
     if (status.sleeping) return { ready: true, line: "Ready. Nothing to count while she is down." };
     if (!status.dueAt) return { ready: true, line: "Ready, but this routine has no sleep to count towards." };
-    var at = new Date(+status.dueAt - remind.lead * 60000);
+    var at = new Date(remindDueAt(status) - remind.lead * 60000);
     return { ready: true, line: "Ready — you will be nudged at " + formatClockTime(at) + "." };
+  }
+
+  // When the nudge is actually for.
+  //
+  // Within half an hour either way the screen quotes the routine's own hour
+  // rather than the stretch awake, so that a household hears the same times
+  // every day. That is right for a line somebody reads: a quarter of an hour
+  // is not a difference a baby notices, and it is not worth teaching people
+  // an hour that moves.
+  //
+  // It is wrong for a nudge, and wrong in one direction only. Rounding the
+  // hour down can fire the thing while the baby has been up barely half her
+  // window — a phone announcing a nap to somebody watching a baby who is
+  // plainly not ready, which is how an alert stops being believed. Rounding
+  // it up cannot do harm of that kind: that is the routine pulling a day
+  // that woke early back onto its hours, which is what a routine is for. So
+  // the nudge takes the later of the two, and never arrives before the
+  // window it is named after is up.
+  function remindDueAt(status) {
+    var at = +status.dueAt;
+    return status.windowUpAt && +status.windowUpAt > at ? +status.windowUpAt : at;
   }
 
   // Checked wherever the screen is redrawn, which is every half minute while
@@ -10419,9 +10447,14 @@
     var now = new Date();
     var status = routineStatus(now);
     if (status.sleeping || !status.dueAt) return;
-    var fireAt = +status.dueAt - remind.lead * 60000;
+    var fireAt = remindDueAt(status) - remind.lead * 60000;
     if (+now < fireAt) return;
-    if (remind.done === fireAt) return;
+    // Never backwards. Once the routine's own hour goes by, the app stops
+    // holding the day to it and measures from the stretch awake instead,
+    // which moves this minute earlier than the one already nudged for — and
+    // a second notification about the same nap, five minutes after the
+    // first, is the app arguing with itself on somebody's lock screen.
+    if (remind.done >= fireAt) return;
     remind.done = fireAt;
     saveRemind();
     // Long past is not a reminder, it is a surprise. Marked done above so it
@@ -10434,9 +10467,12 @@
     var parts = [];
     if (status.awakeSince) parts.push("Awake " + formatDuration(now - status.awakeSince));
     if (status.dueAt) {
-      parts.push(+now < +status.dueAt
-        ? "due at " + formatClockTime(status.dueAt)
-        : "the routine asked for it at " + formatClockTime(status.dueAt));
+      // The same minute the nudge was fired for, so a lock screen never names
+      // an hour that has nothing to do with why it just went off.
+      var due = new Date(remindDueAt(status));
+      parts.push(+now < +due
+        ? "due at " + formatClockTime(due)
+        : "the routine asked for it at " + formatClockTime(due));
     }
     return parts.join(" · ");
   }
