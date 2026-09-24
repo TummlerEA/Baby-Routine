@@ -120,7 +120,7 @@ const APP = h.APP;
   await clearCard();
   ok('but a wake-up starts the silent remote, which is what keeps the clock',
     await playing());
-  ok('and it is silent', await page.textContent('#noiseFabIcon') === '\uD83C\uDF9B');
+  ok('and it is silent', await page.textContent('#noiseFabIcon') === '\uD83D\uDCAC');
 
   // The remote was borrowed, not chosen: the sound this phone prefers is
   // untouched, and comes back the moment it is played on purpose.
@@ -357,7 +357,7 @@ const APP = h.APP;
   await page.waitForTimeout(1000);
   ok('one tap starts the silent remote', await playing());
   ok('and it really is the silent one',
-    await page.textContent('#noiseFabIcon') === '\uD83C\uDF9B');
+    await page.textContent('#noiseFabIcon') === '\uD83D\uDCAC');
   ok('the offer goes once it is running', await page.isHidden('#remindStart'));
   ok('and the line says it is ready now',
     (await state()).ready, (await state()).line);
