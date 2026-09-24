@@ -160,7 +160,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "95";
+    var fallback = "96";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -10279,7 +10279,7 @@
     { id: "brown", label: "Deep", note: "low rumble" },
     { id: "pink", label: "Soft", note: "steady rush" },
     { id: "white", label: "Bright", note: "full hiss" },
-    { id: "remote", label: "Standby", note: "no sound" }
+    { id: "standby", label: "Standby", note: "no sound" }
   ];
   // Four steps that sound evenly spaced, which is not four evenly spaced
   // numbers: loudness roughly doubles every time the amplitude does.
@@ -10295,7 +10295,7 @@
   // something is playing. So this plays — at about -60dB, which is inaudible
   // but is not the digital silence a phone would be within its rights to
   // ignore — and the watch gets a remote control out of it.
-  var NOISE_REMOTE = "remote";
+  var NOISE_STANDBY = "standby";
   // Said as a level in the file rather than as a multiplier, because the
   // level is the thing that matters: about -70dBFS. Far below anything a
   // person will hear out of a phone, and far above the digital silence that
@@ -10354,8 +10354,12 @@
       var raw = localStorage.getItem(NOISE_KEY);
       var parsed = raw ? JSON.parse(raw) : null;
       if (!parsed || typeof parsed !== "object") return copyOf(NOISE_DEFAULTS);
-      var sound = NOISE_SOUNDS.some(function (s) { return s.id === parsed.sound; })
-        ? parsed.sound : NOISE_DEFAULTS.sound;
+      // It was called "remote" until the notification became the point of
+      // it. Carried across rather than dropped, so a phone that had chosen
+      // it does not quietly come back making a noise instead.
+      var want = parsed.sound === "remote" ? NOISE_STANDBY : parsed.sound;
+      var sound = NOISE_SOUNDS.some(function (s) { return s.id === want; })
+        ? want : NOISE_DEFAULTS.sound;
       var level = NOISE_LEVELS.some(function (l) { return l.id === parsed.level; })
         ? parsed.level : NOISE_DEFAULTS.level;
       var timer = NOISE_TIMERS.indexOf(parsed.timer) !== -1
@@ -10538,17 +10542,17 @@
     return URL.createObjectURL(new Blob(parts, { type: "audio/wav" }));
   }
 
-  // Either because it was chosen, or because something asked for the app to
-  // be kept awake without a sound — the reminder does, when a wake-up is
-  // logged. The second kind leaves the preferred sound alone.
+  // Either because Standby was chosen, or because something asked for the
+  // app to be kept awake without a sound — the reminder does, when a wake-up
+  // is logged. The second kind leaves the preferred sound alone.
   var noiseSilent = false;
 
-  function noiseIsRemote() {
-    return noiseSilent || noise.sound === NOISE_REMOTE;
+  function noiseIsStandby() {
+    return noiseSilent || noise.sound === NOISE_STANDBY;
   }
 
   function noiseGain() {
-    if (noiseIsRemote()) return NOISE_SILENT_RMS / NOISE_TARGET_RMS;
+    if (noiseIsStandby()) return NOISE_SILENT_RMS / NOISE_TARGET_RMS;
     for (var i = 0; i < NOISE_LEVELS.length; i++) {
       if (NOISE_LEVELS[i].id === noise.level) return NOISE_LEVELS[i].gain;
     }
@@ -10558,7 +10562,7 @@
   // The remote makes no sound of its own, so there is nothing to generate for
   // it — it is the deep one with the volume taken off.
   function noiseSoundToMake() {
-    return noiseIsRemote() ? "brown" : noise.sound;
+    return noiseIsStandby() ? "brown" : noise.sound;
   }
 
   // The block itself does not depend on the volume or the timer, so it
@@ -10756,7 +10760,7 @@
   // the notification it was there for. And a sound already playing is left to
   // play rather than started again, which would only reset its timer.
   function noiseFollowSleep(goingDown) {
-    if (!noise.auto || noiseIsRemote()) return;
+    if (!noise.auto || noiseIsStandby()) return;
     if (goingDown) {
       if (!noiseOn) noiseStart();
     } else if (noiseOn) {
@@ -10862,7 +10866,7 @@
       if (!navigator.mediaSession || !window.MediaMetadata || !noiseOn) return;
       navigator.mediaSession.metadata = new MediaMetadata({
         title: line,
-        artist: noiseIsRemote() ? "Baby Tracker \u00b7 standby"
+        artist: noiseIsStandby() ? "Baby Tracker \u00b7 standby"
           : "Baby Tracker \u00b7 " + describeNoiseSound(noise.sound)
       });
     } catch (e) { /* the sound plays without the watch knowing what it is */ }
@@ -10902,7 +10906,7 @@
   function renderNoiseFab() {
     var left = noiseMinutesLeft();
     el.noiseFab.classList.toggle("playing", noiseOn);
-    el.noiseFab.classList.toggle("remote", noiseOn && noiseIsRemote());
+    el.noiseFab.classList.toggle("standby", noiseOn && noiseIsStandby());
     el.noiseFab.hidden = !noiseOn && currentScreen !== "main";
     // Three states worth telling apart at a glance: off, making a sound, and
     // running silently. The silent one is a speech balloon rather than a set
@@ -10911,11 +10915,11 @@
     // hands a watch are the smaller half of it, and only on a wrist that
     // has one.
     el.noiseFabIcon.textContent = !noiseOn ? "🔈"
-      : noiseIsRemote() ? "💬" : "🔊";
+      : noiseIsStandby() ? "💬" : "🔊";
     el.noiseFabLeft.hidden = !noiseOn || left === null;
     if (left !== null) el.noiseFabLeft.textContent = left + "m";
     el.noiseFab.setAttribute("aria-label", !noiseOn ? "Play white noise"
-      : noiseIsRemote() ? "Stop standby" : "Stop the white noise");
+      : noiseIsStandby() ? "Stop standby" : "Stop the white noise");
   }
 
   function renderNoiseScreen() {
@@ -10924,7 +10928,7 @@
     el.noisePlay.classList.toggle("playing", noiseOn);
     el.noisePlayIcon.textContent = noiseOn ? "⏹" : "▶";
     el.noisePlayLabel.textContent = noiseOn ? "Stop" : "Play";
-    var what = noiseIsRemote() ? "Standby, no sound" : describeNoiseSound(noise.sound);
+    var what = noiseIsStandby() ? "Standby, no sound" : describeNoiseSound(noise.sound);
     el.noisePlayNote.textContent = noiseIsFading() ? "Fading out"
       : noiseOn && left !== null ? what + " · " + left + " min left"
       : noiseOn ? what + " · until you stop it"
@@ -10936,7 +10940,7 @@
     chipStates(el.noisePrev, noise.prev);
     chipStates(el.noiseNext, noise.next);
     // Nothing to set the volume of when there is no sound.
-    el.noiseLevels.hidden = noiseIsRemote();
+    el.noiseLevels.hidden = noiseIsStandby();
     el.noiseAuto.checked = noise.auto;
     renderAwakeLine();
   }

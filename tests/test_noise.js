@@ -189,7 +189,7 @@ function rms(s, from, count) {
 
   const chips = row => page.$$eval(row + ' .nz-chip', n => n.map(x => x.dataset.value));
   ok('three sounds and a silent fourth',
-    (await chips('#noiseSounds')).join() === 'brown,pink,white,remote');
+    (await chips('#noiseSounds')).join() === 'brown,pink,white,standby');
   ok('either watch button can be turned off or given one of three jobs',
     (await chips('#noisePrev')).join() === ',feed,diaper,sleep' &&
     (await chips('#noiseNext')).join() === ',feed,diaper,sleep');
@@ -496,7 +496,7 @@ function rms(s, from, count) {
   });
 
   await openNoise();
-  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseSounds .nz-chip[data-value="standby"]');
   await page.click('#noiseTimers .nz-chip[data-value="0"]');
   await page.waitForTimeout(150);
 
@@ -630,7 +630,7 @@ function rms(s, from, count) {
   await fresh();
   await openNoise();
   await page.check('#noiseAuto');
-  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseSounds .nz-chip[data-value="standby"]');
   await page.click('#noiseTimers .nz-chip[data-value="0"]');
   await page.waitForTimeout(150);
   await page.click('#noisePlay');
@@ -817,6 +817,17 @@ function rms(s, from, count) {
   ok('and a timer nobody offered', (await picked('#noiseTimers')) === '45');
   ok('and only a real true switches the sleep button on',
     !(await page.isChecked('#noiseAuto')));
+
+  // It was called "remote" before the notification became the point of it. A
+  // phone that had chosen it must not quietly come back making a noise.
+  await page.evaluate(() => localStorage.setItem('baby-tracker-noise',
+    '{"sound":"remote","level":2,"timer":45,"auto":false}'));
+  await page.reload();
+  await page.waitForTimeout(500);
+  await openNoise();
+  ok('a phone that chose it under its old name still has it chosen',
+    (await picked('#noiseSounds')) === 'standby');
+  ok('and it is still silent', await page.isHidden('#noiseLevels'));
 
   await page.evaluate(() => localStorage.setItem('baby-tracker-noise', 'not json at all'));
   await page.reload();
