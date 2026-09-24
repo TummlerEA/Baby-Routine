@@ -160,7 +160,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "96";
+    var fallback = "97";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -10315,6 +10315,11 @@
   var NOISE_SAID_MS = 25000;
   var NOISE_AWAKE_MS = 60000;
   var NOISE_AWAKE_KEY = "baby-tracker-noise-awake";
+  // How far behind its minute a check may fall and the answer still count as
+  // on time. The window is looked at once a minute, so a minute of lateness
+  // is built into the idea; two is still inside the quarter of an hour that
+  // separates a baby who is ready for a nap from one who is overtired.
+  var NOISE_LAG_OK = 2 * 60000;
   var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false,
     next: "feed", prev: "sleep" };
   // Generated at 44.1kHz, because the pink filter's coefficients are tuned
@@ -10602,18 +10607,39 @@
   // through proves nothing about a phone in a pocket. Locking the screen
   // fires visibilitychange before anything is frozen, so the stretch itself
   // is measured off the wall clock and is right however dead the page went.
-  var noiseAwake = { ticks: 0, dark: 0, darkMs: 0, since: 0, timer: null };
+  //
+  // Counting the marks says whether the app ran; the gaps between them say
+  // what that is worth. Four minutes missing out of two hundred and fifty is
+  // ordinary drift, and the same four minutes missing out of fifteen is a
+  // phone that stops. So the worst gap is kept as well, because that is the
+  // question in plain terms: how late would the reminder have been?
+  var noiseAwake = { ticks: 0, dark: 0, darkMs: 0, since: 0, at: 0, lagMs: 0,
+    startedAt: 0, timer: null };
 
   function startCountingAwake() {
     stopCountingAwake();
     noiseAwake.ticks = 0;
     noiseAwake.dark = 0;
     noiseAwake.darkMs = 0;
+    noiseAwake.lagMs = 0;
+    noiseAwake.at = Date.now();
+    noiseAwake.startedAt = noiseAwake.at;
     noiseAwake.since = document.hidden ? Date.now() : 0;
     noiseAwake.timer = setInterval(function () {
       noiseAwake.ticks++;
-      if (document.hidden) noiseAwake.dark++;
+      if (!document.hidden) {
+        noiseAwake.at = Date.now();
+        return;
+      }
+      noiseAwake.dark++;
+      noteLag(Date.now());
     }, NOISE_AWAKE_MS);
+  }
+
+  function noteLag(now) {
+    var late = now - noiseAwake.at - NOISE_AWAKE_MS;
+    if (late > noiseAwake.lagMs) noiseAwake.lagMs = late;
+    noiseAwake.at = now;
   }
 
   function stopCountingAwake() {
@@ -10630,15 +10656,37 @@
 
   document.addEventListener("visibilitychange", function () {
     if (!noiseOn) return;
-    if (document.hidden) noiseAwake.since = Date.now();
-    else closeDarkStretch();
+    if (document.hidden) {
+      // The marks are not reset here: a gap that straddles the lock is still
+      // a gap, and clipping it to the lock would flatter the phone.
+      noiseAwake.since = Date.now();
+      return;
+    }
+    // The stretch between the last mark and the screen coming back was dark
+    // too, and it is where the worst gap hides: a page a phone had frozen
+    // wakes at the unlock, not at the minute it owed.
+    if (noiseAwake.since) noteLag(Date.now());
+    closeDarkStretch();
   });
 
+  // How long the sound actually ran for. A timed file is the whole session,
+  // so the element's own position answers it and goes on being right however
+  // frozen the page was. A file with no limit is looped instead, and the
+  // element starts it again from nought every quarter of an hour — read that
+  // way a four-hour night reported twelve minutes. Nothing in the element
+  // counts the passes, so there the clock does.
+  function noiseSoundMs() {
+    var player = el.noisePlayer;
+    if (noise.timer && player && player.duration && !isNaN(player.duration)) {
+      return (player.currentTime || 0) * 1000;
+    }
+    return noiseAwake.startedAt ? Date.now() - noiseAwake.startedAt : 0;
+  }
+
   // Minutes of audio that really came out, against minutes this page was
-  // awake for. The first is read off the element, which keeps counting
-  // whatever the page is doing; the second is the marks above.
-  function recordAwake(playedSeconds) {
-    var played = Math.floor((playedSeconds || 0) / 60);
+  // awake for and the worst it fell behind by.
+  function recordAwake() {
+    var played = Math.floor(noiseSoundMs() / 60000);
     if (played < 2) return;
     closeDarkStretch();
     try {
@@ -10646,7 +10694,8 @@
         played: played,
         awake: noiseAwake.ticks,
         dark: Math.round(noiseAwake.darkMs / 60000),
-        darkAwake: noiseAwake.dark
+        darkAwake: noiseAwake.dark,
+        lag: Math.round(Math.max(0, noiseAwake.lagMs) / 1000)
       }));
     } catch (e) { /* a diagnostic is not worth an error message */ }
   }
@@ -10656,7 +10705,8 @@
       var parsed = JSON.parse(localStorage.getItem(NOISE_AWAKE_KEY) || "null");
       if (!parsed || typeof parsed.played !== "number") return null;
       return { played: parsed.played, awake: parsed.awake || 0,
-        dark: parsed.dark || 0, darkAwake: parsed.darkAwake || 0 };
+        dark: parsed.dark || 0, darkAwake: parsed.darkAwake || 0,
+        lag: typeof parsed.lag === "number" ? parsed.lag : null };
     } catch (e) {
       return null;
     }
@@ -10733,7 +10783,7 @@
   function noiseStop() {
     var player = el.noisePlayer;
     noiseSilent = false;
-    if (noiseOn && player) recordAwake(player.currentTime);
+    if (noiseOn && player) recordAwake();
     stopCountingAwake();
     noiseOn = false;
     if (player) {
@@ -10993,21 +11043,29 @@
     el.noiseAwakeVerdict.textContent = readAwake(last);
   }
 
+  // The tolerance is a share of the run, not a fixed minute: a minute short
+  // of fifteen is a phone that missed nearly a sixteenth of them, and a
+  // minute short of four hours is a phone that did the job. The first
+  // version made that mistake and called a night it had kept almost perfectly
+  // a night it had slowed down.
   function readAwake(last) {
     if (last.dark < 2) {
       return "The screen stayed on almost the whole time, so this says nothing " +
         "yet about a phone in a pocket. Try a run with it locked.";
     }
-    if (last.darkAwake >= last.dark - 1) {
-      return "This phone keeps the app running with the screen off, so a " +
-        "reminder while it is locked would arrive on time.";
-    }
     if (last.darkAwake <= last.dark * 0.3) {
       return "This phone stops the app once the screen is off, so a reminder " +
         "while it is locked is not possible without a server.";
     }
+    var behind = last.lag === null ? 0 : last.lag * 1000;
+    if (behind <= NOISE_LAG_OK && last.darkAwake >= last.dark * 0.9) {
+      return "This phone keeps the app running with the screen off, so a " +
+        "reminder while it is locked would arrive on time.";
+    }
     return "This phone slows the app down with the screen off, so a reminder " +
-      "would arrive, but late.";
+      (behind > NOISE_LAG_OK
+        ? "would arrive up to " + formatDuration(behind) + " late."
+        : "would arrive, but late.");
   }
 
   function chipStates(row, value) {
