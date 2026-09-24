@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=94">
+<link rel="stylesheet" href="style.css?v=95">
 </head>
 <body>
 
@@ -785,8 +785,8 @@
           <div class="nz-label" id="remindLeadLabel" hidden>How much warning</div>
           <div class="nz-chips" id="remindLeads" hidden></div>
           <p class="rm-state" id="remindState" hidden>—</p>
-          <button type="button" class="data-btn" id="remindStart" hidden>💬 Start the silent remote now</button>
-          <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. So logging a wake-up starts the silent remote, which keeps the clock going and costs nothing you can hear. Putting her down stops it again.</p>
+          <button type="button" class="data-btn" id="remindStart" hidden>💬 Turn on Standby now</button>
+          <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. So logging a wake-up turns on <strong>Standby</strong>, which keeps the clock going and costs nothing you can hear. Putting her down turns it off again.</p>
         </div>
       </section>
 
@@ -998,6 +998,7 @@
       <section class="data-panel">
         <div class="nz-label">Sound</div>
         <div class="nz-chips" id="noiseSounds"></div>
+        <p class="data-hint"><strong>Standby</strong> makes no sound at all. A phone stops running an app once the screen is off — unless it is playing something — so this is what keeps the app alive in your pocket. Two things come of that: a <strong>notification</strong> when the wake window is up, set under ⏰ Daily routine; and on an Apple Watch, a feed, a nappy or a sleep logged from the buttons either side of play, without taking the phone out.</p>
         <div class="nz-label">Volume</div>
         <div class="nz-chips" id="noiseLevels"></div>
         <div class="nz-label">Stop after</div>
@@ -1019,7 +1020,7 @@
           <input type="checkbox" id="noiseAuto">
           <span class="settings-label">Start it when I log a <strong>sleep</strong></span>
         </label>
-        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark. The remote is left alone either way — stopping it on a wake-up would take away the very button you had just pressed.</p>
+        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark. Standby is left alone either way — stopping it on a wake-up would take away the notification it was there for.</p>
       </section>
 
       <section class="data-panel">
@@ -1396,6 +1397,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=94"></script>
+<script src="app.js?v=95"></script>
 </body>
 </html>
