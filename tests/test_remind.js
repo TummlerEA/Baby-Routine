@@ -326,7 +326,7 @@ const APP = h.APP;
   await page.waitForTimeout(150);
   await page.click('#noiseOpen');
   await page.waitForTimeout(250);
-  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseSounds .nz-chip[data-value="standby"]');
   await page.click('#noiseTimers .nz-chip[data-value="0"]');
   await page.waitForTimeout(150);
   await page.click('#noisePlay');

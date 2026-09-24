@@ -3229,12 +3229,12 @@ body {
 /* The remote is the same player with the sound taken off, so it shares the
    shortcut — but not its look, since "running silently" and "making a noise"
    are different enough at 3am to want telling apart. */
-.noise-fab.remote {
+.noise-fab.standby {
   border-color: var(--accent-awake);
   background: #2e2717;
 }
 
-.noise-fab.remote .noise-fab-left { color: var(--accent-awake); }
+.noise-fab.standby .noise-fab-left { color: var(--accent-awake); }
 
 /* The result of a measurement, not a footnote. It was a fourth grey paragraph
    at the bottom of the screen and went unread, which is the one thing it
