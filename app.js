@@ -147,6 +147,12 @@
   var DOC_FORMAT = 4;
   var SYNC_DEBOUNCE = 8000;
   var SYNC_POLL = 60000;
+  // With the screen off, every other tick instead of every one. The only
+  // reason to poll in the dark at all is that the other phone may have logged
+  // the wake-up this one is waiting to be nudged about, and a minute either
+  // way makes no difference to a nudge whose minute is fixed by when the baby
+  // woke rather than by when the news arrived.
+  var SYNC_DARK_EVERY = 2;
   var SYNC_RETRIES = 3;
   // One source of truth for the version on screen. It is read from this
   // script's own ?v= cache-busting query, so bumping the URL in index.html is
@@ -154,7 +160,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "92";
+    var fallback = "93";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1614,6 +1620,7 @@
     remindLeads: document.getElementById("remindLeads"),
     remindLeadLabel: document.getElementById("remindLeadLabel"),
     remindState: document.getElementById("remindState"),
+    remindStart: document.getElementById("remindStart"),
     noiseAwake: document.getElementById("noiseAwake"),
     noiseAwakeCount: document.getElementById("noiseAwakeCount"),
     noiseAwakeVerdict: document.getElementById("noiseAwakeVerdict"),
@@ -5968,11 +5975,27 @@
     syncTimer = setTimeout(function () { syncNow("auto"); }, delay || SYNC_DEBOUNCE);
   }
 
+  var syncDarkTicks = 0;
+
   function startSyncPolling() {
     clearInterval(syncPoller);
     if (!syncConfig) return;
     syncPoller = setInterval(function () {
-      if (!document.hidden) syncNow("poll");
+      if (!document.hidden) {
+        syncDarkTicks = 0;
+        syncNow("poll");
+        return;
+      }
+      // Screen off. This used to poll never, on the grounds that nobody was
+      // looking — but the nudge is for the phone whose owner is not looking,
+      // and it needs the wake-up the other phone logged. Only while something
+      // is playing, which is both when the timers run at all and the sign
+      // that this phone is meant to be on duty.
+      if (!noiseOn) return;
+      syncDarkTicks++;
+      if (syncDarkTicks < SYNC_DARK_EVERY) return;
+      syncDarkTicks = 0;
+      syncNow("poll");
     }, SYNC_POLL);
   }
 
@@ -10178,7 +10201,10 @@
       return { ready: false, line: "Turn on Follow this routine above — the time to nudge you is worked out from it." };
     }
     if (!noiseOn) {
-      return { ready: false, line: "Waiting. The app can only keep time while it is playing something, so it starts the silent remote when you log a wake-up." };
+      return { ready: false, canStart: true,
+        line: "Waiting. The app can only keep time while it is playing something. " +
+          "Logging a wake-up starts the silent remote by itself \u2014 or start it now " +
+          "to be nudged about a wake-up logged on the other phone." };
     }
     var status = routineStatus(new Date());
     if (status.sleeping) return { ready: true, line: "Ready. Nothing to count while she is down." };
@@ -10923,6 +10949,11 @@
     el.remindState.hidden = !remind.on;
     el.remindState.textContent = state.line;
     el.remindState.classList.toggle("rm-ready", state.ready);
+    // The one thing a second phone has to do for itself. The button in the
+    // corner plays whatever sound this phone prefers, which may be an
+    // audible one, so the silent kind is offered here instead — one tap,
+    // where the waiting is being announced.
+    el.remindStart.hidden = !state.canStart;
     el.remindLeads.hidden = !remind.on;
     el.remindLeadLabel.hidden = !remind.on;
     var chips = el.remindLeads.querySelectorAll(".nz-chip");
@@ -11044,6 +11075,11 @@
 
   buildNoiseChips();
   buildRemindChips();
+
+  el.remindStart.addEventListener("click", function () {
+    if (!noiseOn) noiseStartSilent();
+    renderRemind();
+  });
 
   el.remindOn.addEventListener("change", function () {
     remind.on = el.remindOn.checked;

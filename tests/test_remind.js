@@ -271,6 +271,97 @@ const APP = h.APP;
   ok('rubbish in its place leaves the nudge off rather than breaking the screen',
     !(await page.isChecked('#remindOn')));
 
+  // ---------- the other phone's wake-up ----------
+
+  // The nudge is for whoever is not looking at their phone, so the phone that
+  // did not log the wake-up has to hear about it. Polling used to stop dead
+  // with the screen off; now it goes on at half the rate, and only while
+  // something is playing — which is both when the timers run at all and the
+  // sign this phone meant to be on duty.
+  await page.addInitScript(() => {
+    window.__polls = 0;
+    let away = false;
+    Object.defineProperty(document, 'hidden', { get: () => away });
+    window.__screen = off => {
+      away = off;
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    const real = window.fetch;
+    window.fetch = (...args) => {
+      if (String(args[0]).indexOf('api.github.com') !== -1) {
+        window.__polls++;
+        return Promise.reject(new Error('no network in these checks'));
+      }
+      return real(...args);
+    };
+  });
+  await standIn('granted');
+  await fresh();
+  await page.evaluate(() => localStorage.setItem('baby-tracker-sync',
+    JSON.stringify({ repo: 'someone/log', token: 'x', sha: null })));
+  await page.goto(APP);
+  await page.waitForTimeout(600);
+
+  const polls = () => page.evaluate(() => window.__polls);
+  const pollsOver = async (minutes) => {
+    const before = await polls();
+    await ctx.clock.runFor(minutes);
+    await page.waitForTimeout(500);
+    return (await polls()) - before;
+  };
+
+  await page.evaluate(() => window.__screen(true));
+  ok('with the screen off and nothing playing it does not poll at all',
+    (await pollsOver('10:00')) === 0);
+
+  await page.evaluate(() => window.__screen(false));
+  await page.waitForTimeout(300);
+  const lit = await pollsOver('10:00');
+  ok('with the screen on it polls every minute', lit > 0, lit);
+
+  await openRoutine();
+  await page.click('#routineBack');
+  await page.waitForTimeout(200);
+  await page.click('#moreOpen');
+  await page.waitForTimeout(150);
+  await page.click('#noiseOpen');
+  await page.waitForTimeout(250);
+  await page.click('#noiseSounds .nz-chip[data-value="remote"]');
+  await page.click('#noiseTimers .nz-chip[data-value="0"]');
+  await page.waitForTimeout(150);
+  await page.click('#noisePlay');
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => window.__screen(true));
+  await page.waitForTimeout(200);
+  const dim = await pollsOver('10:00');
+  ok('with the screen off but something playing it polls again', dim > 0, dim);
+  ok('and at half the rate it would lit', Math.abs(dim * 2 - lit) <= 2, [dim, lit]);
+
+  // ---------- going on duty ----------
+
+  await page.evaluate(() => window.__screen(false));
+  await page.waitForTimeout(300);
+  await page.click('#noiseFab');
+  await page.waitForTimeout(400);
+  ok('nothing is playing to begin with', !(await playing()));
+
+  await standIn('granted');
+  await fresh();
+  await openRoutine();
+  await page.check('#routineEnabled');
+  await page.check('#remindOn');
+  await page.waitForTimeout(400);
+  ok('while it is waiting there is a way to start the clock by hand',
+    await page.isVisible('#remindStart'));
+  await page.click('#remindStart');
+  await page.waitForTimeout(1000);
+  ok('one tap starts the silent remote', await playing());
+  ok('and it really is the silent one',
+    await page.textContent('#noiseFabIcon') === '\uD83C\uDF9B');
+  ok('the offer goes once it is running', await page.isHidden('#remindStart'));
+  ok('and the line says it is ready now',
+    (await state()).ready, (await state()).line);
+
   ok('nothing threw along the way', errs.length === 0, errs);
 
   await b.close();
