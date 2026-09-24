@@ -362,6 +362,111 @@ const APP = h.APP;
   ok('and the line says it is ready now',
     (await state()).ready, (await state()).line);
 
+  // ---------- the table may put the nap off, never bring it forward ----------
+
+  // Within half an hour either way the screen quotes the routine's own hour
+  // rather than the stretch awake, so a household hears the same times every
+  // day. Fired as a notification that was plainly wrong: a phone announcing a
+  // nap to somebody holding a baby who had been up forty minutes of an hour.
+  // The nudge now waits for the later of the two.
+  //
+  // Everything here is built around the clock as it stands rather than
+  // written in local hours, so the same arithmetic holds in any timezone.
+  async function stage(plan) {
+    await fresh();
+    const marks = await page.evaluate(p => {
+      const now = Date.now();
+      const pad = n => String(n).padStart(2, '0');
+      const clock = m => {
+        const d = new Date(now + m * 60000);
+        return pad(d.getHours()) + ':' + pad(d.getMinutes());
+      };
+      localStorage.setItem('baby-tracker-remind',
+        JSON.stringify({ on: true, lead: 5, done: 0 }));
+      // Naps an hour long and an hour apart, so every gap in the table is
+      // the same hour and "the next sleep" is always a real one. A table
+      // with a single nap in it is not a routine, and the app would measure
+      // the window against tomorrow morning.
+      const slots = [];
+      for (let k = -2; k <= 2; k++) {
+        const at = p.planned + k * 120;
+        slots.push({ time: clock(at), until: clock(at + 60), kind: 'sleep' });
+      }
+      localStorage.setItem('baby-tracker-routine', JSON.stringify({ on: true, slots: slots }));
+      localStorage.setItem('baby-tracker-events', JSON.stringify([
+        { id: 'd1', type: 'sleep_start', time: new Date(now - 90 * 60000).toISOString() },
+        { id: 'w1', type: 'sleep_end', time: new Date(now).toISOString() }
+      ]));
+      // The clock times these checks expect, worked out before anything is
+      // wound on — afterwards "now" is a different minute.
+      const marks = {};
+      [35, 55, 60, 75, 80].forEach(m => { marks[m] = clock(m); });
+      return marks;
+    }, plan);
+    await page.reload();
+    await page.waitForTimeout(500);
+    await openRoutine();
+    // The line only names a minute once something is playing to keep time by.
+    if (await page.isVisible('#remindStart')) {
+      await page.click('#remindStart');
+      await page.waitForTimeout(1000);
+    }
+    return marks;
+  }
+
+  // The window runs to +60. The table wants the nap at +40, which is inside
+  // the half hour the screen is allowed to round by — this is the case from
+  // the lock screen that started it.
+  let mark = await stage({ planned: 40 });
+  says = await state();
+  ok('the nudge is named for the end of the window, not the table\'s hour',
+    says.line.indexOf(mark[55]) !== -1, [says.line, mark[55], mark[35]]);
+
+  await ctx.clock.runFor('45:00');
+  await page.waitForTimeout(300);
+  ok('and nothing arrives while the baby is still inside her window',
+    (await sent()).length === 0, await sent());
+
+  await ctx.clock.runFor('15:00');
+  await page.waitForTimeout(300);
+  let late = await sent();
+  ok('it arrives once the window is up', late.length === 1, late);
+  ok('and names the end of the window rather than the hour in the table',
+    late.length === 1 && late[0].body.indexOf('due at ' + mark[60]) !== -1,
+    [late, mark[60]]);
+  ok('five minutes early, which is the warning that was asked for',
+    late.length === 1 && /Awake 55m/.test(late[0].body), late);
+
+  // The other direction is left alone: a baby who woke early is held to the
+  // table, because pulling a day back onto its hours is what a routine is
+  // for. The window is up at +60 and the table does not want her down until
+  // +80.
+  mark = await stage({ planned: 80 });
+  says = await state();
+  ok('a nap the table puts off is still nudged at the table\'s hour',
+    says.line.indexOf(mark[75]) !== -1, [says.line, mark[75], mark[55]]);
+
+  await ctx.clock.runFor('01:05:00');
+  await page.waitForTimeout(300);
+  ok('so the end of the window on its own does not fire it',
+    (await sent()).length === 0, await sent());
+
+  await ctx.clock.runFor('11:00');
+  await page.waitForTimeout(300);
+  late = await sent();
+  ok('and it arrives at the hour the routine asked for', late.length === 1, late);
+  ok('naming that hour, not the minute the window ran out',
+    late.length === 1 && late[0].body.indexOf('due at ' + mark[80]) !== -1,
+    [late, mark[80], mark[60]]);
+
+  // And once that hour goes by, the app stops holding the day to it and
+  // measures from the stretch awake again — which moves the minute the nudge
+  // was for backwards. A minute already nudged for is not nudged for twice.
+  await ctx.clock.runFor('20:00');
+  await page.waitForTimeout(300);
+  ok('the same window is not nudged for a second time as the hour passes',
+    (await sent()).length === 1, await sent());
+
   ok('nothing threw along the way', errs.length === 0, errs);
 
   await b.close();
