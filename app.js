@@ -26,27 +26,149 @@
   // has slid needs. Off until somebody turns it on, so nothing about the app
   // changes for a household that never asked for a routine.
   var ROUTINE_KEY = "baby-tracker-routine";
-  // The routine the app suggests, and the one it resets to. Seven sleeps and
-  // seven feeds: three sleeps overnight, four naps through the day. A sleep
-  // carries the time it is expected to end as well as the time it starts,
-  // which is what makes the awake stretch between two naps a number the app
-  // can hold the day to rather than a setting somebody has to guess at.
-  var ROUTINE_DEFAULT_SLOTS = [
-    { time: "21:00", until: "01:30", kind: "sleep" },
-    { time: "01:30", kind: "feed" },
-    { time: "02:00", until: "04:30", kind: "sleep" },
-    { time: "04:30", kind: "feed" },
-    { time: "05:00", until: "08:00", kind: "sleep" },
-    { time: "08:00", kind: "feed" },
-    { time: "09:00", until: "11:00", kind: "sleep" },
-    { time: "11:00", kind: "feed" },
-    { time: "12:00", until: "14:00", kind: "sleep" },
-    { time: "14:00", kind: "feed" },
-    { time: "15:00", until: "17:00", kind: "sleep" },
-    { time: "17:00", kind: "feed" },
-    { time: "18:00", until: "19:00", kind: "sleep" },
-    { time: "20:00", kind: "feed" }
+  // The day the app suggests, at six ages.
+  //
+  // A sleep carries the time it is expected to end as well as the time it
+  // starts, which is what makes the awake stretch between two naps a number
+  // the app can hold the day to rather than a setting somebody has to guess
+  // at. That is also why there is no wake-window setting anywhere in this
+  // app: widen the gaps in the table and the window widens with them.
+  //
+  // Which is the whole reason these are graded by age. A baby outgrows a
+  // stretch every few months — and grows out of naps as well as into longer
+  // waking, which is why each of these is a whole day rather than the same
+  // day with the gaps stretched. Six tables is what it takes to say that
+  // honestly: four naps become three, then two, then one, and the night
+  // feeds fall away in between.
+  //
+  // Offered, never applied. The app picks the one for the age it knows and
+  // puts it behind the reset button; what somebody has tuned by hand is left
+  // alone until they ask, the same way the immunisation dates are offered as
+  // a starting point rather than written into the diary.
+  //
+  // The hours are the common shape of published guidance rather than any one
+  // source, and every table closes: sleeps plus awake stretches come to
+  // twenty-four hours, with the total sleep inside the range usually given
+  // for the age. Sources differ by a quarter of an hour either way, which is
+  // about what a baby differs by from herself on two days running.
+  var ROUTINE_SUGGESTIONS = [
+    {
+      // Five naps and two night feeds. The stretches are short enough that
+      // the day is mostly sleep — about eighteen hours of it.
+      fromDays: 0,
+      label: "up to 6 weeks",
+      slots: [
+        { time: "21:00", until: "01:00", kind: "sleep" },
+        { time: "01:00", kind: "feed" },
+        { time: "01:30", until: "04:30", kind: "sleep" },
+        { time: "04:30", kind: "feed" },
+        { time: "05:00", until: "08:00", kind: "sleep" },
+        { time: "08:00", kind: "feed" },
+        { time: "08:45", until: "10:30", kind: "sleep" },
+        { time: "10:30", kind: "feed" },
+        { time: "11:15", until: "13:00", kind: "sleep" },
+        { time: "13:00", kind: "feed" },
+        { time: "13:45", until: "15:30", kind: "sleep" },
+        { time: "15:30", kind: "feed" },
+        { time: "16:15", until: "18:00", kind: "sleep" },
+        { time: "18:00", kind: "feed" },
+        { time: "18:45", until: "19:45", kind: "sleep" },
+        { time: "19:45", kind: "feed" }
+      ]
+    },
+    {
+      // Four naps, two night feeds, seventeen hours of sleep. The table this
+      // app shipped with before it knew about ages, and still the one it
+      // falls back to when there is no date of birth to go on.
+      fromDays: 42,
+      label: "6 weeks to 4 months",
+      slots: [
+        { time: "21:00", until: "01:30", kind: "sleep" },
+        { time: "01:30", kind: "feed" },
+        { time: "02:00", until: "04:30", kind: "sleep" },
+        { time: "04:30", kind: "feed" },
+        { time: "05:00", until: "08:00", kind: "sleep" },
+        { time: "08:00", kind: "feed" },
+        { time: "09:00", until: "11:00", kind: "sleep" },
+        { time: "11:00", kind: "feed" },
+        { time: "12:00", until: "14:00", kind: "sleep" },
+        { time: "14:00", kind: "feed" },
+        { time: "15:00", until: "17:00", kind: "sleep" },
+        { time: "17:00", kind: "feed" },
+        { time: "18:00", until: "19:00", kind: "sleep" },
+        { time: "20:00", kind: "feed" }
+      ]
+    },
+    {
+      // Three naps and a short one late on to reach bedtime — the bridge nap
+      // the NHS pages describe. One night feed left, and about fifteen hours
+      // of sleep in all.
+      fromDays: 122,
+      label: "4 to 7 months",
+      slots: [
+        { time: "20:45", until: "02:00", kind: "sleep" },
+        { time: "02:00", kind: "feed" },
+        { time: "02:30", until: "07:00", kind: "sleep" },
+        { time: "07:00", kind: "feed" },
+        { time: "08:45", until: "10:15", kind: "sleep" },
+        { time: "10:15", kind: "feed" },
+        { time: "12:00", until: "13:45", kind: "sleep" },
+        { time: "13:45", kind: "feed" },
+        { time: "15:30", until: "16:30", kind: "sleep" },
+        { time: "16:30", kind: "feed" },
+        { time: "18:15", until: "19:00", kind: "sleep" },
+        { time: "19:00", kind: "feed" }
+      ]
+    },
+    {
+      // The bridge nap goes and the night runs unbroken. Two naps, meals
+      // rather than only feeds, and a long stretch before bed.
+      fromDays: 213,
+      label: "7 to 11 months",
+      slots: [
+        { time: "19:30", until: "07:00", kind: "sleep" },
+        { time: "07:00", kind: "feed" },
+        { time: "09:30", until: "10:30", kind: "sleep" },
+        { time: "10:30", kind: "feed" },
+        { time: "12:00", kind: "feed" },
+        { time: "13:30", until: "15:00", kind: "sleep" },
+        { time: "15:00", kind: "feed" },
+        { time: "17:30", kind: "feed" }
+      ]
+    },
+    {
+      // Still two naps, but the morning one is shrinking towards the day it
+      // is dropped.
+      fromDays: 335,
+      label: "11 to 15 months",
+      slots: [
+        { time: "19:30", until: "07:00", kind: "sleep" },
+        { time: "07:00", kind: "feed" },
+        { time: "10:00", until: "10:45", kind: "sleep" },
+        { time: "10:45", kind: "feed" },
+        { time: "12:30", kind: "feed" },
+        { time: "14:15", until: "15:30", kind: "sleep" },
+        { time: "15:30", kind: "feed" },
+        { time: "17:45", kind: "feed" }
+      ]
+    },
+    {
+      // One nap after lunch, and two long stretches either side of it.
+      fromDays: 456,
+      label: "15 months and up",
+      slots: [
+        { time: "20:00", until: "07:00", kind: "sleep" },
+        { time: "07:00", kind: "feed" },
+        { time: "11:30", kind: "feed" },
+        { time: "12:30", until: "14:30", kind: "sleep" },
+        { time: "14:30", kind: "feed" },
+        { time: "17:30", kind: "feed" }
+      ]
+    }
   ];
+  // Which table a phone with no date of birth gets. The one this app shipped
+  // with, so nothing moves under anybody who has not told it an age.
+  var ROUTINE_NO_AGE_BAND = 1;
   // A routine with more steps than this is not a routine any more, and the
   // screen that edits it stops being readable on a phone.
   var MAX_ROUTINE_SLOTS = 24;
@@ -160,7 +282,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "97";
+    var fallback = "98";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -959,7 +1081,9 @@
     // An empty routine would leave the screen with nothing to edit and the
     // main line with nothing to say, so fall back to the suggested one and
     // let the switch decide whether any of it is used.
-    if (!slots.length) slots = ROUTINE_DEFAULT_SLOTS.map(function (s) { return sanitiseRoutineSlot(s); });
+    if (!slots.length) {
+      slots = suggestedRoutine().slots.map(function (s) { return sanitiseRoutineSlot(s); });
+    }
     slots.sort(function (a, b) { return clockMinutes(a.time) - clockMinutes(b.time); });
     return { on: !!(raw && raw.on), slots: slots };
   }
@@ -987,6 +1111,54 @@
 
   function routineSleepSlots() {
     return routine.slots.filter(function (s) { return s.kind === "sleep"; });
+  }
+
+  // The suggested day for the age the app knows, or the one it shipped with
+  // when it knows no age. The bands are walked rather than searched so that
+  // a date of birth in the future — a pregnancy, a typo — lands on the
+  // youngest table instead of nothing.
+  function suggestedRoutine(now) {
+    var days = ageDaysAt(now || new Date());
+    if (days === null) return ROUTINE_SUGGESTIONS[ROUTINE_NO_AGE_BAND];
+    var pick = ROUTINE_SUGGESTIONS[0];
+    ROUTINE_SUGGESTIONS.forEach(function (band) {
+      if (days >= band.fromDays) pick = band;
+    });
+    return pick;
+  }
+
+  // The awake stretch a table asks for before one particular sleep: the gap
+  // back to whichever other sleep ends nearest before it.
+  function gapBeforeSleepMins(slot, sleeps) {
+    var startMins = clockMinutes(slot.time);
+    var best = null;
+    sleeps.forEach(function (other) {
+      if (other === slot || !other.until) return;
+      var gap = (startMins - clockMinutes(other.until) + 1440) % 1440;
+      if (gap > 0 && (best === null || gap < best)) best = gap;
+    });
+    return best;
+  }
+
+  // The stretch a whole table asks for, as the middle one of its gaps. Not
+  // the average: the short gaps for night feeds and the long one before bed
+  // would drag that to a number the day never actually uses. Rounded to the
+  // quarter hour, which is all the precision "about an hour and three
+  // quarters" has, and the same rounding either side of a comparison so two
+  // tables that agree are never reported as differing.
+  function routineTypicalWindowMs(slots) {
+    var sleeps = slots.filter(function (s) { return s.kind === "sleep"; });
+    if (sleeps.length < 2) return null;
+    var gaps = [];
+    sleeps.forEach(function (slot) {
+      var gap = gapBeforeSleepMins(slot, sleeps);
+      if (gap !== null) gaps.push(gap);
+    });
+    if (!gaps.length) return null;
+    gaps.sort(function (a, b) { return a - b; });
+    var half = gaps.length / 2;
+    var mid = gaps.length % 2 ? gaps[Math.floor(half)] : (gaps[half - 1] + gaps[half]) / 2;
+    return Math.round(mid / 15) * 15 * MS_MIN;
   }
 
   // Which side of the household's own night a clock time falls on. Derived
@@ -1053,14 +1225,8 @@
     if (!occurrence) return null;
     var sleeps = routineSleepSlots();
     if (sleeps.length < 2) return null;
-    var startMins = clockMinutes(occurrence.slot.time);
-    var best = null;
-    sleeps.forEach(function (s) {
-      if (s === occurrence.slot || !s.until) return;
-      var gap = (startMins - clockMinutes(s.until) + 1440) % 1440;
-      if (gap > 0 && (best === null || gap < best)) best = gap;
-    });
-    return best === null ? null : best * MS_MIN;
+    var gap = gapBeforeSleepMins(occurrence.slot, sleeps);
+    return gap === null ? null : gap * MS_MIN;
   }
 
   // The night that is either running now or, in the middle of the day, the
@@ -1716,6 +1882,7 @@
     routineAddSleep: document.getElementById("routineAddSleep"),
     routineAddFeed: document.getElementById("routineAddFeed"),
     routineReset: document.getElementById("routineReset"),
+    routineWindow: document.getElementById("routineWindow"),
     routineNow: document.getElementById("routineNow"),
     routineStrip: document.getElementById("routineStrip"),
     routineStripNote: document.getElementById("routineStripNote"),
@@ -2605,6 +2772,32 @@
     el.routineEnabled.checked = routine.on;
     renderRoutineProgress();
     renderRoutineSlots();
+    renderRoutineWindow();
+  }
+
+  // The line that tells somebody their table has been outgrown. Nothing here
+  // changes the routine — a day a household has settled into is theirs, and
+  // the app's job is to say what it now asks for against what is usual at
+  // this age, and leave the swap to the button underneath.
+  function renderRoutineWindow() {
+    var mine = routineTypicalWindowMs(routine.slots);
+    el.routineWindow.hidden = !mine;
+    el.routineWindow.classList.remove("rt-grown");
+    if (!mine) return;
+    var band = suggestedRoutine();
+    var theirs = routineTypicalWindowMs(band.slots);
+    var text = "This day allows about " + formatDuration(mine) + " awake between sleeps";
+    if (ageDaysAt(new Date()) === null) {
+      text += ". Set the date of birth under \u2699\ufe0f Settings and the day " +
+        "suggested below will be the one for her age.";
+    } else if (theirs && Math.abs(theirs - mine) >= ROUTINE_LATE_MS) {
+      text += ". The suggested day at " + band.label + " allows about " +
+        formatDuration(theirs) + ".";
+      el.routineWindow.classList.add("rt-grown");
+    } else {
+      text += ", which is about usual at " + band.label + ".";
+    }
+    el.routineWindow.textContent = text;
   }
 
   function updateRoutineSlot(index, field, value) {
@@ -4310,10 +4503,14 @@
   // the same way the main buttons say what they logged on their own faces.
   var resetArmed = null;
 
+  // The button names what it would put there, because at six different ages
+  // it is six different days and "the suggested routine" would not say which.
   function disarmRoutineReset() {
     clearTimeout(resetArmed);
     resetArmed = null;
-    el.routineReset.textContent = "\u21a9\ufe0f Back to the suggested routine";
+    el.routineReset.textContent = ageDaysAt(new Date()) === null
+      ? "\u21a9\ufe0f Back to the suggested routine"
+      : "\u21a9\ufe0f The suggested day at " + suggestedRoutine().label;
     el.routineReset.classList.remove("armed");
   }
 
@@ -4325,11 +4522,12 @@
       return;
     }
     disarmRoutineReset();
-    if (!saveRoutine({ on: routine.on, slots: ROUTINE_DEFAULT_SLOTS })) return;
+    var band = suggestedRoutine();
+    if (!saveRoutine({ on: routine.on, slots: band.slots })) return;
     renderRoutineScreen();
     renderRoutineNow();
     renderRoutineStrip();
-    showToast("Routine reset");
+    showToast("The suggested day at " + band.label);
   });
 
   // ---------- actions ----------
