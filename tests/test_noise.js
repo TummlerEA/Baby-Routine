@@ -720,6 +720,26 @@ function rms(s, from, count) {
   ok('a phone that only slowed down is told that instead',
     /but late/.test(says.verdict), says.verdict);
 
+  // The tolerance has to be a share of the run. Four marks missing out of two
+  // hundred and forty-eight is a night the phone kept; the first version
+  // measured it against a flat one minute and called that a phone that slows
+  // the app down, while the reminder it was doubting had in fact arrived.
+  says = await seedAwake(
+    '{"played":248,"awake":244,"dark":248,"darkAwake":244,"lag":34}');
+  ok('a long run a few marks short is still a phone that kept running',
+    /would arrive on time/.test(says.verdict), says.verdict);
+  ok('and its minutes of sound are not capped at a quarter of an hour',
+    /248 min of sound/.test(says.count), says.count);
+
+  // Nearly all the marks landed, but one gap ran to a quarter of an hour —
+  // which is what the answer is actually about, so it is named.
+  says = await seedAwake(
+    '{"played":60,"awake":60,"dark":60,"darkAwake":58,"lag":900}');
+  ok('one long gap is enough to call it late, however many marks landed',
+    /but late|late\./.test(says.verdict), says.verdict);
+  ok('and how late it would be is named rather than left to the imagination',
+    /up to 15m late/.test(says.verdict), says.verdict);
+
   says = await seedAwake('{"played":45,"awake":8,"dark":40,"darkAwake":3}');
   ok('and one that stopped the app is told the idea will not work',
     /not possible without a server/.test(says.verdict), says.verdict);
@@ -906,6 +926,42 @@ function rms(s, from, count) {
     JSON.parse(localStorage.getItem('baby-tracker-noise-awake') || 'null'));
   ok('a run that ends while the screen is still off keeps its stretch',
     ended && ended.dark === 6 && ended.darkAwake === 6, ended);
+
+  // With no limit the file is looped, and the element goes back to nought at
+  // every pass. Read off the element a four-hour night reported twelve
+  // minutes, so with no limit the clock is what counts the sound.
+  await dim.click('#noiseTimers .nz-chip[data-value="0"]');
+  await dim.waitForTimeout(150);
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(900);
+  await dark.clock.runFor('08:00');
+  await dim.evaluate(() => { document.getElementById('noisePlayer').currentTime = 20; });
+  await dim.waitForTimeout(200);
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(400);
+  const looped = await dim.evaluate(() =>
+    JSON.parse(localStorage.getItem('baby-tracker-noise-awake') || 'null'));
+  ok('a looped run counts the passes rather than the position in the file',
+    looped && looped.played === 8, looped);
+
+  // The gaps between the marks, which is what "would it be late" really asks.
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(900);
+  await dim.evaluate(() => window.__screen(true));
+  await dark.clock.runFor('04:00');
+  await dark.clock.fastForward('10:00');
+  await dim.evaluate(() => window.__screen(false));
+  await dim.waitForTimeout(200);
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(400);
+  const lagged = await dim.evaluate(() =>
+    JSON.parse(localStorage.getItem('baby-tracker-noise-awake') || 'null'));
+  ok('a stretch the phone slept through is measured as the gap it was',
+    lagged && lagged.lag >= 9 * 60, lagged);
+  ok('and the screen says how late the reminder would have been',
+    /up to 9m late|up to 10m late/.test(
+      await dim.textContent('#noiseAwakeVerdict')),
+    await dim.textContent('#noiseAwakeVerdict'));
 
   ok('and nothing threw in the dark either', errs.length === 0, errs);
 
