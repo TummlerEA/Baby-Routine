@@ -3278,3 +3278,22 @@ body {
   border-color: var(--accent-diaper);
   color: var(--text);
 }
+
+/* What stretch this table actually asks for, against the one usual at the
+   baby's age. Lit only when the two have parted company, which is the day
+   it is worth reading. */
+.rt-window {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-2);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.rt-window.rt-grown {
+  border-color: var(--accent-sleep);
+  color: var(--text);
+}

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=97">
+<link rel="stylesheet" href="style.css?v=98">
 </head>
 <body>
 
@@ -803,6 +803,7 @@
           <button class="data-btn" id="routineAddFeed">➕ Add a feed</button>
         </div>
         <p class="data-hint">A sleep carries both ends — when it starts and when it is meant to be over. The gap between one sleep ending and the next beginning is the awake stretch the app holds the day to, which is why the evening one is allowed to run longer than the ones between daytime naps. Nothing here is enforced: it is a framework, and a baby who wakes early or is hungry early is fed early.</p>
+        <p class="rt-window" id="routineWindow" hidden>—</p>
         <button class="data-btn danger" id="routineReset">↩️ Back to the suggested routine</button>
       </section>
 
@@ -1397,6 +1398,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=97"></script>
+<script src="app.js?v=98"></script>
 </body>
 </html>
