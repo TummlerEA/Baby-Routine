@@ -502,7 +502,7 @@ function rms(s, from, count) {
 
   ok('the remote has nothing to set the volume of', await page.isHidden('#noiseLevels'));
   ok('and says as much before it starts',
-    await page.textContent('#noisePlayNote') === 'Remote, no sound · Until I stop it',
+    await page.textContent('#noisePlayNote') === 'Standby, no sound · Until I stop it',
     await page.textContent('#noisePlayNote'));
 
   await page.click('#noisePlay');
@@ -532,7 +532,7 @@ function rms(s, from, count) {
   ok('with nothing logged the watch is told the app name',
     (await shown()).title === 'Baby Tracker', await shown());
   ok('and which of the sounds is running',
-    /remote/.test((await shown()).artist), await shown());
+    /standby/.test((await shown()).artist), await shown());
 
   await press('nexttrack');
   await page.waitForTimeout(400);

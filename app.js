@@ -160,7 +160,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "94";
+    var fallback = "95";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -10203,7 +10203,7 @@
     if (!noiseOn) {
       return { ready: false, canStart: true,
         line: "Waiting. The app can only keep time while it is playing something. " +
-          "Logging a wake-up starts the silent remote by itself \u2014 or start it now " +
+          "Logging a wake-up turns on Standby by itself \u2014 or turn it on now " +
           "to be nudged about a wake-up logged on the other phone." };
     }
     var status = routineStatus(new Date());
@@ -10279,7 +10279,7 @@
     { id: "brown", label: "Deep", note: "low rumble" },
     { id: "pink", label: "Soft", note: "steady rush" },
     { id: "white", label: "Bright", note: "full hiss" },
-    { id: "remote", label: "Remote", note: "no sound" }
+    { id: "remote", label: "Standby", note: "no sound" }
   ];
   // Four steps that sound evenly spaced, which is not four evenly spaced
   // numbers: loudness roughly doubles every time the amplitude does.
@@ -10751,9 +10751,9 @@
   // Only when asked for. Off by default, because an app that starts making
   // noise because you logged something would be a bad surprise exactly once,
   // and it would be at night.
-  // The remote is not a sleep aid, it is a set of buttons, so the sleep
-  // button leaves it alone — stopping it on a wake-up would take away the
-  // very control that was just used. And a sound already playing is left to
+  // Standby is not a sleep aid, it is what keeps the app running, so the
+  // sleep button leaves it alone — stopping it on a wake-up would take away
+  // the notification it was there for. And a sound already playing is left to
   // play rather than started again, which would only reset its timer.
   function noiseFollowSleep(goingDown) {
     if (!noise.auto || noiseIsRemote()) return;
@@ -10862,7 +10862,7 @@
       if (!navigator.mediaSession || !window.MediaMetadata || !noiseOn) return;
       navigator.mediaSession.metadata = new MediaMetadata({
         title: line,
-        artist: noiseIsRemote() ? "Baby Tracker \u00b7 remote"
+        artist: noiseIsRemote() ? "Baby Tracker \u00b7 standby"
           : "Baby Tracker \u00b7 " + describeNoiseSound(noise.sound)
       });
     } catch (e) { /* the sound plays without the watch knowing what it is */ }
@@ -10915,7 +10915,7 @@
     el.noiseFabLeft.hidden = !noiseOn || left === null;
     if (left !== null) el.noiseFabLeft.textContent = left + "m";
     el.noiseFab.setAttribute("aria-label", !noiseOn ? "Play white noise"
-      : noiseIsRemote() ? "Stop the silent remote" : "Stop the white noise");
+      : noiseIsRemote() ? "Stop standby" : "Stop the white noise");
   }
 
   function renderNoiseScreen() {
@@ -10924,7 +10924,7 @@
     el.noisePlay.classList.toggle("playing", noiseOn);
     el.noisePlayIcon.textContent = noiseOn ? "⏹" : "▶";
     el.noisePlayLabel.textContent = noiseOn ? "Stop" : "Play";
-    var what = noiseIsRemote() ? "Remote, no sound" : describeNoiseSound(noise.sound);
+    var what = noiseIsRemote() ? "Standby, no sound" : describeNoiseSound(noise.sound);
     el.noisePlayNote.textContent = noiseIsFading() ? "Fading out"
       : noiseOn && left !== null ? what + " · " + left + " min left"
       : noiseOn ? what + " · until you stop it"
@@ -10955,8 +10955,8 @@
     el.remindState.classList.toggle("rm-ready", state.ready);
     // The one thing a second phone has to do for itself. The button in the
     // corner plays whatever sound this phone prefers, which may be an
-    // audible one, so the silent kind is offered here instead — one tap,
-    // where the waiting is being announced.
+    // audible one, so Standby is offered here instead — one tap, where the
+    // waiting is being announced.
     el.remindStart.hidden = !state.canStart;
     el.remindLeads.hidden = !remind.on;
     el.remindLeadLabel.hidden = !remind.on;
