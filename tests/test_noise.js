@@ -769,7 +769,7 @@ function rms(s, from, count) {
     const ended = a.onended;
     a.onended = null;
     a.pause();
-    a.currentTime = a.duration - 0.05;
+    a.currentTime = a.duration;
     a.onended = ended;
   });
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); });
@@ -962,6 +962,77 @@ function rms(s, from, count) {
     /up to 9m late|up to 10m late/.test(
       await dim.textContent('#noiseAwakeVerdict')),
     await dim.textContent('#noiseAwakeVerdict'));
+
+  // ---------- the phone pausing it is not the end of it ----------
+
+  // A notification's chime, a message, another app's sound: the phone pauses
+  // whatever is playing, and nothing here asked for it. That used to be taken
+  // for the end, and a night's Standby went off at the first message anybody
+  // sent — which from the outside looked like the other phone's entries
+  // switching it off.
+  const on = () => dim.evaluate(() =>
+    document.getElementById('noisePlayLabel').textContent !== 'Play');
+  const book2 = () => dim.evaluate(() =>
+    JSON.parse(localStorage.getItem('baby-tracker-noise-awake') || 'null'));
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(900);
+  await dark.clock.runFor('03:00');
+  await dim.evaluate(() => document.getElementById('noisePlayer').pause());
+  await dim.waitForTimeout(100);
+  await dark.clock.runFor('00:05');
+  await dim.waitForTimeout(300);
+  ok('a pause the phone made is taken back rather than taken as the end',
+    !(await dim.evaluate(() => document.getElementById('noisePlayer').paused)));
+  await dark.clock.runFor('02:00');
+  await dim.waitForTimeout(200);
+  ok('and the session goes on', await on());
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(400);
+  let rec = await book2();
+  ok('stopped by hand, it is recorded as stopped in the app',
+    rec && rec.why === 'app', rec);
+  ok('along with the pause it came back from', rec && rec.resumed === 1, rec);
+  ok('and the screen says both, with the time',
+    /^Stopped in the app at \d\d:\d\d\. The phone paused it once along the way, and it carried on\.$/
+      .test(await dim.textContent('#noiseAwakeWhy')),
+    await dim.textContent('#noiseAwakeWhy'));
+
+  // A phone call is not a chime, and is not worth fighting for long.
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(900);
+  await dark.clock.runFor('03:00');
+  await dim.evaluate(() => {
+    const a = document.getElementById('noisePlayer');
+    a.play = () => Promise.reject(new Error('the phone is busy'));
+    a.pause();
+  });
+  await dim.waitForTimeout(100);
+  await dark.clock.runFor('01:00');
+  await dim.waitForTimeout(200);
+  ok('while the phone refuses, it is given a couple of minutes', await on());
+  await dark.clock.runFor('02:00');
+  await dim.waitForTimeout(300);
+  ok('after which the session is called over', !(await on()));
+  rec = await book2();
+  ok('and put down to the phone', rec && rec.why === 'phone', rec);
+  ok('in words', /^Stopped by the phone/.test(await dim.textContent('#noiseAwakeWhy')),
+    await dim.textContent('#noiseAwakeWhy'));
+  await dim.evaluate(() => { delete document.getElementById('noisePlayer').play; });
+
+  // Each of the other ways out names itself too.
+  await dim.click('#noiseTimers .nz-chip[data-value="15"]');
+  await dim.waitForTimeout(150);
+  await dim.click('#noisePlay');
+  await dim.waitForTimeout(900);
+  await dark.clock.runFor('03:00');
+  await dim.evaluate(() => {
+    const a = document.getElementById('noisePlayer');
+    a.currentTime = 3 * 60;
+    a.dispatchEvent(new Event('ended'));
+  });
+  await dim.waitForTimeout(300);
+  rec = await book2();
+  ok('a timer running out says so', rec && rec.why === 'timer', rec);
 
   ok('and nothing threw in the dark either', errs.length === 0, errs);
 

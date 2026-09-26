@@ -282,7 +282,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "100";
+    var fallback = "101";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1797,6 +1797,7 @@
     noiseAwake: document.getElementById("noiseAwake"),
     noiseAwakeCount: document.getElementById("noiseAwakeCount"),
     noiseAwakeVerdict: document.getElementById("noiseAwakeVerdict"),
+    noiseAwakeWhy: document.getElementById("noiseAwakeWhy"),
     noiseAuto: document.getElementById("noiseAuto"),
     noiseFab: document.getElementById("noiseFab"),
     noiseFabIcon: document.getElementById("noiseFabIcon"),
@@ -10554,6 +10555,19 @@
   // is built into the idea; two is still inside the quarter of an hour that
   // separates a baby who is ready for a nap from one who is overtired.
   var NOISE_LAG_OK = 2 * 60000;
+  // How long a sound the phone paused by itself is given to come back before
+  // the session is called over. A notification's chime or a message's sound
+  // is over in seconds; a phone call is not, and is not worth fighting.
+  var NOISE_RESUME_MS = 2 * 60000;
+  // Who ended it, in the words the report uses.
+  var NOISE_STOPPED_BY = {
+    app: "Stopped in the app",
+    lock: "Stopped from the lock screen or the watch",
+    timer: "Stopped by its timer",
+    sleep: "Stopped when a sleep was logged",
+    wake: "Stopped when a wake-up was logged",
+    phone: "Stopped by the phone, which would not let it start again"
+  };
   var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false,
     next: "feed", prev: "sleep" };
   // Generated at 44.1kHz, because the pink filter's coefficients are tuned
@@ -10848,7 +10862,7 @@
   // phone that stops. So the worst gap is kept as well, because that is the
   // question in plain terms: how late would the reminder have been?
   var noiseAwake = { ticks: 0, dark: 0, darkMs: 0, since: 0, at: 0, lagMs: 0,
-    startedAt: 0, timer: null };
+    startedAt: 0, timer: null, resumed: 0, pausedAt: 0 };
 
   function startCountingAwake() {
     stopCountingAwake();
@@ -10856,6 +10870,8 @@
     noiseAwake.dark = 0;
     noiseAwake.darkMs = 0;
     noiseAwake.lagMs = 0;
+    noiseAwake.resumed = 0;
+    noiseAwake.pausedAt = 0;
     noiseAwake.at = Date.now();
     noiseAwake.startedAt = noiseAwake.at;
     noiseAwake.since = document.hidden ? Date.now() : 0;
@@ -10919,7 +10935,7 @@
 
   // Minutes of audio that really came out, against minutes this page was
   // awake for and the worst it fell behind by.
-  function recordAwake() {
+  function recordAwake(why) {
     var played = Math.floor(noiseSoundMs() / 60000);
     if (played < 2) return;
     closeDarkStretch();
@@ -10929,7 +10945,10 @@
         awake: noiseAwake.ticks,
         dark: Math.round(noiseAwake.darkMs / 60000),
         darkAwake: noiseAwake.dark,
-        lag: Math.round(Math.max(0, noiseAwake.lagMs) / 1000)
+        lag: Math.round(Math.max(0, noiseAwake.lagMs) / 1000),
+        why: NOISE_STOPPED_BY[why] ? why : null,
+        at: Date.now(),
+        resumed: noiseAwake.resumed
       }));
     } catch (e) { /* a diagnostic is not worth an error message */ }
   }
@@ -10940,7 +10959,10 @@
       if (!parsed || typeof parsed.played !== "number") return null;
       return { played: parsed.played, awake: parsed.awake || 0,
         dark: parsed.dark || 0, darkAwake: parsed.darkAwake || 0,
-        lag: typeof parsed.lag === "number" ? parsed.lag : null };
+        lag: typeof parsed.lag === "number" ? parsed.lag : null,
+        why: NOISE_STOPPED_BY[parsed.why] ? parsed.why : null,
+        at: typeof parsed.at === "number" ? parsed.at : null,
+        resumed: parsed.resumed || 0 };
     } catch (e) {
       return null;
     }
@@ -11019,10 +11041,12 @@
     renderNoise();
   }
 
-  function noiseStop() {
+  // Every way in says who asked, so that the next morning the screen can say
+  // which of them it was rather than leaving it to be guessed.
+  function noiseStop(why) {
     var player = el.noisePlayer;
     noiseSilent = false;
-    if (noiseOn && player) recordAwake();
+    if (noiseOn && player) recordAwake(typeof why === "string" ? why : null);
     stopCountingAwake();
     noiseOn = false;
     if (player) {
@@ -11038,7 +11062,7 @@
   }
 
   function noiseToggle() {
-    if (noiseOn) noiseStop(); else noiseStart();
+    if (noiseOn) noiseStop("app"); else noiseStart();
   }
 
   // Only when asked for. Off by default, because an app that starts making
@@ -11053,7 +11077,7 @@
     if (goingDown) {
       if (!noiseOn) noiseStart();
     } else if (noiseOn) {
-      noiseStop();
+      noiseStop("wake");
     }
   }
 
@@ -11064,7 +11088,7 @@
     if (goingDown && noiseSilent) {
       // The window is over, so the thing that was only borrowed to keep time
       // can stop. Standby chosen on purpose is not borrowed, and stays.
-      noiseStop();
+      noiseStop("sleep");
     }
     noiseFollowSleep(goingDown);
     if (!goingDown && remind.on && remindAllowed() && routine.on && !noiseOn) {
@@ -11080,11 +11104,47 @@
   // watching for it — but if the screen was off when it happened, nothing
   // here heard it either, so the state is reconciled whenever the app is
   // looked at again.
+  //
+  // A pause is another matter. Every pause this app means goes through
+  // noiseStop, so one it finds without having asked came from the phone: a
+  // notification's chime, a message, another app's sound. That used to be
+  // taken for the end, and a night's Standby went off at the first message
+  // anybody sent. Now it is started again, and only given up on when the
+  // phone has gone on refusing for a couple of minutes.
   function reconcileNoise() {
     if (!noiseOn) return;
     var player = el.noisePlayer;
     if (!player) return;
-    if (player.ended || (player.paused && player.currentTime > 0)) noiseStop();
+    if (player.ended) { noiseStop("timer"); return; }
+    if (player.paused && player.currentTime > 0) noiseResume();
+  }
+
+  function noiseResume() {
+    var player = el.noisePlayer;
+    if (!noiseOn || !player || !player.paused || player.ended) return;
+    if (!noiseAwake.pausedAt) noiseAwake.pausedAt = Date.now();
+    if (Date.now() - noiseAwake.pausedAt > NOISE_RESUME_MS) {
+      noiseStop("phone");
+      return;
+    }
+    var again;
+    try {
+      again = player.play();
+    } catch (e) {
+      return;
+    }
+    if (again && again.then) {
+      again.then(noteResumed, function () { /* tried again on the next tick */ });
+    } else {
+      noteResumed();
+    }
+  }
+
+  function noteResumed() {
+    if (!noiseAwake.pausedAt) return;
+    noiseAwake.pausedAt = 0;
+    noiseAwake.resumed++;
+    renderNoise();
   }
 
   // ---------- the watch ----------
@@ -11167,8 +11227,8 @@
       if (!navigator.mediaSession) return;
       noiseToldSystem = "";
       tellTheWatch(true);
-      navigator.mediaSession.setActionHandler("pause", noiseStop);
-      navigator.mediaSession.setActionHandler("stop", noiseStop);
+      navigator.mediaSession.setActionHandler("pause", function () { noiseStop("lock"); });
+      navigator.mediaSession.setActionHandler("stop", function () { noiseStop("lock"); });
       navigator.mediaSession.setActionHandler("play", function () {
         if (!noiseOn) noiseStart();
       });
@@ -11281,6 +11341,24 @@
     el.noiseAwakeCount.textContent = last.played + " min of sound \u00b7 screen off for " +
       last.dark + " \u00b7 app running for " + last.darkAwake + " of those";
     el.noiseAwakeVerdict.textContent = readAwake(last);
+    el.noiseAwakeWhy.textContent = describeAwakeEnd(last);
+    el.noiseAwakeWhy.hidden = !el.noiseAwakeWhy.textContent;
+  }
+
+  // Which of the ways it can end this one was, and when. Asked for because
+  // "it switches itself off" had four possible causes and no way to tell
+  // them apart from the outside.
+  function describeAwakeEnd(last) {
+    var parts = [];
+    if (last.why) {
+      parts.push(NOISE_STOPPED_BY[last.why] +
+        (last.at ? " at " + formatClockTime(new Date(last.at)) : "") + ".");
+    }
+    if (last.resumed) {
+      parts.push("The phone paused it " + (last.resumed === 1 ? "once" : last.resumed + " times") +
+        " along the way, and it carried on.");
+    }
+    return parts.join(" ");
   }
 
   // The tolerance is a share of the run, not a fixed minute: a minute short
@@ -11444,7 +11522,17 @@
   // The only two things left to listen for. Neither is needed for the sound
   // to keep playing — that is the point of the file being the whole session —
   // and both are about keeping the screen honest about what is happening.
-  el.noisePlayer.addEventListener("ended", noiseStop);
+  el.noisePlayer.addEventListener("ended", function () { noiseStop("timer"); });
+  // Heard the moment it happens, while the page is still awake to do
+  // something about it: once the sound has stopped, a phone with its screen
+  // off stops running the page soon after, and the next tick may be hours
+  // away. A pause of our own has already turned noiseOn off, or has been
+  // followed by play() before this is heard, so neither lands here.
+  el.noisePlayer.addEventListener("pause", function () {
+    if (!noiseOn || !el.noisePlayer.paused || el.noisePlayer.ended) return;
+    noiseAwake.pausedAt = noiseAwake.pausedAt || Date.now();
+    [1000, 4000, 15000].forEach(function (wait) { setTimeout(noiseResume, wait); });
+  });
   el.noisePlayer.addEventListener("timeupdate", renderNoise);
 
 
