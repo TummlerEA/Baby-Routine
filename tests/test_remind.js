@@ -161,6 +161,32 @@ const APP = h.APP;
   ok('putting her down stops the thing that was only keeping time',
     !(await playing()));
 
+  // ---------- unless Standby is what this phone plays anyway ----------
+
+  // Then nothing was borrowed, and a logged sleep must leave it running:
+  // stopping it would take the lock screen and the watch away for the night,
+  // and the next wake-up could not be logged from either.
+  await page.evaluate(() => {
+    const prefs = JSON.parse(localStorage.getItem('baby-tracker-noise') || '{}');
+    prefs.sound = 'standby';
+    localStorage.setItem('baby-tracker-noise', JSON.stringify(prefs));
+  });
+  await page.reload();
+  await page.waitForTimeout(400);
+  await clearCard();
+  await page.click('#btnSleep');
+  await page.waitForTimeout(900);
+  await clearCard();
+  ok('on a phone set to Standby, a wake-up starts it as before', await playing());
+  await page.click('#btnSleep');
+  await page.waitForTimeout(700);
+  await clearCard();
+  ok('and putting her down leaves it running, because it was not borrowed',
+    await playing());
+  await page.evaluate(() => document.getElementById('noiseFab').click());
+  await page.waitForTimeout(300);
+  ok('until it is stopped on purpose', !(await playing()));
+
   // ---------- a nudge nobody was there for ----------
 
   // Opening the app at teatime must not fire a notification about a nap that

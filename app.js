@@ -282,7 +282,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "99";
+    var fallback = "100";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -10972,8 +10972,13 @@
     return player.currentTime > player.duration - NOISE_BLOCK_SECONDS;
   }
 
+  // Borrowed only when there is something to give back. A phone whose chosen
+  // sound is Standby was going to be silent anyway, so a wake-up starting it
+  // is that phone playing what it always plays — and logging the sleep must
+  // not stop it, or the lock screen and the watch would be gone for the night
+  // and the next wake-up could not be logged from either.
   function noiseStartSilent() {
-    noiseSilent = true;
+    noiseSilent = noise.sound !== NOISE_STANDBY;
     noiseStart();
   }
 
@@ -11057,7 +11062,8 @@
   // the order they happen in matters.
   function afterSleepLogged(goingDown) {
     if (goingDown && noiseSilent) {
-      // The window is over, so the thing that was only keeping time can stop.
+      // The window is over, so the thing that was only borrowed to keep time
+      // can stop. Standby chosen on purpose is not borrowed, and stays.
       noiseStop();
     }
     noiseFollowSleep(goingDown);
