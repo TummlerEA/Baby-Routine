@@ -3260,6 +3260,15 @@ body {
   color: var(--text-dim);
 }
 
+/* Who stopped it. Brighter than the verdict, because it is the line somebody
+   opens this screen in the morning to read. */
+.nz-awake-why {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
 /* Whether the nudge will actually arrive. Said plainly and in the open,
    because a switch that is on and a switch that works are different things
    here, and the difference is not the user's fault. */
