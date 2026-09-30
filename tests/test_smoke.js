@@ -97,11 +97,14 @@ const APP = h.APP;
   ok('the name is the small one', topline.nameHeight > 0 && topline.nameHeight < 40, topline.nameHeight);
 
   // The age is abbreviated here and nowhere else: this line holds three things.
-  const dob = new Date();
-  dob.setDate(dob.getDate() - 41);
-  await page.evaluate(d => localStorage.setItem('baby-tracker-dob', d),
-    dob.getFullYear() + '-' + String(dob.getMonth() + 1).padStart(2, '0') +
-    '-' + String(dob.getDate()).padStart(2, '0'));
+  // Worked out on the page's own calendar, not this script's: the two sit in
+  // different zones, and for part of every day they disagree about the date.
+  await page.evaluate(() => {
+    const dob = new Date();
+    dob.setDate(dob.getDate() - 41);
+    localStorage.setItem('baby-tracker-dob', dob.getFullYear() + '-' +
+      String(dob.getMonth() + 1).padStart(2, '0') + '-' + String(dob.getDate()).padStart(2, '0'));
+  });
   await page.reload();
   await page.waitForTimeout(400);
   const dated = await page.evaluate(() => document.getElementById('topDate').textContent);
@@ -138,6 +141,21 @@ const APP = h.APP;
     { shown: shown, declared: declared });
 
   ok('nothing threw and nothing was logged to the console', errs.length === 0, errs);
+
+  // Across the spring change the day the clocks go forward is 23 hours long.
+  // A baby born on 1 March is 40 days old on 10 April, not 39.
+  const spring = await b.newContext({ timezoneId: 'Europe/London' });
+  await spring.clock.install({ time: new Date('2026-04-10T09:00:00Z') });
+  const sp = await spring.newPage();
+  await sp.goto(APP);
+  await sp.waitForTimeout(300);
+  await sp.evaluate(() => localStorage.setItem('baby-tracker-dob', '2026-03-01'));
+  await sp.reload();
+  await sp.waitForTimeout(400);
+  const springAge = await sp.evaluate(() => document.getElementById('topDate').textContent);
+  ok('an age counted across the clocks going forward loses no day',
+    /\b5w 5d\b/.test(springAge), springAge);
+  await spring.close();
 
   await b.close();
   t.done();

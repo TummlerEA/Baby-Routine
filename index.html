@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=101">
+<link rel="stylesheet" href="style.css?v=102">
 </head>
 <body>
 
@@ -88,6 +88,14 @@
         <button class="update-btn" id="updateReload">Update</button>
         <button class="update-close" id="updateDismiss" aria-label="Not now">✕</button>
       </section>
+
+      <button type="button" id="cryBanner" class="banner banner-cry" hidden>
+        <span class="sleep-icon">😢</span>
+        <span class="sleep-banner-body">
+          <span class="cry-line" id="cryLine">—</span>
+          <span class="cry-sub" id="crySub"></span>
+        </span>
+      </button>
 
       <section class="plan-soon" id="planSoon" hidden>
         <button class="plan-soon-btn" id="planSoonBtn">
@@ -1000,7 +1008,7 @@
       <section class="data-panel">
         <div class="nz-label">Sound</div>
         <div class="nz-chips" id="noiseSounds"></div>
-        <p class="data-hint"><strong>Standby</strong> makes no sound at all. A phone stops running an app once the screen is off — unless it is playing something — so this is what keeps the app alive in your pocket. Two things come of that: a <strong>notification</strong> when the wake window is up, set under ⏰ Daily routine; and on an Apple Watch, a feed, a nappy or a sleep logged from the buttons either side of play, without taking the phone out.</p>
+        <p class="data-hint"><strong>Standby</strong> makes no sound at all. A phone stops running an app once the screen is off — unless it is playing something — so this is what keeps the app alive in your pocket. Three things come of that: a <strong>notification</strong> when the wake window is up, set under ⏰ Daily routine; another when the nursery phone hears crying, set below; and on an Apple Watch, a feed, a nappy or a sleep logged from the buttons either side of play, without taking the phone out.</p>
         <div class="nz-label">Volume</div>
         <div class="nz-chips" id="noiseLevels"></div>
         <div class="nz-label">Stop after</div>
@@ -1015,6 +1023,15 @@
         <div class="nz-label">⏭ Right button</div>
         <div class="nz-chips" id="noiseNext"></div>
         <p class="data-hint">The watch also shows how things stand — how long since the last feed, and how long your baby has been down — and says what it logged for a few seconds after you press.</p>
+      </section>
+
+      <section class="data-panel">
+        <label class="settings-check">
+          <input type="checkbox" id="cryOn">
+          <span class="settings-label">Tell me when the nursery phone hears <strong>crying</strong></span>
+        </label>
+        <p class="rm-state" id="cryState" hidden>—</p>
+        <p class="data-hint">A phone left in the nursery listens with what it already has — <strong>Sound Recognition</strong> on an iPhone, <strong>Sound Notifications</strong> on Android — and a Shortcut or automation on it drops a note into the synced repository. This phone picks it up at its next sync and puts it on the lock screen and the watch. It is a minute or two behind, so it is for "she has woken and is crying", not a live monitor. How to set up the nursery phone is in the README.</p>
       </section>
 
       <section class="data-panel">
@@ -1399,6 +1416,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=101"></script>
+<script src="app.js?v=102"></script>
 </body>
 </html>
