@@ -1417,7 +1417,11 @@
     if (!dob) return null;
     var at = new Date(time);
     var midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
-    return Math.floor((midnight - dob) / MS_DAY);
+    // Rounded, not floored. Both ends are local midnights, so the gap is a
+    // whole number of days give or take the hour the clocks moved — and
+    // floored, the spring's short day cost the baby a day of age from March
+    // until the clocks went back in October.
+    return Math.round((midnight - dob) / MS_DAY);
   }
 
   function formatAge(days) {
