@@ -223,6 +223,11 @@
   // reading a sha first, and sync can always delete without a write race.
   var VOICE_QUEUE_DIR = "voice-queue";
   var VOICE_LOG_TYPES = { feed: true, diaper: true, sleep_start: true, sleep_end: true };
+  // Dropped into the same queue, by the same helper Shortcut, but not an
+  // entry: "cry" is the phone in the nursery saying it heard crying. It is
+  // never turned into an event and never claimed by the first phone to see
+  // it — every phone has to hear it — so it stays until it is old news.
+  var VOICE_SIGNAL_TYPES = { cry: true };
   // The time segment is optional: a source that cannot reliably state a
   // timezone-correct instant (a voice automation with no equivalent of
   // Shortcuts' "Change Time Zone") can leave it out and get "whenever sync
@@ -248,7 +253,8 @@
   // Only an id of pure lowercase letters alongside a time segment hit it,
   // which the Siri recipe's numeric id never produces, but anything else
   // filling the queue could.
-  var VOICE_NAME_RE = new RegExp("^(" + Object.keys(VOICE_LOG_TYPES).join("|") +
+  var VOICE_NAME_RE = new RegExp("^(" +
+    Object.keys(VOICE_LOG_TYPES).concat(Object.keys(VOICE_SIGNAL_TYPES)).join("|") +
     ")__([0-9A-Za-z-]{1,80})(?:__(\\d{8}T\\d{6}Z))?\\.json$");
   // What shape of entry this build can hold — not which release it is. Bumped
   // by one only when a field is added that an older copy has never heard of;
@@ -282,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "101";
+    var fallback = "102";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1790,6 +1796,11 @@
     noisePrev: document.getElementById("noisePrev"),
     noiseNext: document.getElementById("noiseNext"),
     remindOn: document.getElementById("remindOn"),
+    cryOn: document.getElementById("cryOn"),
+    cryState: document.getElementById("cryState"),
+    cryBanner: document.getElementById("cryBanner"),
+    cryLine: document.getElementById("cryLine"),
+    crySub: document.getElementById("crySub"),
     remindLeads: document.getElementById("remindLeads"),
     remindLeadLabel: document.getElementById("remindLeadLabel"),
     remindState: document.getElementById("remindState"),
@@ -5832,7 +5843,7 @@
   function parseVoiceFilename(name) {
     var m = VOICE_NAME_RE.exec(String(name || ""));
     if (!m) return null;
-    if (!VOICE_LOG_TYPES[m[1]]) return null;
+    if (!VOICE_LOG_TYPES[m[1]] && !VOICE_SIGNAL_TYPES[m[1]]) return null;
     var time = null;
     if (m[3]) {
       var iso = m[3].replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z");
@@ -5867,8 +5878,16 @@
       var byId = {};
       events.forEach(function (e) { byId[e.id] = e; });
       var changed = 0;
+      var gone = [];
       files.forEach(function (file) {
         var parsed = parseVoiceFilename(file.name);
+        if (parsed && VOICE_SIGNAL_TYPES[parsed.type]) {
+          // Left for the other phones until it is old enough that none of
+          // them would say anything about it anyway.
+          if (cryIsOld(parsed)) gone.push(file);
+          return;
+        }
+        gone.push(file);
         if (!parsed || byId[parsed.id]) return;
         var event = { id: parsed.id, type: parsed.type, time: parsed.time || new Date().toISOString() };
         if (event.type === "feed") {
@@ -5880,7 +5899,7 @@
         byId[event.id] = event;
         changed++;
       });
-      return Promise.all(files.map(function (file) {
+      return Promise.all(gone.map(function (file) {
         return deleteRemoteFile(config, VOICE_QUEUE_DIR + "/" + file.name, file.sha);
       })).then(function () { return changed; });
     });
@@ -6020,6 +6039,9 @@
       return Promise.all([fetchRemote(config), voicePromise]).then(function (results) {
         var found = results[0];
         var queued = results[1];
+        // Before anything that could refuse the log: a phone that is behind
+        // on the format can still tell somebody the baby is crying.
+        hearCries(queued);
         var remoteDoc = found.doc || {};
         // Written in a shape this build has never heard of. Read nothing from
         // it, send nothing to it, claim nothing out of the queue — and hand
@@ -6199,7 +6221,9 @@
       // that this phone is meant to be on duty.
       if (!noiseOn) return;
       syncDarkTicks++;
-      if (syncDarkTicks < SYNC_DARK_EVERY) return;
+      // Listening for the nursery is the one job where the minute matters,
+      // so it keeps the lit rate. Otherwise every other minute is plenty.
+      if (syncDarkTicks < (cry.on ? 1 : SYNC_DARK_EVERY)) return;
       syncDarkTicks = 0;
       syncNow("poll");
     }, SYNC_POLL);
@@ -10366,7 +10390,7 @@
     }
   }
 
-  function askToNotify() {
+  function askToNotify(undo) {
     if (!remindCanNotify()) {
       showError(isStandalone()
         ? "This browser cannot show notifications."
@@ -10378,8 +10402,12 @@
       if (asked && asked.then) {
         asked.then(function (answer) {
           if (answer !== "granted") {
-            remind.on = false;
-            saveRemind();
+            if (undo) {
+              undo();
+            } else {
+              remind.on = false;
+              saveRemind();
+            }
             showError("Notifications are not allowed. You can turn them on in iOS Settings.");
           }
           renderRemind();
@@ -10494,6 +10522,177 @@
         });
       }).catch(function () { /* nothing to be done about it from here */ });
     } catch (e) { /* the banner on the main screen still says it */ }
+  }
+
+  // ---------- crying, heard in the nursery ----------
+
+  // The listening is not done here. A phone left in the nursery does it with
+  // what it already has — Sound Recognition on an iPhone, Sound Notifications
+  // on Android — which hears a baby crying better than anything a web page
+  // could, and goes on hearing it with the screen off, which a web page
+  // cannot do at all. All that phone does is drop a "cry" file into the voice
+  // queue. This is the other end: every phone that syncs sees it, and says so.
+  var CRY_KEY = "baby-tracker-cry";
+  // A cry already this old when a phone first sees it is not news, and a
+  // notification about it would only frighten somebody after the fact.
+  var CRY_FRESH_MS = 10 * MS_MIN;
+  // Quiet for this long and the next cry starts a new count. Also how long
+  // the main screen goes on saying it.
+  var CRY_EPISODE_MS = 15 * MS_MIN;
+  // A baby crying sets the nursery phone off again and again. One buzz every
+  // few minutes says "still crying" without making a lock screen of it.
+  var CRY_RENOTIFY_MS = 3 * MS_MIN;
+  // When a signal file is cleared out of the queue: long after every phone
+  // polling for it has had its chance.
+  var CRY_KEEP_MS = 30 * MS_MIN;
+  // How long an id is remembered as heard, so a file that outlives its delete
+  // is not heard twice.
+  var CRY_SEEN_MS = 2 * 60 * MS_MIN;
+
+  // Per phone, like the nudge: whether this phone wants telling is its own
+  // business. Never synced, exported or shared.
+  function loadCry() {
+    var fresh = { on: false, seen: {}, firstAt: 0, lastAt: 0, count: 0, notifiedAt: 0, dismissedAt: 0 };
+    try {
+      var parsed = JSON.parse(localStorage.getItem(CRY_KEY) || "null");
+      if (!parsed || typeof parsed !== "object") return fresh;
+      var seen = {};
+      if (parsed.seen && typeof parsed.seen === "object") {
+        Object.keys(parsed.seen).forEach(function (id) {
+          var at = +parsed.seen[id];
+          if (/^[0-9A-Za-z-]{1,80}$/.test(id) && isFinite(at)) seen[id] = at;
+        });
+      }
+      var num = function (v) { v = +v; return isFinite(v) && v > 0 ? v : 0; };
+      return { on: parsed.on === true, seen: seen, firstAt: num(parsed.firstAt),
+        lastAt: num(parsed.lastAt), count: num(parsed.count),
+        notifiedAt: num(parsed.notifiedAt), dismissedAt: num(parsed.dismissedAt) };
+    } catch (e) {
+      return fresh;
+    }
+  }
+
+  function saveCry() {
+    try {
+      localStorage.setItem(CRY_KEY, JSON.stringify(cry));
+    } catch (e) { /* the next sync hears it again */ }
+  }
+
+  var cry = loadCry();
+
+  function cryAt(parsed, fallback) {
+    var at = parsed.time ? +new Date(parsed.time) : fallback;
+    // A nursery phone whose clock runs ahead must not produce a cry from the
+    // future, which would keep the banner up for as long as it was ahead.
+    return Math.min(at, Date.now());
+  }
+
+  // Old enough to clear out. A file with no time in its name is timed by
+  // when this phone first heard it, which is the best anybody here knows.
+  function cryIsOld(parsed) {
+    var at = cry.seen[parsed.id] || cryAt(parsed, Date.now());
+    return Date.now() - at > CRY_KEEP_MS;
+  }
+
+  function hearCries(files) {
+    var now = Date.now();
+    var heard = [];
+    var changed = false;
+    (files || []).forEach(function (file) {
+      var parsed = parseVoiceFilename(file && file.name);
+      if (!parsed || !VOICE_SIGNAL_TYPES[parsed.type]) return;
+      if (cry.seen[parsed.id]) return;
+      var at = cryAt(parsed, now);
+      cry.seen[parsed.id] = at;
+      changed = true;
+      if (now - at <= CRY_FRESH_MS) heard.push(at);
+    });
+    Object.keys(cry.seen).forEach(function (id) {
+      if (now - cry.seen[id] > CRY_SEEN_MS) {
+        delete cry.seen[id];
+        changed = true;
+      }
+    });
+    heard.sort(function (a, b) { return a - b; });
+    heard.forEach(function (at) {
+      if (!cry.lastAt || at - cry.lastAt > CRY_EPISODE_MS) {
+        cry.firstAt = at;
+        cry.count = 0;
+      }
+      cry.count++;
+      if (at > cry.lastAt) cry.lastAt = at;
+    });
+    if (heard.length && cry.on && remindAllowed() && now - cry.notifiedAt >= CRY_RENOTIFY_MS) {
+      cry.notifiedAt = now;
+      sendCry();
+    }
+    if (changed) saveCry();
+    if (heard.length) renderCryBanner();
+  }
+
+  function cryBody() {
+    var last = formatClockTime(new Date(cry.lastAt));
+    if (cry.count <= 1) return "Heard at " + last;
+    return "Heard " + cry.count + " times since " + formatClockTime(new Date(cry.firstAt)) +
+      ", last at " + last;
+  }
+
+  // No name, for the same reason as the nudge: a lock screen is not private.
+  function sendCry() {
+    try {
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification("Crying in the nursery", {
+          body: cryBody(),
+          tag: "cry",
+          renotify: true,
+          icon: NOTIFY_ICON,
+          badge: NOTIFY_ICON
+        });
+      }).catch(function () { /* the banner on the main screen still says it */ });
+    } catch (e) { /* the banner on the main screen still says it */ }
+  }
+
+  // On every phone that has heard it, whether or not that phone asked to be
+  // notified: somebody looking at the app should not be the last to know.
+  function renderCryBanner() {
+    var show = cry.lastAt && Date.now() - cry.lastAt < CRY_EPISODE_MS &&
+      cry.lastAt > cry.dismissedAt;
+    el.cryBanner.hidden = !show;
+    if (!show) return;
+    el.cryLine.textContent = "Crying heard at " + formatClockTime(new Date(cry.lastAt));
+    el.crySub.textContent = cry.count > 1
+      ? cry.count + " times since " + formatClockTime(new Date(cry.firstAt))
+      : "From the phone in the nursery";
+  }
+
+  // Everything that has to be true for the notification to arrive, in the
+  // order it would go wrong.
+  function cryState() {
+    if (!remindCanNotify()) {
+      return { ready: false, line: isStandalone()
+        ? "This browser cannot show notifications."
+        : "Add the app to your Home Screen — a tab in Safari cannot show notifications." };
+    }
+    if (!remindAllowed()) {
+      return { ready: false, line: "Notifications are not allowed yet. Turn them on for this app in the phone's settings." };
+    }
+    if (!syncConfig) {
+      return { ready: false, line: "Connect sync under ⚙️ Settings, to the same private repository the nursery phone writes to." };
+    }
+    if (!noiseOn) {
+      return { ready: false, line: "Ready while the screen is on. To hear it in your pocket, play something first — Standby will do." };
+    }
+    return { ready: true, line: "Ready. This phone checks every minute, so expect it a minute or two after the crying starts." };
+  }
+
+  function renderCry() {
+    if (el.screenNoise.hidden) return;
+    el.cryOn.checked = cry.on;
+    el.cryState.hidden = !cry.on;
+    if (!cry.on) return;
+    var state = cryState();
+    el.cryState.textContent = state.line;
+    el.cryState.classList.toggle("rm-ready", state.ready);
   }
 
   // ---------- white noise ----------
@@ -11396,6 +11595,7 @@
   function renderNoise() {
     renderNoiseFab();
     renderNoiseScreen();
+    renderCry();
     tellTheWatch(false);
   }
 
@@ -11473,6 +11673,26 @@
     // that question for a page that was not asked to.
     if (remind.on && !remindAllowed()) askToNotify();
     renderRemind();
+  });
+
+  el.cryOn.addEventListener("change", function () {
+    cry.on = el.cryOn.checked;
+    saveCry();
+    // The same rule as the nudge: the question has to ride on this tap.
+    if (cry.on && !remindAllowed()) {
+      askToNotify(function () {
+        cry.on = false;
+        saveCry();
+        renderCry();
+      });
+    }
+    renderCry();
+  });
+
+  el.cryBanner.addEventListener("click", function () {
+    cry.dismissedAt = cry.lastAt;
+    saveCry();
+    renderCryBanner();
   });
 
   el.noiseOpenBtn.addEventListener("click", function () {
@@ -12238,6 +12458,7 @@
     renderLeapBanner();
     renderShopBadge();
     renderRotaBanner();
+    renderCryBanner();
     renderRoutineNow();
     renderRoutineStrip();
     // Only while it is being looked at: it reads the whole log, and nobody is
@@ -12256,6 +12477,7 @@
     renderNoise();
     checkRemind();
     renderRemind();
+    renderCry();
     if (withLog) renderLog();
   }
 

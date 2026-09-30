@@ -2324,6 +2324,34 @@ body {
   border-color: #6d3b30;
 }
 
+/* Said the moment it is heard, in the colour this app keeps for things
+   that are late: somebody is needed. A tap puts it away. */
+.banner-cry {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  background: var(--bg-elevated);
+  border: 1px solid var(--overdue);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.banner-cry .cry-line {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--overdue);
+}
+
+.banner-cry .cry-sub {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 .banner-routine .routine-line {
   font-size: 16px;
   font-weight: 600;
