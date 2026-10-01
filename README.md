@@ -150,11 +150,15 @@ The queue directory itself is documented under "How data is stored" below.
 
 The listening is not done by this app. A web page cannot use the microphone with the screen off, and the phone's own sound recognition hears a baby crying better than anything a page could. So a phone left in the nursery listens with what it already has, and on hearing crying drops one file into the same `voice-queue/` the Siri recipe above writes to — named `cry__<id>__<time>.json`, or `cry__<id>.json` with no time. Every phone that syncs then sees it: a notification titled "Crying in the nursery" on the phones that asked for one (🔊 White noise → *Tell me when the nursery phone hears crying*), and a line on everybody's main screen. It is a minute or two behind the crying — the phones poll once a minute — so it is for "she has woken and is crying", not a live monitor.
 
-**The nursery phone is an iPhone:**
+**The nursery phone is an iPhone.** One Shortcut and one automation; it does not need the Siri helper above.
 
 1. **Settings → Accessibility → Sound Recognition**, switch it on, then **Sounds → Baby Crying**. Play a recording of a baby crying near it and check the phone's own notification appears.
-2. Build the **Log to Baby Tracker** helper Shortcut exactly as in the Siri section above. It already writes the right file for any type it is given.
-3. **Shortcuts → Automation → New Automation → Sound Recognition → Baby Crying**, set it to **Run Immediately**, and give it one action: **Run Shortcut** "Log to Baby Tracker" with the text input `cry`.
+2. **Shortcuts → +**, name it **Baby crying**, and add three actions:
+   - **Text**: `https://api.github.com/repos/OWNER/REPO/contents/voice-queue/cry__` then the **Current Date** variable, then `.json`. Tap the Current Date variable and set **Date Format → Custom** to `yyyyMMddHHmmss`, so every run makes a new file name.
+   - **Get Contents of URL** with that Text as the URL. Under **Show More**: Method **PUT**; Headers `Authorization` = `Bearer YOUR_TOKEN` and `Accept` = `application/vnd.github+json`; Request Body **JSON** with two Text fields, `message` = `cry` and `content` = `e30=`.
+   - **Show Result**, for testing only.
+3. Run it with ▶. A block of JSON with `"content"` and `"commit"` in it means it worked, and the phones that asked for crying alerts show "Crying in the nursery" within a minute or two. `Not Found` means the token cannot see the repository or the name is mistyped; `Bad credentials` means the token itself is wrong; `Invalid request` means the body is not set to JSON. Once it works, delete the Show Result action.
+4. **Shortcuts → Automation → + → Sound Recognition → Baby Crying**, choose **Run Immediately**, and give it the single action **Run Shortcut → Baby crying**.
 
 **The nursery phone is Android:**
 
