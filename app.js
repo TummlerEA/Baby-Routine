@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "103";
+    var fallback = "104";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1973,8 +1973,8 @@
     statsCharts: document.getElementById("statsCharts"),
     statsFeedChart: document.getElementById("statsFeedChart"),
     statsFeedSummary: document.getElementById("statsFeedSummary"),
-    statsFeedGapChart: document.getElementById("statsFeedGapChart"),
-    statsFeedGapSummary: document.getElementById("statsFeedGapSummary"),
+    statsFedWakeChart: document.getElementById("statsFedWakeChart"),
+    statsFedWakeSummary: document.getElementById("statsFedWakeSummary"),
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
@@ -2041,6 +2041,12 @@
     var s = nums.slice().sort(function (a, b) { return a - b; });
     var mid = Math.floor(s.length / 2);
     return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  function mean(nums) {
+    var total = 0;
+    nums.forEach(function (n) { total += n; });
+    return total / nums.length;
   }
 
   function pad2(n) {
@@ -3094,7 +3100,7 @@
       if (e.type === "feed") byDay[key].feeds++;
       else if (e.type === "diaper") byDay[key].diapers++;
     });
-    var feedGaps = feedGapsByDay();
+    var fedToWake = fedToWakeByDay();
     var analysis = analyzeSleep();
     var now = Date.now();
     var today = new Date();
@@ -3109,7 +3115,7 @@
         date: dayStart,
         feeds: counts.feeds,
         diapers: counts.diapers,
-        feedGaps: feedGaps[key] || [],
+        fedToWake: fedToWake[key] || [],
         sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now),
         awakeMs: awakeMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
       });
@@ -3117,26 +3123,23 @@
     return out;
   }
 
-  // Every gap between one feed and the next, start to start, filed under the
-  // day the later feed falls on — so the long stretch overnight belongs to the
-  // morning it ended in, the same way the history quotes it on that feed.
-  //
-  // Two kinds are left out, both being the log rather than the baby: under
-  // ten minutes is one feed tapped twice or a break to wind her, and over a
-  // day is a feed that never got written down.
-  function feedGapsByDay() {
+  // For every wake-up, how long since the last feed — the same figure its
+  // card and its row in the history quote — filed under the day she woke.
+  // A feed in the same minute as the wake-up is not a gap, and one more than
+  // a day back is a feed that never got written down.
+  function fedToWakeByDay() {
     var out = {};
-    var last = null;
-    sortedByTimeAsc(eventsOfKind("feed")).forEach(function (e) {
+    var lastFeed = null;
+    sortedByTimeAsc(liveEvents()).forEach(function (e) {
       var at = +new Date(e.time);
-      if (last !== null) {
-        var gap = at - last;
-        if (gap >= MIN_VALID_INTERVAL && gap <= FED_GAP_MAX) {
+      if (e.type === "feed") lastFeed = at;
+      else if (e.type === "sleep_end" && lastFeed !== null) {
+        var gap = at - lastFeed;
+        if (gap >= MS_MIN && gap <= FED_GAP_MAX) {
           var key = dayKeyOf(new Date(at));
           (out[key] = out[key] || []).push(gap);
         }
       }
-      last = at;
     });
     return out;
   }
@@ -3386,25 +3389,24 @@
 
     el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed",
       totalFeeds / n, statsCountLabel);
-    // The middle gap of each day, not the mean: one feed tapped as two halves
-    // an hour apart would otherwise pull a day of three-hour gaps well under
-    // what the baby actually went. The dashed line is the middle of every gap
-    // in the period, for the same reason.
-    var allGaps = [], longestGap = 0, longestDay = null;
+    // The mean of each day's wake-ups, and the dashed line the mean of every
+    // wake-up in the period — not the mean of the days, which would count a
+    // day with one nap as much as a day with five.
+    var allFedToWake = [], longestFed = 0, longestFedDay = null;
     rows.forEach(function (r) {
-      allGaps = allGaps.concat(r.feedGaps);
-      r.feedGapMs = r.feedGaps.length ? median(r.feedGaps) : 0;
-      r.feedGaps.forEach(function (g) {
-        if (g > longestGap) { longestGap = g; longestDay = r.date; }
+      allFedToWake = allFedToWake.concat(r.fedToWake);
+      r.fedToWakeMs = r.fedToWake.length ? mean(r.fedToWake) : 0;
+      r.fedToWake.forEach(function (g) {
+        if (g > longestFed) { longestFed = g; longestFedDay = r.date; }
       });
     });
-    var typicalGap = allGaps.length ? median(allGaps) : 0;
-    el.statsFeedGapChart.innerHTML = statsBarSvg(rows, function (r) { return r.feedGapMs / MS_HOUR; }, "m-feed",
-      typicalGap / MS_HOUR, statsGapLabel);
-    el.statsFeedGapSummary.textContent = allGaps.length
-      ? "Typically " + formatDuration(typicalGap) + " from one feed to the next · longest " +
-        formatDuration(longestGap) + " on " + formatDateShort(longestDay)
-      : "Two feeds logged are needed for a gap between them.";
+    var avgFedToWake = allFedToWake.length ? mean(allFedToWake) : 0;
+    el.statsFedWakeChart.innerHTML = statsBarSvg(rows, function (r) { return r.fedToWakeMs / MS_HOUR; }, "m-feed",
+      avgFedToWake / MS_HOUR, statsGapLabel);
+    el.statsFedWakeSummary.textContent = allFedToWake.length
+      ? "Average " + formatDuration(avgFedToWake) + " from the last feed to waking · longest " +
+        formatDuration(longestFed) + " on " + formatDateShort(longestFedDay)
+      : "Needs a feed and then a wake-up logged after it.";
     el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper",
       totalDiapers / n, statsCountLabel);
     el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep",
