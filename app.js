@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "102";
+    var fallback = "103";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -313,6 +313,9 @@
   // Gaps shorter than this come from an accidental double tap, not from a
   // real second event. Averaging them in drags the forecast hours off.
   var MIN_VALID_INTERVAL = 10 * MS_MIN;
+  // The longest a baby is taken to have gone between feeds. Past a day the
+  // likelier story is a feed nobody wrote down, not a fast.
+  var FED_GAP_MAX = MS_DAY;
   // An "active" sleep longer than this is almost certainly a wake-up that
   // nobody remembered to log.
   var SUSPICIOUS_SLEEP = 12 * MS_HOUR;
@@ -1668,6 +1671,7 @@
     forecastList: document.getElementById("forecastList"),
     nextUp: document.getElementById("nextUp"),
     nextUpTitle: document.getElementById("nextUpTitle"),
+    nextUpFed: document.getElementById("nextUpFed"),
     nextUpLine: document.getElementById("nextUpLine"),
     nextUpChips: document.getElementById("nextUpChips"),
     nextUpForecastBlock: document.getElementById("nextUpForecastBlock"),
@@ -1969,6 +1973,8 @@
     statsCharts: document.getElementById("statsCharts"),
     statsFeedChart: document.getElementById("statsFeedChart"),
     statsFeedSummary: document.getElementById("statsFeedSummary"),
+    statsFeedGapChart: document.getElementById("statsFeedGapChart"),
+    statsFeedGapSummary: document.getElementById("statsFeedGapSummary"),
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
@@ -3088,6 +3094,7 @@
       if (e.type === "feed") byDay[key].feeds++;
       else if (e.type === "diaper") byDay[key].diapers++;
     });
+    var feedGaps = feedGapsByDay();
     var analysis = analyzeSleep();
     var now = Date.now();
     var today = new Date();
@@ -3102,11 +3109,44 @@
         date: dayStart,
         feeds: counts.feeds,
         diapers: counts.diapers,
+        feedGaps: feedGaps[key] || [],
         sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now),
         awakeMs: awakeMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
       });
     }
     return out;
+  }
+
+  // Every gap between one feed and the next, start to start, filed under the
+  // day the later feed falls on — so the long stretch overnight belongs to the
+  // morning it ended in, the same way the history quotes it on that feed.
+  //
+  // Two kinds are left out, both being the log rather than the baby: under
+  // ten minutes is one feed tapped twice or a break to wind her, and over a
+  // day is a feed that never got written down.
+  function feedGapsByDay() {
+    var out = {};
+    var last = null;
+    sortedByTimeAsc(eventsOfKind("feed")).forEach(function (e) {
+      var at = +new Date(e.time);
+      if (last !== null) {
+        var gap = at - last;
+        if (gap >= MIN_VALID_INTERVAL && gap <= FED_GAP_MAX) {
+          var key = dayKeyOf(new Date(at));
+          (out[key] = out[key] || []).push(gap);
+        }
+      }
+      last = at;
+    });
+    return out;
+  }
+
+  // Hours and minutes run together, so "2h40" still fits over a bar a week
+  // wide, where "2h 40m" did not and a rounded "3h" says nothing.
+  function statsGapLabel(hours) {
+    var mins = Math.round(hours * 60);
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return h ? h + "h" + (m ? pad2(m) : "") : m + "m";
   }
 
   // Plain counts, shown as they are; an average gets the one decimal place
@@ -3346,6 +3386,25 @@
 
     el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed",
       totalFeeds / n, statsCountLabel);
+    // The middle gap of each day, not the mean: one feed tapped as two halves
+    // an hour apart would otherwise pull a day of three-hour gaps well under
+    // what the baby actually went. The dashed line is the middle of every gap
+    // in the period, for the same reason.
+    var allGaps = [], longestGap = 0, longestDay = null;
+    rows.forEach(function (r) {
+      allGaps = allGaps.concat(r.feedGaps);
+      r.feedGapMs = r.feedGaps.length ? median(r.feedGaps) : 0;
+      r.feedGaps.forEach(function (g) {
+        if (g > longestGap) { longestGap = g; longestDay = r.date; }
+      });
+    });
+    var typicalGap = allGaps.length ? median(allGaps) : 0;
+    el.statsFeedGapChart.innerHTML = statsBarSvg(rows, function (r) { return r.feedGapMs / MS_HOUR; }, "m-feed",
+      typicalGap / MS_HOUR, statsGapLabel);
+    el.statsFeedGapSummary.textContent = allGaps.length
+      ? "Typically " + formatDuration(typicalGap) + " from one feed to the next · longest " +
+        formatDuration(longestGap) + " on " + formatDateShort(longestDay)
+      : "Two feeds logged are needed for a gap between them.";
     el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper",
       totalDiapers / n, statsCountLabel);
     el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep",
@@ -3554,6 +3613,26 @@
     return out;
   }
 
+  // How long she had gone without a feed when she woke, per wake-up: from the
+  // start of the last feed before it to the wake-up itself. Start rather than
+  // end, for the same reason as the gaps above — it is what "since the last
+  // feed" means everywhere else in the app, and a feed's length is often not
+  // logged at all. Past FED_GAP_MAX it is a feed nobody wrote down.
+
+  function sinceFeedByWakeId() {
+    var lastFeed = null;
+    var out = {};
+    sortedByTimeAsc(liveEvents()).forEach(function (e) {
+      var at = +new Date(e.time);
+      if (e.type === "feed") lastFeed = at;
+      else if (e.type === "sleep_end" && lastFeed !== null) {
+        var gap = at - lastFeed;
+        if (gap >= MS_MIN && gap <= FED_GAP_MAX) out[e.id] = gap;
+      }
+    });
+    return out;
+  }
+
   function renderLog() {
     var visible = liveEvents();
     el.logToggleText.textContent =
@@ -3574,6 +3653,7 @@
 
     var analysis = analyzeSleep();
     var gaps = gapsByEventId();
+    var sinceFeed = sinceFeedByWakeId();
     var groups = groupByDay(sortedByTimeDesc(visible));
 
     groups.forEach(function (group, i) {
@@ -3604,6 +3684,8 @@
           var metrics = [];
           if (duration) metrics.push('<span class="l-duration">slept ' + formatDuration(duration) + '</span>');
           if (awake) metrics.push('<span class="l-awake">awake ' + formatDuration(awake) + '</span>');
+          if (sinceFeed[e.id]) metrics.push('<span class="l-fedgap">' +
+            formatDuration(sinceFeed[e.id]) + ' since the last feed</span>');
           if (fedMinutesOf(e)) metrics.push('<span class="l-duration">took ' +
             formatDuration(fedMinutesOf(e) * MS_MIN) + '</span>');
           if (fedMlOf(e)) metrics.push('<span class="l-duration">' +
@@ -4137,6 +4219,18 @@
     el.timeScroll.value = formatClockTime(new Date(event.time));
   }
 
+  // On the wake-up card only: how long she has been without a feed, which is
+  // the first thing anybody picking up a waking baby wants to know. Redrawn
+  // with the rest of the card, so moving the time above moves it too.
+  function renderWakeFedGap(event, isWake) {
+    var gap = isWake ? sinceFeedByWakeId()[event.id] : 0;
+    el.nextUpFed.hidden = !gap;
+    if (!gap) return;
+    var fedAt = new Date(+new Date(event.time) - gap);
+    el.nextUpFed.innerHTML = '🍼 <span class="nextup-when">' + escapeHtml(formatDuration(gap)) +
+      '</span> since the last feed, at ' + escapeHtml(formatClockTime(fedAt));
+  }
+
   function renderNextUp() {
     if (!nextUpKind) return;
     var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
@@ -4154,6 +4248,7 @@
       (isWake ? "Woke up" : KIND_META[nextUpKind].logged) + " at " + formatClockTime(new Date(event.time));
     renderRepeatWarning(event);
     renderTimeScroll(event);
+    renderWakeFedGap(event, isWake);
 
     if (!isWake) {
       var planned = plannedMinutesFor(nextUpKind, event);

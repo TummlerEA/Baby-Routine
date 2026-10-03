@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=102">
+<link rel="stylesheet" href="style.css?v=103">
 </head>
 <body>
 
@@ -195,6 +195,7 @@
           <button class="nextup-close" id="nextUpClose" aria-label="Dismiss">✕</button>
         </div>
         <p class="nextup-repeat" id="nextUpRepeat" hidden></p>
+        <p class="nextup-fed" id="nextUpFed" hidden></p>
         <div class="nextup-block">
           <div class="nextup-sublabel">When did this happen?</div>
           <div class="nextup-time-row">
@@ -1156,6 +1157,12 @@
         </div>
 
         <div class="ho-strip">
+          <p class="section-title">⏱ Time between feeds</p>
+          <div id="statsFeedGapChart"></div>
+          <p class="data-hint" id="statsFeedGapSummary"></p>
+        </div>
+
+        <div class="ho-strip">
           <p class="section-title">🧷 Nappies per day</p>
           <div id="statsDiaperChart"></div>
           <p class="data-hint" id="statsDiaperSummary"></p>
@@ -1416,6 +1423,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=102"></script>
+<script src="app.js?v=103"></script>
 </body>
 </html>

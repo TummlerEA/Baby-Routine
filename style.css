@@ -596,6 +596,7 @@ body {
 .log-item .l-metrics .l-duration { color: var(--accent-sleep); }
 .log-item .l-metrics .l-awake { color: var(--accent-awake); }
 .log-item .l-metrics .l-gap { color: var(--text-faint); }
+.log-item .l-metrics .l-fedgap { color: var(--accent-feed); }
 
 /* ---------- data export / import ---------- */
 
@@ -851,6 +852,14 @@ body {
 }
 
 .nextup-line .nextup-when { color: var(--accent-diaper); }
+
+.nextup-fed {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.nextup-fed .nextup-when { color: var(--accent-feed); }
 
 .nextup-chips {
   display: flex;
