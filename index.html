@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=104">
+<link rel="stylesheet" href="style.css?v=105">
 </head>
 <body>
 
@@ -437,6 +437,7 @@
             <p>Three small charts — feeds, nappies and sleep, one bar per day — over the last <strong>7, 14 or 30 days</strong>. Drawn from the same log as everything else, so there is nothing extra to keep in step. A dashed line marks the average across the whole chart, so a bar reads against it rather than in isolation, and on the 7 and 14-day views each bar also carries its own number. Past that a bar is small enough that a number on it would just crowd — the dashed line still shows the shape. A line under each chart gives the exact daily average and the total for the range.</p>
             <p>Above them, <strong>Nights</strong> — the longest unbroken stretch and how many times you were up, one bar per night. This is the only part of the app that measures a night rather than a day, and the difference matters: a night starts in the evening and ends the next morning, so midnight falls in the middle of it and a calendar day cuts it in half. Where exactly to cut is set under ⚙️ Settings, beside the planned intervals — cluster feeding until nine is one family's evening and another's night, so the app does not guess. A night still in progress is left out rather than drawn as a short bar.</p>
             <p>Below them, <strong>measurements over time</strong> — weight, length, head circumference, temperature, and anything you have named yourself — one chart each, as soon as there are two readings of it to join up. These keep their own timeline and the buttons at the top do not apply to them: readings are weeks apart rather than daily, so each one sits where it actually falls on the calendar and a month with no weighing shows as a month-wide gap. The value scale runs from the lowest reading to the highest rather than from zero, because a baby going from 3.2 to 5.2 kg is the whole story and against a zero line it would be a flat line near the top; both ends are labelled, and the unit is in the heading. Tap and hold a dot to see its date and reading.</p>
+            <p>At the very top, <strong>Feed → wake splits</strong>: one row per wake-up with how long the baby had gone without food by then, split into time awake after the feed and time asleep. It has its own buttons for the range and for day or night, and a bubble chart by age in weeks, so you can watch the stretches grow. A row marked ⚠ had far longer than usual between the feed and falling asleep — most likely a feed nobody logged. Tap it to add that feed; until then it is left out of the figures. Tap the heading to fold the section away.</p>
             <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
           </article>
 
@@ -1124,7 +1125,34 @@
 
     <main class="content">
 
+      <section id="splitsSection" class="sp-section" hidden>
+        <button type="button" class="sp-head" id="splitsToggle" aria-expanded="true" aria-controls="splitsBody">
+          <span class="sp-title">⏱ Feed → wake splits</span>
+          <span class="sp-chev" aria-hidden="true">▾</span>
+        </button>
+        <div id="splitsBody">
+          <p class="data-hint sp-note">How long the baby went without food by each wake-up: from the start of the last feed to waking. The bar is split into 🍼 awake after the feed and 😴 asleep. It grows with age, and the longest stretch grows first. <strong>⚠</strong> marks a wake-up with far longer than usual between the feed and falling asleep — most likely a feed that was not logged. Those are left out of the figures until it is added.</p>
+          <div class="ho-chips" id="splitsRangeChips"></div>
+          <div class="ho-chips sp-part" id="splitsPartChips"></div>
+          <div class="sp-tiles" id="splitsTiles"></div>
+          <div id="splitsCharts">
+            <div class="sp-list" id="splitsList"></div>
+            <div class="ho-strip">
+              <p class="section-title">Median by day</p>
+              <div id="splitsDayChart"></div>
+            </div>
+            <div class="ho-strip">
+              <p class="section-title">By age in weeks</p>
+              <div id="splitsAgeChart"></div>
+              <p class="data-hint" id="splitsAgeNote"></p>
+              <div id="splitsWeeks"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section>
+        <p class="section-title stats-measure-head">Day by day</p>
         <div class="ho-chips" id="statsPeriodChips"></div>
       </section>
 
@@ -1154,12 +1182,6 @@
           <p class="section-title">🍼 Feeds per day</p>
           <div id="statsFeedChart"></div>
           <p class="data-hint" id="statsFeedSummary"></p>
-        </div>
-
-        <div class="ho-strip">
-          <p class="section-title">⏱ From the last feed to waking</p>
-          <div id="statsFedWakeChart"></div>
-          <p class="data-hint" id="statsFedWakeSummary"></p>
         </div>
 
         <div class="ho-strip">
@@ -1423,6 +1445,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=104"></script>
+<script src="app.js?v=105"></script>
 </body>
 </html>

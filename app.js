@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "104";
+    var fallback = "105";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1973,8 +1973,18 @@
     statsCharts: document.getElementById("statsCharts"),
     statsFeedChart: document.getElementById("statsFeedChart"),
     statsFeedSummary: document.getElementById("statsFeedSummary"),
-    statsFedWakeChart: document.getElementById("statsFedWakeChart"),
-    statsFedWakeSummary: document.getElementById("statsFedWakeSummary"),
+    splitsSection: document.getElementById("splitsSection"),
+    splitsToggle: document.getElementById("splitsToggle"),
+    splitsBody: document.getElementById("splitsBody"),
+    splitsRangeChips: document.getElementById("splitsRangeChips"),
+    splitsPartChips: document.getElementById("splitsPartChips"),
+    splitsTiles: document.getElementById("splitsTiles"),
+    splitsList: document.getElementById("splitsList"),
+    splitsCharts: document.getElementById("splitsCharts"),
+    splitsDayChart: document.getElementById("splitsDayChart"),
+    splitsAgeChart: document.getElementById("splitsAgeChart"),
+    splitsAgeNote: document.getElementById("splitsAgeNote"),
+    splitsWeeks: document.getElementById("splitsWeeks"),
     statsDiaperChart: document.getElementById("statsDiaperChart"),
     statsDiaperSummary: document.getElementById("statsDiaperSummary"),
     statsSleepChart: document.getElementById("statsSleepChart"),
@@ -2041,12 +2051,6 @@
     var s = nums.slice().sort(function (a, b) { return a - b; });
     var mid = Math.floor(s.length / 2);
     return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-  }
-
-  function mean(nums) {
-    var total = 0;
-    nums.forEach(function (n) { total += n; });
-    return total / nums.length;
   }
 
   function pad2(n) {
@@ -3100,7 +3104,6 @@
       if (e.type === "feed") byDay[key].feeds++;
       else if (e.type === "diaper") byDay[key].diapers++;
     });
-    var fedToWake = fedToWakeByDay();
     var analysis = analyzeSleep();
     var now = Date.now();
     var today = new Date();
@@ -3115,32 +3118,10 @@
         date: dayStart,
         feeds: counts.feeds,
         diapers: counts.diapers,
-        fedToWake: fedToWake[key] || [],
         sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now),
         awakeMs: awakeMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
       });
     }
-    return out;
-  }
-
-  // For every wake-up, how long since the last feed — the same figure its
-  // card and its row in the history quote — filed under the day she woke.
-  // A feed in the same minute as the wake-up is not a gap, and one more than
-  // a day back is a feed that never got written down.
-  function fedToWakeByDay() {
-    var out = {};
-    var lastFeed = null;
-    sortedByTimeAsc(liveEvents()).forEach(function (e) {
-      var at = +new Date(e.time);
-      if (e.type === "feed") lastFeed = at;
-      else if (e.type === "sleep_end" && lastFeed !== null) {
-        var gap = at - lastFeed;
-        if (gap >= MS_MIN && gap <= FED_GAP_MAX) {
-          var key = dayKeyOf(new Date(at));
-          (out[key] = out[key] || []).push(gap);
-        }
-      }
-    });
     return out;
   }
 
@@ -3151,6 +3132,379 @@
     var h = Math.floor(mins / 60), m = mins % 60;
     return h ? h + "h" + (m ? pad2(m) : "") : m + "m";
   }
+
+  // ---------- feed → wake splits ----------
+
+  // One row per wake-up, the way a run is read kilometre by kilometre: how
+  // long since the last feed by the time she woke, split into the part she
+  // spent awake after that feed and the part she spent asleep.
+  //
+  // The awake part is also what gives a missing feed away. A long gap with a
+  // long sleep in it is a baby who slept well; a long gap with a short sleep
+  // in it means hours awake and unfed before that sleep — far more often a
+  // feed nobody wrote down. So each wake-up's awake part is weighed against
+  // the same baby's own over the fortnight before it, which moves with her as
+  // she grows where a fixed table by age would not.
+  var SPLIT_BASE_DAYS = 14;
+  // Fewer earlier wake-ups than this and there is no "usual" yet, so a plain
+  // three hours awake and unfed stands in for one.
+  var SPLIT_BASE_MIN = 5;
+  var SPLIT_FALLBACK_MS = 3 * MS_HOUR;
+  // Never flag anything within an hour of the usual, however steady she is:
+  // a feed half an hour later than normal is a day, not a mistake.
+  var SPLIT_SLACK_MS = 60 * MS_MIN;
+  var SPLIT_RANGES = [
+    { id: "today", label: "Today" },
+    { id: "yesterday", label: "Yesterday" },
+    { id: 7, label: "7 days" },
+    { id: 14, label: "14 days" },
+    { id: 30, label: "30 days" }
+  ];
+  var SPLIT_PARTS = [
+    { id: "all", label: "Day and night" },
+    { id: "day", label: "☀️ Day" },
+    { id: "night", label: "🌙 Night" }
+  ];
+  var SPLITS_OPEN_KEY = "baby-tracker-splits-open";
+  var splitRange = 7;
+  var splitPart = "all";
+
+  // Oldest first. A wake-up with no feed before it, or one a day and more
+  // back, is not a split — the same rule as the card and the history.
+  function feedWakeSplits() {
+    var out = [];
+    var lastFeed = null, fellAsleep = null;
+    sortedByTimeAsc(liveEvents()).forEach(function (e) {
+      var at = +new Date(e.time);
+      if (e.type === "feed") { lastFeed = at; return; }
+      if (e.type === "sleep_start") { fellAsleep = at; return; }
+      if (e.type !== "sleep_end") return;
+      var slept = fellAsleep !== null && fellAsleep < at ? fellAsleep : null;
+      fellAsleep = null;
+      if (lastFeed === null) return;
+      var gap = at - lastFeed;
+      if (gap < MS_MIN || gap > FED_GAP_MAX) return;
+      // A feed given while she slept — a dream feed — leaves no awake part.
+      var asleepFrom = slept === null ? null : Math.max(slept, lastFeed);
+      var woke = new Date(at);
+      out.push({
+        id: e.id, wakeAt: at, feedAt: lastFeed, sleptAt: slept,
+        gapMs: gap,
+        sleepMs: slept === null ? null : at - slept,
+        awakeMs: asleepFrom === null ? null : asleepFrom - lastFeed,
+        night: isNightClock(woke.getHours() * 60 + woke.getMinutes()),
+        suspect: false
+      });
+    });
+
+    var lo = 0;
+    out.forEach(function (s, i) {
+      if (s.awakeMs === null) return;
+      while (out[lo].wakeAt < s.wakeAt - SPLIT_BASE_DAYS * MS_DAY) lo++;
+      var base = [];
+      for (var j = lo; j < i; j++) if (out[j].awakeMs !== null) base.push(out[j].awakeMs);
+      var limit = SPLIT_FALLBACK_MS;
+      if (base.length >= SPLIT_BASE_MIN) {
+        var mid = median(base);
+        var spread = median(base.map(function (b) { return Math.abs(b - mid); }));
+        limit = mid + Math.max(3 * spread, SPLIT_SLACK_MS);
+      }
+      s.suspect = s.awakeMs > limit;
+    });
+    return out;
+  }
+
+  function splitInPart(s) {
+    return splitPart === "all" || (splitPart === "night") === s.night;
+  }
+
+  function splitDayStart(back) {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - back);
+    return +d;
+  }
+
+  function splitRangeBounds() {
+    if (splitRange === "today") return { from: splitDayStart(0), to: Infinity };
+    if (splitRange === "yesterday") return { from: splitDayStart(1), to: splitDayStart(0) };
+    return { from: splitDayStart(splitRange - 1), to: Infinity };
+  }
+
+  function loadSplitsOpen() {
+    try { return localStorage.getItem(SPLITS_OPEN_KEY) !== "0"; } catch (e) { return true; }
+  }
+
+  function saveSplitsOpen(open) {
+    try { localStorage.setItem(SPLITS_OPEN_KEY, open ? "1" : "0"); } catch (e) { /* only a convenience */ }
+  }
+
+  function renderSplitChips(box, list, current, pick) {
+    box.innerHTML = "";
+    list.forEach(function (item) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "ho-chip" + (item.id === current ? " on" : "");
+      chip.textContent = item.label;
+      chip.addEventListener("click", function () { pick(item.id); renderSplits(); });
+      box.appendChild(chip);
+    });
+  }
+
+  function splitTile(label, value, sub, cls) {
+    return '<div class="sp-tile' + (cls ? " " + cls : "") + '"><span class="sp-tile-label">' + escapeHtml(label) +
+      '</span><span class="sp-tile-value">' + escapeHtml(value) + '</span>' +
+      (sub ? '<span class="sp-tile-sub">' + escapeHtml(sub) + '</span>' : "") + '</div>';
+  }
+
+  function splitWhen(at) {
+    var d = new Date(at);
+    return formatDateShort(d) + " " + formatClockTime(d);
+  }
+
+  function renderSplits() {
+    var open = loadSplitsOpen();
+    el.splitsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    el.splitsBody.hidden = !open;
+    if (!open) return;
+
+    renderSplitChips(el.splitsRangeChips, SPLIT_RANGES, splitRange, function (id) { splitRange = id; });
+    renderSplitChips(el.splitsPartChips, SPLIT_PARTS, splitPart, function (id) { splitPart = id; });
+
+    var all = feedWakeSplits().filter(splitInPart);
+    if (!all.length) {
+      el.splitsTiles.innerHTML = '<p class="data-hint">Needs a feed and then a wake-up logged after it.</p>';
+      el.splitsCharts.hidden = true;
+      return;
+    }
+    el.splitsCharts.hidden = false;
+
+    var bounds = splitRangeBounds();
+    var shown = all.filter(function (s) { return s.wakeAt >= bounds.from && s.wakeAt < bounds.to; });
+    var clean = shown.filter(function (s) { return !s.suspect; });
+    var flagged = shown.length - clean.length;
+
+    // ---- the figures ----
+    var tiles = [];
+    if (clean.length) {
+      var longest = clean[0], shortest = clean[0];
+      clean.forEach(function (s) {
+        if (s.gapMs > longest.gapMs) longest = s;
+        if (s.gapMs < shortest.gapMs) shortest = s;
+      });
+      tiles.push(splitTile("Median", formatDuration(median(clean.map(function (s) { return s.gapMs; }))),
+        clean.length + (clean.length === 1 ? " wake-up" : " wake-ups")));
+      tiles.push(splitTile("Longest", formatDuration(longest.gapMs), splitWhen(longest.wakeAt), "sp-tile-best"));
+      tiles.push(splitTile("Shortest", formatDuration(shortest.gapMs), splitWhen(shortest.wakeAt)));
+    } else {
+      tiles.push(splitTile("Median", "—", "no wake-ups here"));
+    }
+    // The last seven days against the seven before, whatever range is picked
+    // above: a trend needs two weeks to compare, and "today" has one day.
+    var weekOf = function (back) {
+      var from = splitDayStart(back + 6), to = back ? splitDayStart(back - 1) : Infinity;
+      return all.filter(function (s) { return !s.suspect && s.wakeAt >= from && s.wakeAt < to; })
+        .map(function (s) { return s.gapMs; });
+    };
+    var thisWeek = weekOf(0), lastWeek = weekOf(7);
+    if (thisWeek.length >= 3 && lastWeek.length >= 3) {
+      var diff = median(thisWeek) - median(lastWeek);
+      var arrow = Math.abs(diff) < MS_MIN ? "=" : diff > 0 ? "↑ +" : "↓ −";
+      tiles.push(splitTile("This week", arrow + (Math.abs(diff) < MS_MIN ? " same" : formatDuration(Math.abs(diff))),
+        "median vs the week before", diff >= MS_MIN ? "sp-tile-up" : diff <= -MS_MIN ? "sp-tile-down" : ""));
+    } else {
+      tiles.push(splitTile("This week", "—", "needs two weeks logged"));
+    }
+    el.splitsTiles.innerHTML = tiles.join("") + (flagged
+      ? '<p class="sp-flagged">⚠ ' + flagged + (flagged === 1 ? " wake-up looks" : " wake-ups look") +
+        ' like a feed was missed — left out of the figures.</p>'
+      : "");
+
+    renderSplitList(shown, clean);
+    renderSplitDays(all);
+    renderSplitAges(all);
+  }
+
+  // Newest first, under a heading per day, inside a box of its own height so
+  // a month of ten wake-ups a day scrolls there instead of burying the charts.
+  function renderSplitList(shown, clean) {
+    if (!shown.length) {
+      el.splitsList.innerHTML = '<p class="data-hint sp-empty">No wake-ups in this range.</p>';
+      return;
+    }
+    // Scaled to the longest believable gap, so one forgotten feed does not
+    // shrink every other bar to a sliver; a flagged one just runs full width.
+    var scale = 0;
+    (clean.length ? clean : shown).forEach(function (s) { scale = Math.max(scale, s.gapMs); });
+    var pct = function (ms) { return Math.round(Math.min(1, ms / scale) * 1000) / 10; };
+
+    var out = ['<div class="sp-row sp-row-head"><span>Woke</span><span>Slept</span>' +
+      '<span class="sp-key"><i class="sp-k-awake"></i>awake <i class="sp-k-sleep"></i>asleep</span><span>No food</span></div>'];
+    var lastKey = null;
+    shown.slice().reverse().forEach(function (s) {
+      var d = new Date(s.wakeAt);
+      var key = dayKeyOf(d);
+      if (key !== lastKey) {
+        lastKey = key;
+        var day = shown.filter(function (x) { return dayKeyOf(new Date(x.wakeAt)) === key && !x.suspect; });
+        out.push('<p class="sp-day">' + escapeHtml(formatDateHeader(d)) +
+          (day.length ? ' <span>· median ' + escapeHtml(formatDuration(median(day.map(function (x) { return x.gapMs; })))) + '</span>' : "") +
+          '</p>');
+      }
+      var awake = s.awakeMs === null ? 0 : s.awakeMs;
+      var awakeW = pct(awake), totalW = pct(s.gapMs);
+      out.push('<div class="sp-row' + (s.suspect ? " sp-suspect" : "") + (s.night ? " sp-night" : "") +
+        '" data-id="' + escapeHtml(s.id) + '">' +
+        '<span class="sp-time">' + (s.night ? '<span class="sp-moon" aria-label="night">🌙</span> ' : "") + formatClockTime(d) + '</span>' +
+        '<span class="sp-slept">' + (s.sleepMs === null ? "—" : escapeHtml(formatDuration(s.sleepMs))) + '</span>' +
+        '<span class="sp-bar" title="' + escapeHtml("Fed " + formatClockTime(new Date(s.feedAt)) +
+          (s.awakeMs === null ? "" : " · awake " + formatDuration(s.awakeMs) + " before sleeping")) + '">' +
+        '<i class="sp-b-awake" style="width:' + awakeW + '%"></i>' +
+        '<i class="sp-b-sleep" style="width:' + Math.max(0, Math.round((totalW - awakeW) * 10) / 10) + '%"></i></span>' +
+        '<span class="sp-gap">' + escapeHtml(formatDuration(s.gapMs)) + '</span></div>');
+      if (s.suspect) {
+        out.push('<button type="button" class="sp-fix" data-id="' + escapeHtml(s.id) + '">⚠ ' +
+          escapeHtml(formatDuration(s.awakeMs)) + ' awake and unfed before that sleep — feed not logged? Add it</button>');
+      }
+    });
+    el.splitsList.innerHTML = out.join("");
+    Array.prototype.forEach.call(el.splitsList.querySelectorAll(".sp-fix"), function (btn) {
+      var split = shown.filter(function (s) { return s.id === btn.getAttribute("data-id"); })[0];
+      btn.addEventListener("click", function () { startMissingFeed(split); });
+    });
+  }
+
+  // The feed that was not logged most likely came just before that sleep —
+  // feeding to sleep is the commonest way a baby goes down — so the form opens
+  // there, on the five-minute grid behind it, for the real time to be set.
+  function startMissingFeed(split) {
+    if (!split) return;
+    var at = new Date(split.sleptAt === null ? split.wakeAt : split.sleptAt);
+    at.setMinutes(at.getMinutes() - (at.getMinutes() % MANUAL_STEP_MIN), 0, 0);
+    showScreen("main");
+    resetManualForm();
+    openManualPanel();
+    el.manualTitle.textContent = "Missing feed";
+    el.manualType.value = "feed";
+    syncManualFields();
+    setManualTime(at);
+    showManualNotice("Set to when the sleep began — change it to when the feed was.", true);
+    el.manualPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // The daily view the statistics screen had before this section existed,
+  // now the median of each day's believable wake-ups. A week at the least, so
+  // "Today" still has days around it to be read against.
+  function renderSplitDays(all) {
+    var days = typeof splitRange === "number" ? splitRange : 7;
+    var rows = [];
+    var every = [];
+    for (var back = days - 1; back >= 0; back--) {
+      var from = splitDayStart(back), to = back ? splitDayStart(back - 1) : Infinity;
+      var gaps = all.filter(function (s) { return !s.suspect && s.wakeAt >= from && s.wakeAt < to; })
+        .map(function (s) { return s.gapMs; });
+      every = every.concat(gaps);
+      rows.push({ date: new Date(from), v: gaps.length ? median(gaps) / MS_HOUR : 0 });
+    }
+    el.splitsDayChart.innerHTML = statsBarSvg(rows, function (r) { return r.v; }, "m-feed",
+      every.length ? median(every) / MS_HOUR : 0, statsGapLabel);
+  }
+
+  // Every wake-up ever logged, across by the baby's age and up by how long she
+  // had gone without food; the bigger the dot, the longer the sleep it ended.
+  // The line through them is each week's median, which is the growth the
+  // section is there to show. Flagged ones are hollow and kept off the line.
+  function renderSplitAges(all) {
+    var dob = dobDate();
+    if (!dob) {
+      el.splitsAgeChart.innerHTML = "";
+      el.splitsWeeks.innerHTML = "";
+      el.splitsAgeNote.textContent = "Add the date of birth under ⚙️ Settings to see this by age in weeks.";
+      return;
+    }
+    var pts = all.map(function (s) {
+      return { s: s, age: (s.wakeAt - +dob) / MS_DAY };
+    }).filter(function (p) { return p.age >= 0; });
+    if (!pts.length) {
+      el.splitsAgeChart.innerHTML = "";
+      el.splitsWeeks.innerHTML = "";
+      el.splitsAgeNote.textContent = "Nothing logged since the date of birth yet.";
+      return;
+    }
+
+    var WIDTH = 320, LEFT = 24, RIGHT = 6, TOP = 12, PLOT = 150, AXIS = 16;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var minAge = pts[0].age, maxAge = pts[pts.length - 1].age;
+    var x0 = Math.floor(minAge / 7) * 7;
+    var x1 = Math.max(x0 + 7, Math.ceil((maxAge + 0.01) / 7) * 7);
+    var topMs = 0;
+    pts.forEach(function (p) { if (!p.s.suspect) topMs = Math.max(topMs, p.s.gapMs); });
+    if (!topMs) pts.forEach(function (p) { topMs = Math.max(topMs, p.s.gapMs); });
+    var yHours = Math.max(1, Math.ceil(topMs / MS_HOUR));
+    var r1 = function (v) { return Math.round(v * 10) / 10; };
+    var xOf = function (age) { return r1(LEFT + (age - x0) / (x1 - x0) * plotW); };
+    var yOf = function (ms) { return r1(TOP + PLOT - Math.min(1, ms / (yHours * MS_HOUR)) * PLOT); };
+
+    var out = ['<svg class="ho-svg" viewBox="0 0 ' + WIDTH + ' ' + (TOP + PLOT + AXIS) +
+      '" role="img" aria-label="Time without food at each wake-up, by age in weeks">'];
+    var yStep = yHours > 8 ? 2 : 1;
+    for (var h = 0; h <= yHours; h += yStep) {
+      var y = yOf(h * MS_HOUR);
+      out.push('<line class="ho-grid" x1="' + LEFT + '" y1="' + y + '" x2="' + (LEFT + plotW) + '" y2="' + y + '"/>');
+      out.push('<text class="ho-tick" x="' + (LEFT - 3) + '" y="' + r1(y + 3) + '" text-anchor="end">' + h + 'h</text>');
+    }
+    var weeks = (x1 - x0) / 7;
+    var wStep = Math.max(1, Math.ceil(weeks / 8));
+    for (var w = x0 / 7; w <= x1 / 7; w += wStep) {
+      out.push('<text class="ho-tick" x="' + xOf(w * 7) + '" y="' + (TOP + PLOT + AXIS - 4) +
+        '" text-anchor="middle">' + (w ? "w" + w : "birth") + '</text>');
+    }
+    pts.forEach(function (p) {
+      var slept = p.s.sleepMs === null ? 0 : p.s.sleepMs / MS_HOUR;
+      var r = r1(1.6 + Math.min(4.4, Math.sqrt(slept) * 1.8));
+      out.push('<circle class="sp-dot ' + (p.s.suspect ? "sp-dot-suspect" : p.s.night ? "sp-dot-night" : "sp-dot-day") +
+        '" cx="' + xOf(p.age) + '" cy="' + yOf(p.s.gapMs) + '" r="' + r + '"><title>' +
+        escapeHtml(splitWhen(p.s.wakeAt) + " · " + formatDuration(p.s.gapMs) + " without food" +
+          (p.s.sleepMs === null ? "" : " · slept " + formatDuration(p.s.sleepMs)) + (p.s.suspect ? " · feed not logged?" : "")) +
+        '</title></circle>');
+    });
+
+    // Each week of age: its median, longest and count, for the line and the
+    // table under it alike.
+    var byWeek = {};
+    pts.forEach(function (p) {
+      if (p.s.suspect) return;
+      var wk = Math.floor(p.age / 7);
+      (byWeek[wk] = byWeek[wk] || []).push(p.s.gapMs);
+    });
+    var weekRows = Object.keys(byWeek).map(Number).sort(function (a, b) { return a - b; }).map(function (wk) {
+      var g = byWeek[wk];
+      return { week: wk, median: median(g), longest: Math.max.apply(null, g), n: g.length };
+    });
+    var line = weekRows.filter(function (r) { return r.n >= 3; }).map(function (r) {
+      return xOf(r.week * 7 + 3.5) + "," + yOf(r.median);
+    });
+    if (line.length > 1) out.push('<polyline class="sp-median" points="' + line.join(" ") + '"/>');
+    line.forEach(function (xy) {
+      var c = xy.split(",");
+      out.push('<circle class="sp-median-dot" cx="' + c[0] + '" cy="' + c[1] + '" r="2.2"/>');
+    });
+    out.push('</svg>');
+    el.splitsAgeChart.innerHTML = out.join("");
+    el.splitsAgeNote.textContent = "Every wake-up since birth. Up: time without food; bigger dot: longer sleep; " +
+      "☀️ orange by day, 🌙 violet at night; the white line is each week's median. Hollow: a feed probably not logged.";
+
+    el.splitsWeeks.innerHTML = '<table class="sp-weeks"><thead><tr><th>Age</th><th>Median</th><th>Longest</th><th>Wake-ups</th></tr></thead><tbody>' +
+      weekRows.slice().reverse().slice(0, 8).map(function (r) {
+        return '<tr><td>' + (r.week ? "Week " + r.week : "Week 0") + '</td><td>' + escapeHtml(formatDuration(r.median)) +
+          '</td><td>' + escapeHtml(formatDuration(r.longest)) + '</td><td>' + r.n + '</td></tr>';
+      }).join("") + '</tbody></table>';
+  }
+
+  el.splitsToggle.addEventListener("click", function () {
+    saveSplitsOpen(!loadSplitsOpen());
+    renderSplits();
+  });
 
   // Plain counts, shown as they are; an average gets the one decimal place
   // the summary line already uses, so a bar and the dashed line it is read
@@ -3371,10 +3725,13 @@
     if (!liveEvents().length) {
       el.statsEmpty.hidden = false;
       el.statsCharts.hidden = true;
+      el.splitsSection.hidden = true;
       return;
     }
     el.statsEmpty.hidden = true;
     el.statsCharts.hidden = false;
+    el.splitsSection.hidden = false;
+    renderSplits();
 
     var rows = statsRange(statsPeriod);
     var n = rows.length;
@@ -3389,24 +3746,6 @@
 
     el.statsFeedChart.innerHTML = statsBarSvg(rows, function (r) { return r.feeds; }, "m-feed",
       totalFeeds / n, statsCountLabel);
-    // The mean of each day's wake-ups, and the dashed line the mean of every
-    // wake-up in the period — not the mean of the days, which would count a
-    // day with one nap as much as a day with five.
-    var allFedToWake = [], longestFed = 0, longestFedDay = null;
-    rows.forEach(function (r) {
-      allFedToWake = allFedToWake.concat(r.fedToWake);
-      r.fedToWakeMs = r.fedToWake.length ? mean(r.fedToWake) : 0;
-      r.fedToWake.forEach(function (g) {
-        if (g > longestFed) { longestFed = g; longestFedDay = r.date; }
-      });
-    });
-    var avgFedToWake = allFedToWake.length ? mean(allFedToWake) : 0;
-    el.statsFedWakeChart.innerHTML = statsBarSvg(rows, function (r) { return r.fedToWakeMs / MS_HOUR; }, "m-feed",
-      avgFedToWake / MS_HOUR, statsGapLabel);
-    el.statsFedWakeSummary.textContent = allFedToWake.length
-      ? "Average " + formatDuration(avgFedToWake) + " from the last feed to waking · longest " +
-        formatDuration(longestFed) + " on " + formatDateShort(longestFedDay)
-      : "Needs a feed and then a wake-up logged after it.";
     el.statsDiaperChart.innerHTML = statsBarSvg(rows, function (r) { return r.diapers; }, "m-diaper",
       totalDiapers / n, statsCountLabel);
     el.statsSleepChart.innerHTML = statsBarSvg(rows, function (r) { return r.sleepMs / MS_HOUR; }, "m-sleep",
