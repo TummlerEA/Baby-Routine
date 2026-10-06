@@ -1,8 +1,8 @@
 "use strict";
 
 // How long since the last feed, seen from a wake-up: on the card that opens
-// when "Wake up" is tapped, on the wake-up's own row in the history, and per
-// day on the statistics screen as the time from one feed to the next.
+// when "Wake up" is tapped and on the wake-up's own row in the history. The
+// statistics screen's view of the same figure is in test_splits.js.
 
 const h = require('./helpers');
 const t = h.tally();
@@ -89,36 +89,6 @@ const TZ = process.env.TZ || 'UTC';
     ok('wake-up row says how long since the feed', by('e5') === '3h 45m since the last feed', rows);
     ok('a feed a day and more back is not quoted', by('e2') === '', rows);
     ok('only wake-ups carry it', rows.filter(r => r.gap).length === 1, rows);
-    await ctx.close();
-  }
-
-  // ---- the statistics chart ----
-  {
-    const { ctx, page } = await open(at(3, 20, 0), [
-      // The 2nd: one wake-up, 2h after a feed.
-      ['feed', at(2, 9, 0)], ['sleep_start', at(2, 9, 30)], ['sleep_end', at(2, 11, 0)],
-      // The 3rd: 4h overnight, then 1h, then 2h 30m — mean 2h 30m. The last
-      // two wake-ups come off the same 09:00 feed, with no feed between the
-      // naps, so both are counted from it.
-      ['feed', at(3, 1, 0)], ['sleep_start', at(3, 1, 30)], ['sleep_end', at(3, 5, 0)],
-      ['feed', at(3, 9, 0)], ['sleep_start', at(3, 9, 20)], ['sleep_end', at(3, 10, 0)],
-      ['sleep_start', at(3, 10, 30)], ['sleep_end', at(3, 11, 30)],
-      // A feed with no wake-up after it changes nothing.
-      ['feed', at(3, 15, 0)]
-    ]);
-    await page.click('#statsOpen'); await page.waitForTimeout(400);
-    const stats = await page.evaluate(() => ({
-      titles: Array.from(document.querySelectorAll('#statsFedWakeChart rect title')).map(x => x.textContent),
-      summary: document.getElementById('statsFedWakeSummary').textContent
-    }));
-    const n = stats.titles.length;
-    ok('today\'s bar is the mean of its wake-ups', /: 2h30$/.test(stats.titles[n - 1] || ''), stats.titles);
-    ok('yesterday\'s bar is its one wake-up', /: 2h$/.test(stats.titles[n - 2] || ''), stats.titles);
-    ok('a day with no wake-up is empty', /: 0m$/.test(stats.titles[n - 3] || ''), stats.titles);
-    // Every wake-up counts once: (2h + 4h + 1h + 2h 30m) / 4 = 2h 22m.
-    ok('summary gives the mean over every wake-up and the longest',
-      stats.summary.indexOf('Average 2h 22m from the last feed to waking') === 0 &&
-      stats.summary.indexOf('longest 4h') !== -1, stats.summary);
     await ctx.close();
   }
 
