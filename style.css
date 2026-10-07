@@ -3500,3 +3500,73 @@ body {
   border-color: var(--accent-sleep);
   color: var(--text);
 }
+
+/* How hard it was to settle: five faint segments under a "fell asleep", in
+   the history and in the edit form. The visible bar is only 5px; the buttons
+   around it are tall enough for a thumb. Calm teal through to warm coral,
+   mid-tone so the colours read on a light page as well as this dark one. */
+.settle {
+  --settle-1: #5fc4b8;
+  --settle-2: #9ccf72;
+  --settle-3: #f2c04f;
+  --settle-4: #f59a55;
+  --settle-5: #ec6a5a;
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+  max-width: 220px;
+  position: relative;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.settle-seg {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  flex: 1;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.settle-seg::before {
+  background: var(--text-faint);
+  border-radius: 3px;
+  content: "";
+  height: 5px;
+  left: 0;
+  opacity: 0.22;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: opacity 0.12s, background-color 0.12s;
+}
+.settle-seg.s1::before { --c: var(--settle-1); }
+.settle-seg.s2::before { --c: var(--settle-2); }
+.settle-seg.s3::before { --c: var(--settle-3); }
+.settle-seg.s4::before { --c: var(--settle-4); }
+.settle-seg.s5::before { --c: var(--settle-5); }
+.settle-seg.on::before { background: var(--c); opacity: 0.6; }
+.settle-seg:focus-visible { outline: 2px solid var(--accent-sleep); outline-offset: 1px; border-radius: 4px; }
+.settle-tip {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  bottom: 18px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0;
+  padding: 0 6px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  transition: opacity 0.2s;
+  white-space: nowrap;
+  z-index: 3;
+}
+.settle-tip.show { opacity: 1; }
+.manual-settle .settle { max-width: none; }
