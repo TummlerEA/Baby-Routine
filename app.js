@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "105";
+    var fallback = "106";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1555,7 +1555,7 @@
   function stripToTombstone(event) {
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
       label: event.label, unit: event.unit, fedMin: event.fedMin, fedMl: event.fedMl,
-      fedWith: event.fedWith, text: event.text, link: event.link };
+      fedWith: event.fedWith, text: event.text, link: event.link, settle: event.settle };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
@@ -1566,6 +1566,7 @@
     delete event.fedWith;
     delete event.text;
     delete event.link;
+    delete event.settle;
     event.deleted = true;
     return carried;
   }
@@ -1582,6 +1583,7 @@
     if (carried.fedWith !== undefined) event.fedWith = carried.fedWith;
     if (carried.text !== undefined) event.text = carried.text;
     if (carried.link !== undefined) event.link = carried.link;
+    if (carried.settle !== undefined) event.settle = carried.settle;
   }
 
   function tombstoneExpired(event) {
@@ -1652,6 +1654,7 @@
     manualNoteTextField: document.getElementById("manualNoteTextField"),
     manualNoteText: document.getElementById("manualNoteText"),
     manualLinkField: document.getElementById("manualLinkField"),
+    manualSettleField: document.getElementById("manualSettleField"),
     manualLink: document.getElementById("manualLink"),
     addNoteBtn: document.getElementById("addNoteBtn"),
     photoAlbum: document.getElementById("photoAlbum"),
@@ -2399,6 +2402,26 @@
     return (value > 0 && value <= MAX_FEED_ML) ? Math.round(value) : null;
   }
 
+  // How hard it was to get her down, on a "fell asleep": 1 is asleep on her
+  // own or within five minutes, 5 is two hours of rocking. Optional and never
+  // asked for — an entry without one is simply unrated, as every entry made
+  // before this existed is.
+  var SETTLE_EVENING_FROM = 18;
+  var SETTLE_EVENING_TO = 22;
+  var SETTLE_HINTS = ["", "≤5 min", "~15 min", "~30 min", "~1 h", "~2 h"];
+  var SETTLE_NAMES = ["", "Settled within 5 minutes", "About 15 minutes to settle",
+    "About 30 minutes to settle", "About an hour to settle", "About two hours to settle"];
+
+  function cleanSettle(raw) {
+    var value = Number(raw);
+    return (value % 1 === 0 && value >= 1 && value <= 5) ? value : null;
+  }
+
+  function settleOf(event) {
+    if (!event || event.type !== "sleep_start") return null;
+    return cleanSettle(event.settle);
+  }
+
   // Breast is timed, a bottle is measured, and which of the two this was is
   // already recorded. So the card asks whichever question can be answered
   // rather than offering both and leaving one of them meaningless.
@@ -3062,7 +3085,19 @@
     var diapers = 0;
     var wet = 0;
     var dirty = 0;
+    var settleSum = 0;
+    var settled = 0;
     group.events.forEach(function (e) {
+      // Bedtime is what the rating is mostly about, so the day's line carries
+      // only the evening's: sleeps that began from 18:00 up to 22:00.
+      var settle = settleOf(e);
+      if (settle) {
+        var hour = new Date(e.time).getHours();
+        if (hour >= SETTLE_EVENING_FROM && hour < SETTLE_EVENING_TO) {
+          settleSum += settle;
+          settled++;
+        }
+      }
       if (e.type === "feed") {
         feeds++;
         fedMs += (fedMinutesOf(e) || 0) * MS_MIN;
@@ -3086,7 +3121,8 @@
     if (fedMs) fedParts.push(formatDuration(fedMs));
     if (fedMl) fedParts.push(fedMl + " ml");
     if (fedParts.length) feedLabel += " (" + fedParts.join(" · ") + ")";
-    return feedLabel + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m");
+    return feedLabel + " · " + nappies + " · 🌙 " + (sleepMs ? formatDuration(sleepMs) : "0m") +
+      (settled ? " · settling " + (Math.round(settleSum / settled * 10) / 10).toFixed(1) + " (n=" + settled + ")" : "");
   }
 
   // ---------- statistics ----------
@@ -3974,6 +4010,132 @@
     return out;
   }
 
+  // ---------- the settling strip ----------
+
+  // Five faint segments under a "fell asleep": tap one, or run a finger along
+  // them, to say how long it took to get her down. Tapping the value already
+  // chosen clears it. No labels and no dialog — the hint ("~30 min") shows
+  // only while choosing, so logging a sleep is not one step longer.
+  function settleStripHtml(value, id) {
+    var out = ['<div class="settle" role="radiogroup" aria-label="How hard to settle" data-v="' + (value || 0) + '"' +
+      (id ? ' data-id="' + escapeHtml(id) + '"' : '') + '><span class="settle-tip" aria-hidden="true"></span>'];
+    for (var v = 1; v <= 5; v++) {
+      out.push('<button type="button" class="settle-seg s' + v + (value && v <= value ? ' on' : '') +
+        '" data-v="' + v + '" role="radio" aria-checked="' + (v === value ? 'true' : 'false') +
+        '" aria-label="' + escapeHtml(SETTLE_NAMES[v]) + '"></button>');
+    }
+    out.push('</div>');
+    return out.join("");
+  }
+
+  function paintSettle(strip, value) {
+    Array.prototype.forEach.call(strip.querySelectorAll(".settle-seg"), function (seg) {
+      var v = Number(seg.getAttribute("data-v"));
+      seg.classList.toggle("on", !!value && v <= value);
+    });
+  }
+
+  var settleTipTimer = null;
+
+  function showSettleTip(strip, value) {
+    if (!strip) return;
+    var tip = strip.querySelector(".settle-tip");
+    tip.textContent = value ? SETTLE_HINTS[value] : "cleared";
+    tip.style.left = ((value ? value - 0.5 : 2.5) * 20) + "%";
+    tip.classList.add("show");
+    clearTimeout(settleTipTimer);
+    settleTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 1200);
+  }
+
+  function settleAt(strip, clientX) {
+    var rect = strip.getBoundingClientRect();
+    var v = Math.floor((clientX - rect.left) / rect.width * 5) + 1;
+    return Math.max(1, Math.min(5, v));
+  }
+
+  // One handler for every strip inside a container, the history list and
+  // the edit form alike; commit(strip, value) is told what was picked.
+  function bindSettleStrips(container, commit) {
+    var drag = null;
+    container.addEventListener("pointerdown", function (ev) {
+      var strip = ev.target.closest(".settle");
+      if (!strip || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+      var v = settleAt(strip, ev.clientX);
+      drag = { strip: strip, id: ev.pointerId, start: v, value: v, moved: false };
+      try { strip.setPointerCapture(ev.pointerId); } catch (e) { /* older browsers */ }
+      paintSettle(strip, v);
+      showSettleTip(strip, v);
+    });
+    container.addEventListener("pointermove", function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      var v = settleAt(drag.strip, ev.clientX);
+      if (v === drag.value) return;
+      drag.value = v;
+      drag.moved = true;
+      paintSettle(drag.strip, v);
+      showSettleTip(drag.strip, v);
+    });
+    container.addEventListener("pointerup", function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      var d = drag;
+      drag = null;
+      var current = Number(d.strip.getAttribute("data-v")) || 0;
+      // A plain tap on the value already set takes it away again.
+      var value = (!d.moved && d.value === current) ? 0 : d.value;
+      if (!value) showSettleTip(d.strip, 0);
+      commit(d.strip, value);
+    });
+    // The browser took the gesture over for a scroll: put the strip back.
+    container.addEventListener("pointercancel", function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      paintSettle(drag.strip, Number(drag.strip.getAttribute("data-v")) || 0);
+      drag = null;
+    });
+    // Enter or Space on a focused segment: the keyboard's tap.
+    container.addEventListener("click", function (ev) {
+      var seg = ev.target.closest(".settle-seg");
+      if (!seg || ev.detail !== 0) return;
+      var strip = seg.closest(".settle");
+      var v = Number(seg.getAttribute("data-v"));
+      var value = v === (Number(strip.getAttribute("data-v")) || 0) ? 0 : v;
+      showSettleTip(strip, value);
+      commit(strip, value);
+    });
+  }
+
+  function setSettle(id, value) {
+    var target = events.filter(function (e) { return e.id === id; })[0];
+    if (!target || isDeleted(target) || target.type !== "sleep_start") return;
+    if ((settleOf(target) || 0) === value) return;
+    if (value) target.settle = value;
+    else delete target.settle;
+    touch(target);
+    if (!saveEvents(events)) return;
+    renderAll();
+    var strip = el.logList.querySelector('.settle[data-id="' + id + '"]');
+    showSettleTip(strip, value);
+  }
+
+  bindSettleStrips(el.logList, function (strip, value) {
+    setSettle(strip.getAttribute("data-id"), value);
+  });
+
+  // The edit form keeps its choice until Save, like every other field in it.
+  var manualSettle = 0;
+
+  function renderManualSettle() {
+    el.manualSettleField.innerHTML = settleStripHtml(manualSettle, "");
+  }
+
+  bindSettleStrips(el.manualSettleField, function (strip, value) {
+    manualSettle = value;
+    strip.setAttribute("data-v", String(value));
+    paintSettle(strip, value);
+    Array.prototype.forEach.call(strip.querySelectorAll(".settle-seg"), function (seg) {
+      seg.setAttribute("aria-checked", Number(seg.getAttribute("data-v")) === value ? "true" : "false");
+    });
+  });
+
   function renderLog() {
     var visible = liveEvents();
     el.logToggleText.textContent =
@@ -4050,6 +4212,7 @@
               (noteLinkOf(e) ? '<a class="l-link" href="' + escapeHtml(noteLinkOf(e)) +
                 '" target="_blank" rel="noopener">📷 Photo</a>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
+              (e.type === "sleep_start" ? settleStripHtml(settleOf(e), e.id) : '') +
             '</div>' +
             '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
           section.appendChild(row);
@@ -4061,6 +4224,9 @@
   }
 
   el.logList.addEventListener("click", function (ev) {
+    // The strip under a sleep is its own control; a tap on it is a rating,
+    // not a request to open the entry.
+    if (ev.target.closest(".settle")) return;
     var delBtn = ev.target.closest(".l-delete");
     if (delBtn) {
       deleteEvent(delBtn.getAttribute("data-id"));
@@ -4256,7 +4422,15 @@
     }
   }
 
+  function syncManualSettleField() {
+    var isSleep = el.manualType.value === "sleep_start";
+    el.manualSettleField.hidden = !isSleep;
+    if (!isSleep) manualSettle = 0;
+    renderManualSettle();
+  }
+
   function syncManualFields() {
+    syncManualSettleField();
     syncManualFedField();
     syncManualNappyField();
     syncManualValueField();
@@ -4267,6 +4441,7 @@
 
   function resetManualForm() {
     editingId = null;
+    manualSettle = 0;
     el.manualFed.value = "";
     el.manualSource.value = defaultFedWith();
     el.manualNappy.value = "";
@@ -4329,6 +4504,7 @@
     el.manualMeasureUnit.value = measureUnitOf(found);
     el.manualNoteText.value = noteTextOf(found);
     el.manualLink.value = noteLinkOf(found);
+    manualSettle = settleOf(found) || 0;
     syncManualFields();
     setManualTime(new Date(found.time));
     el.manualSubmit.textContent = "Save";
@@ -4480,6 +4656,8 @@
       else delete target.text;
       if (noteLink) target.link = noteLink;
       else delete target.link;
+      if (type === "sleep_start" && manualSettle) target.settle = manualSettle;
+      else delete target.settle;
       touch(target);
       savedId = editingId;
       if (!saveEvents(events)) return;
@@ -4491,7 +4669,7 @@
         type === "diaper" ? el.manualNappy.value : "", measureValue,
         measureLabel, measureUnit, type === "feed" ? fedMinutes : 0,
         type === "feed" ? el.manualSource.value : "", noteText, noteLink,
-        type === "feed" ? fedMillilitres : 0);
+        type === "feed" ? fedMillilitres : 0, type === "sleep_start" ? manualSettle : 0);
       if (!savedId) return;
       setManualTime(null);
       // The form is the one place where the entry vanishes from view the
@@ -4991,7 +5169,7 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link, fedMl) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link, fedMl, settle) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
@@ -5007,6 +5185,7 @@
     if (unit) event.unit = unit;
     if (type === "note" && text) event.text = text;
     if (type === "note" && link) event.link = link;
+    if (type === "sleep_start" && cleanSettle(settle)) event.settle = cleanSettle(settle);
     touch(event);
     events.push(event);
     if (!saveEvents(events)) return null;
@@ -5141,7 +5320,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link", "settle"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -5160,7 +5339,8 @@
         measureUnitOf(e),
         updatedAtOf(e),
         noteTextOf(e),
-        noteLinkOf(e)
+        noteLinkOf(e),
+        settleOf(e) || ""
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -5344,7 +5524,8 @@
           measureUnitOf(e),
           fedMinutesOf(e) || 0,
           FEED_SOURCE_IDS.indexOf(fedWithOf(e)),
-          fedMlOf(e) || 0
+          fedMlOf(e) || 0,
+          settleOf(e) || 0
         ];
       })
     };
@@ -5380,6 +5561,8 @@
       // Appended after the fact in its turn: a link made before bottles were
       // measured simply has no twelfth column.
       if (row[12] && type === "feed") entry.fedMl = row[12];
+      // And again: a link from before settling was rated has no thirteenth.
+      if (cleanSettle(row[13]) && type === "sleep_start") entry.settle = cleanSettle(row[13]);
       out.events.push(entry);
     });
     return out;
@@ -5659,6 +5842,9 @@
       var fedMl = Number(raw.fedMl);
       if (fedMl > 0 && fedMl <= MAX_FEED_ML) entry.fedMl = Math.round(fedMl);
       if (feedSource(raw.fedWith)) entry.fedWith = raw.fedWith;
+    }
+    if (raw.type === "sleep_start" && !raw.deleted && cleanSettle(raw.settle)) {
+      entry.settle = cleanSettle(raw.settle);
     }
     // Skipped for a tombstone, which by design carries no reading at all:
     // deleting a weight strips its value the same way deleting a note strips

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=105">
+<link rel="stylesheet" href="style.css?v=106">
 </head>
 <body>
 
@@ -307,6 +307,7 @@
             <span class="manual-label">Date and time</span>
             <input type="datetime-local" id="manualDateTime" class="manual-input" step="300">
           </label>
+          <div class="manual-field manual-settle" id="manualSettleField" hidden></div>
           <div id="manualError" class="manual-error" hidden></div>
           <div class="manual-buttons">
             <button class="manual-submit" id="manualSubmit">Add entry</button>
@@ -476,6 +477,11 @@
             <p>Under <strong>📈 What's next</strong> the day itself is laid out six steps at a time — the four just gone and the two still to come — with what actually happened beside each: "slept 1h 50m", "40m late", "not logged". The heading says whether the day is on plan or how far behind it is running. The whole table is one tap away on the ⏰ screen.</p>
             <p>Past the stretch it turns amber, and further past it red. That is the whole point of it — a baby who has been up too long does not go down easily, and the app has no way to tap you on the shoulder. It cannot send a notification: it has no server and no background of its own, so it can only say this while you are looking at it.</p>
             <p>None of it is enforced. A baby who wakes early or is hungry early is fed early, and nothing here stops you or marks you down for it. "Today so far" counts the naps and night sleeps you have actually logged against the number the routine asks for — which side of the night a sleep falls on comes from where you put the night under ⚙️ Settings, so the two never disagree. The routine is a setting, not a log: it rides sync and the JSON backup with the rest of them, and changes nothing about what has already been recorded.</p>
+          </article>
+
+          <article class="info-card">
+            <h3>How hard it was to settle</h3>
+            <p>Under every "fell asleep" in the history sits a faint strip of five segments. Tap one, or run a finger along them, to say how long it took to get the baby down: <strong>1</strong> asleep on their own or within 5 minutes, <strong>2</strong> about 15, <strong>3</strong> about 30, <strong>4</strong> about an hour, <strong>5</strong> about two hours of rocking. The time it stands for shows only while you choose. Tap the chosen segment again to clear it. It is never asked for, so logging a sleep takes no longer, and you can rate any sleep later, including old ones; the edit form has the same strip. Each day's line in the history then shows the average for the evening — sleeps begun between 18:00 and 22:00 — and how many were rated, as "settling 3.2 (n=2)".</p>
           </article>
 
           <article class="info-card">
@@ -1445,6 +1451,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=105"></script>
+<script src="app.js?v=106"></script>
 </body>
 </html>
