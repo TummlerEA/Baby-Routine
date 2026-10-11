@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "106";
+    var fallback = "107";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3321,20 +3321,13 @@
     var flagged = shown.length - clean.length;
 
     // ---- the figures ----
+    // Median and the week's trend side by side on top; under them how long
+    // the sleeps themselves ran, night and day apart.
     var tiles = [];
-    if (clean.length) {
-      var longest = clean[0], shortest = clean[0];
-      clean.forEach(function (s) {
-        if (s.gapMs > longest.gapMs) longest = s;
-        if (s.gapMs < shortest.gapMs) shortest = s;
-      });
-      tiles.push(splitTile("Median", formatDuration(median(clean.map(function (s) { return s.gapMs; }))),
-        clean.length + (clean.length === 1 ? " wake-up" : " wake-ups")));
-      tiles.push(splitTile("Longest", formatDuration(longest.gapMs), splitWhen(longest.wakeAt), "sp-tile-best"));
-      tiles.push(splitTile("Shortest", formatDuration(shortest.gapMs), splitWhen(shortest.wakeAt)));
-    } else {
-      tiles.push(splitTile("Median", "—", "no wake-ups here"));
-    }
+    tiles.push(clean.length
+      ? splitTile("Median", formatDuration(median(clean.map(function (s) { return s.gapMs; }))),
+        clean.length + (clean.length === 1 ? " wake-up" : " wake-ups"))
+      : splitTile("Median", "—", "no wake-ups here"));
     // The last seven days against the seven before, whatever range is picked
     // above: a trend needs two weeks to compare, and "today" has one day.
     var weekOf = function (back) {
@@ -3342,15 +3335,12 @@
       return all.filter(function (s) { return !s.suspect && s.wakeAt >= from && s.wakeAt < to; })
         .map(function (s) { return s.gapMs; });
     };
-    var thisWeek = weekOf(0), lastWeek = weekOf(7);
-    if (thisWeek.length >= 3 && lastWeek.length >= 3) {
-      var diff = median(thisWeek) - median(lastWeek);
-      var arrow = Math.abs(diff) < MS_MIN ? "=" : diff > 0 ? "↑ +" : "↓ −";
-      tiles.push(splitTile("This week", arrow + (Math.abs(diff) < MS_MIN ? " same" : formatDuration(Math.abs(diff))),
-        "median vs the week before", diff >= MS_MIN ? "sp-tile-up" : diff <= -MS_MIN ? "sp-tile-down" : ""));
-    } else {
-      tiles.push(splitTile("This week", "—", "needs two weeks logged"));
-    }
+    var trend = splitTrend(weekOf(0), weekOf(7));
+    tiles.push(trend
+      ? splitTile("This week", trend.text, "median vs the week before", trend.cls)
+      : splitTile("This week", "—", "needs two weeks logged"));
+    tiles.push(splitSleepTile(true, bounds));
+    tiles.push(splitSleepTile(false, bounds));
     el.splitsTiles.innerHTML = tiles.join("") + (flagged
       ? '<p class="sp-flagged">⚠ ' + flagged + (flagged === 1 ? " wake-up looks" : " wake-ups look") +
         ' like a feed was missed — left out of the figures.</p>'
@@ -3359,6 +3349,45 @@
     renderSplitList(shown, clean);
     renderSplitDays(all);
     renderSplitAges(all);
+  }
+
+  // This week's median against last week's, as "↑ +12m", or null while either
+  // week has too little in it to have a median worth comparing.
+  function splitTrend(thisWeek, lastWeek) {
+    if (thisWeek.length < 3 || lastWeek.length < 3) return null;
+    var diff = median(thisWeek) - median(lastWeek);
+    if (Math.abs(diff) < MS_MIN) return { text: "= same", cls: "" };
+    return diff > 0
+      ? { text: "↑ +" + formatDuration(diff), cls: "sp-tile-up" }
+      : { text: "↓ −" + formatDuration(-diff), cls: "sp-tile-down" };
+  }
+
+  // How long the sleeps ran that ended at night, or by day — the same split
+  // by the clock of the wake-up the chips above use — over the range picked,
+  // with this week's median against last week's underneath. Taken from every
+  // logged sleep, not only those with a feed before them: how long she slept
+  // does not depend on whether the feed was written down.
+  function splitSleepTile(night, bounds) {
+    var sessions = analyzeSleep().sessions.filter(function (x) {
+      var end = new Date(x.endMs);
+      return isNightClock(end.getHours() * 60 + end.getMinutes()) === night;
+    });
+    var within = function (from, to) {
+      return sessions.filter(function (x) { return x.endMs >= from && x.endMs < to; })
+        .map(function (x) { return x.endMs - x.startMs; });
+    };
+    var inRange = within(bounds.from, bounds.to);
+    var trend = splitTrend(within(splitDayStart(6), Infinity), within(splitDayStart(13), splitDayStart(6)));
+    var label = night ? "🌙 Night sleep" : "☀️ Day sleep";
+    return '<div class="sp-tile' + (night ? " sp-tile-night" : " sp-tile-day") + '">' +
+      '<span class="sp-tile-label">' + label + '</span>' +
+      '<span class="sp-tile-value">' + (inRange.length ? escapeHtml(formatDuration(median(inRange))) : "—") + '</span>' +
+      '<span class="sp-tile-sub">' + (inRange.length
+        ? "median of " + inRange.length + (inRange.length === 1 ? " sleep" : " sleeps")
+        : "none in this range") + '</span>' +
+      '<span class="sp-tile-sub sp-tile-trend ' + (trend ? trend.cls : "") + '">' +
+        (trend ? escapeHtml(trend.text) + " vs last week" : "needs two weeks logged") + '</span>' +
+      '</div>';
   }
 
   // Newest first, under a heading per day, inside a box of its own height so
