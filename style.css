@@ -2037,9 +2037,13 @@ body {
 }
 .sp-tile-value { color: var(--text); font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 700; }
 .sp-tile-sub { color: var(--text-dim); font-size: 12px; }
-.sp-tile-best .sp-tile-value { color: var(--accent-feed); }
 .sp-tile-up .sp-tile-value { color: var(--accent-diaper); }
 .sp-tile-down .sp-tile-value { color: var(--overdue); }
+.sp-tile-night .sp-tile-value { color: var(--accent-sleep); }
+.sp-tile-day .sp-tile-value { color: var(--accent-awake); }
+.sp-tile-trend { color: var(--text-faint); }
+.sp-tile-trend.sp-tile-up { color: var(--accent-diaper); }
+.sp-tile-trend.sp-tile-down { color: var(--overdue); }
 .sp-tiles .data-hint, .sp-flagged { grid-column: 1 / -1; }
 .sp-flagged { color: var(--accent-awake); font-size: 13px; margin: 2px 0 0; }
 

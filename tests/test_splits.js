@@ -81,7 +81,9 @@ const TZ = process.env.TZ || 'UTC';
   ok('with a button to add the feed', s.fixes === 1);
   ok('and is said to be left out', /^⚠ 1 wake-up looks like a feed was missed/.test(s.flagged), s.flagged);
   ok('median of the rest', /^Median2h 30m2 wake-ups/.test(s.tiles[0]), s.tiles);
-  ok('longest and shortest', /^Longest3h/.test(s.tiles[1]) && /^Shortest2h/.test(s.tiles[2]), s.tiles);
+  ok('this week sits beside the median', /^This week/.test(s.tiles[1]), s.tiles);
+  ok('then night sleep, none today', /^🌙 Night sleep—none in this range/.test(s.tiles[2]), s.tiles);
+  ok('and day sleep: the median of today\'s naps', /^☀️ Day sleep1h 15mmedian of 3 sleeps/.test(s.tiles[3]), s.tiles);
   ok('the slept column is the sleep', s.rows[0].slept === '2h 30m' && s.rows[1].slept === '1h', s.rows);
 
   await chip('splitsPartChips', '🌙 Night');
