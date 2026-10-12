@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "107";
+    var fallback = "108";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -354,7 +354,7 @@
   // Denser at the short end because that is where feeds actually land; a
   // parent who needs 35 minutes exactly has the manual form. Absent means
   // nobody answered, the same as the nappy detail, and never means zero.
-  var FEED_MINUTES = [10, 15, 20, 25, 30, 45, 60];
+  var FEED_MINUTES = [5, 10, 15, 20, 25, 30, 45, 60];
   // Only until the log can suggest the parent's own figure instead.
   var FEED_MINUTES_DEFAULT = 20;
   // A bottle is measured, not timed. Nobody stands over one with a stopwatch
@@ -368,6 +368,18 @@
   // Index 0 is "not recorded", so a share link that predates this column
   // reads as absent rather than as breast.
   var FEED_SOURCE_IDS = ["", "breast", "formula", "expressed"];
+  // Which breast, on a breast feed: left, right, or both in the one feed.
+  // Index 0 is "not recorded" for share links, as above.
+  var FEED_SIDE_IDS = ["", "L", "R", "LR"];
+  var FEED_SIDES = {
+    L:  { short: "L",   label: "Left",  en: "left side",  ru: "левая грудь" },
+    R:  { short: "R",   label: "Right", en: "right side", ru: "правая грудь" },
+    LR: { short: "L+R", label: "Both",  en: "both sides", ru: "обе груди" }
+  };
+  var FEED_SIDE_ORDER = ["L", "R", "LR"];
+  // What a tap on L or R records as the length, so one tap is a whole feed.
+  // It is selected on the card and changed there with one more tap.
+  var FEED_SIDE_DEFAULT_MIN = 10;
 
   // What is coming up. Kept in its own list rather than among the entries: the
   // log is a record of what happened, and teaching the forecast, the day
@@ -1555,7 +1567,8 @@
   function stripToTombstone(event) {
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
       label: event.label, unit: event.unit, fedMin: event.fedMin, fedMl: event.fedMl,
-      fedWith: event.fedWith, text: event.text, link: event.link, settle: event.settle };
+      fedWith: event.fedWith, text: event.text, link: event.link, settle: event.settle,
+      side: event.side };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
@@ -1567,6 +1580,7 @@
     delete event.text;
     delete event.link;
     delete event.settle;
+    delete event.side;
     event.deleted = true;
     return carried;
   }
@@ -1584,6 +1598,7 @@
     if (carried.text !== undefined) event.text = carried.text;
     if (carried.link !== undefined) event.link = carried.link;
     if (carried.settle !== undefined) event.settle = carried.settle;
+    if (carried.side !== undefined) event.side = carried.side;
   }
 
   function tombstoneExpired(event) {
@@ -1688,6 +1703,20 @@
     nappyBlock: document.getElementById("nappyBlock"),
     nappyChips: document.getElementById("nappyChips"),
     manualSourceField: document.getElementById("manualSourceField"),
+    manualSideField: document.getElementById("manualSideField"),
+    manualSide: document.getElementById("manualSide"),
+    actions: document.getElementById("actions"),
+    feedSplit: document.getElementById("feedSplit"),
+    btnFeedL: document.getElementById("btnFeedL"),
+    btnFeedR: document.getElementById("btnFeedR"),
+    btnFeedBottle: document.getElementById("btnFeedBottle"),
+    feedNoteL: document.getElementById("feedNoteL"),
+    feedNoteR: document.getElementById("feedNoteR"),
+    feedNoteBottle: document.getElementById("feedNoteBottle"),
+    feedBadgeL: document.getElementById("feedBadgeL"),
+    feedBadgeR: document.getElementById("feedBadgeR"),
+    sideBlock: document.getElementById("sideBlock"),
+    sideChips: document.getElementById("sideChips"),
     manualSource: document.getElementById("manualSource"),
     manualFedField: document.getElementById("manualFedField"),
     manualFed: document.getElementById("manualFed"),
@@ -2420,6 +2449,29 @@
   function settleOf(event) {
     if (!event || event.type !== "sleep_start") return null;
     return cleanSettle(event.settle);
+  }
+
+  function sideOf(event) {
+    if (!event || event.type !== "feed") return null;
+    return FEED_SIDES[event.side] ? event.side : null;
+  }
+
+  // The breast the last feed with a side ended on — the one Huckleberry calls
+  // "last side". A feed on both ended on the right.
+  function lastFeedSide() {
+    var last = sortedByTimeDesc(liveEvents()).filter(function (e) { return sideOf(e); })[0];
+    if (!last) return null;
+    return { side: sideOf(last) === "L" ? "L" : "R", at: new Date(last.time) };
+  }
+
+  // What the history and the export say about a feed: what it was and,
+  // for the breast, which side.
+  function feedDetailText(event) {
+    var source = feedSource(fedWithOf(event));
+    var side = sideOf(event);
+    if (!source && !side) return "";
+    if (!source) return "🤱 " + FEED_SIDES[side].short;
+    return source.detail + (side ? " · " + FEED_SIDES[side].short : "");
   }
 
   // Breast is timed, a bottle is measured, and which of the two this was is
@@ -4234,7 +4286,7 @@
                 '<span class="l-sep"> · </span><span class="l-time">' + formatClockTime(d) + '</span></div>' +
               (metrics.length ? '<div class="l-metrics">' + metrics.join(' · ') + '</div>' : '') +
               (nappyOf(e) ? '<div class="l-detail">' + NAPPY_TYPES[e.nappy].detail + '</div>' : '') +
-              (fedWithOf(e) ? '<div class="l-detail">' + feedSource(e.fedWith).detail + '</div>' : '') +
+              (feedDetailText(e) ? '<div class="l-detail">' + escapeHtml(feedDetailText(e)) + '</div>' : '') +
               (measureValueOf(e) !== null
                 ? '<div class="l-measure">' + escapeHtml(measureLine(e)) + '</div>' : '') +
               (noteTextOf(e) ? '<div class="l-detail">' + escapeHtml(noteTextOf(e)) + '</div>' : '') +
@@ -4429,6 +4481,8 @@
     el.manualSourceField.hidden = !(isFeed && asksFedWith());
     if (!isFeed) el.manualSource.value = "";
     if (isFeed) buildFedOptions(parseInt(el.manualFed.value, 10) || 0);
+    if (!isFeed) el.manualSide.value = "";
+    el.manualSideField.hidden = !(isFeed && (feedSplitMode() || el.manualSide.value));
   }
 
   // Switching between breast and bottle changes the question, and the answer
@@ -4473,6 +4527,7 @@
     manualSettle = 0;
     el.manualFed.value = "";
     el.manualSource.value = defaultFedWith();
+    el.manualSide.value = "";
     el.manualNappy.value = "";
     el.manualValue.value = "";
     el.manualMeasureLabel.value = "";
@@ -4524,6 +4579,7 @@
     el.manualTitle.textContent = "Edit entry";
     el.manualType.value = found.type;
     el.manualSource.value = fedWithOf(found);
+    el.manualSide.value = sideOf(found) || "";
     buildFedOptions(isBottleFeed(found)
       ? (fedMlOf(found) || 0)
       : (fedMinutesOf(found) || 0));
@@ -4675,6 +4731,8 @@
       else delete target.fedMl;
       if (type === "feed" && feedSource(el.manualSource.value)) target.fedWith = el.manualSource.value;
       else delete target.fedWith;
+      if (type === "feed" && FEED_SIDES[el.manualSide.value]) target.side = el.manualSide.value;
+      else delete target.side;
       if (measureMeta) target.value = measureValue;
       else delete target.value;
       if (measureLabel) target.label = measureLabel;
@@ -4698,7 +4756,8 @@
         type === "diaper" ? el.manualNappy.value : "", measureValue,
         measureLabel, measureUnit, type === "feed" ? fedMinutes : 0,
         type === "feed" ? el.manualSource.value : "", noteText, noteLink,
-        type === "feed" ? fedMillilitres : 0, type === "sleep_start" ? manualSettle : 0);
+        type === "feed" ? fedMillilitres : 0, type === "sleep_start" ? manualSettle : 0,
+        type === "feed" ? el.manualSide.value : "");
       if (!savedId) return;
       setManualTime(null);
       // The form is the one place where the entry vanishes from view the
@@ -4820,6 +4879,23 @@
       });
     }
 
+    // Which breast: for a feed from the breast, or one not yet said, while
+    // the feeding set up is one with a breast in it — or the feed already
+    // carries a side from wherever it was logged.
+    var asksSide = isFeed && !isBottleFeed(event) && (!!feedSplitMode() || !!sideOf(event));
+    el.sideBlock.hidden = !asksSide;
+    if (asksSide) {
+      var side = sideOf(event);
+      el.sideChips.innerHTML = "";
+      FEED_SIDE_ORDER.forEach(function (id) {
+        var chip = document.createElement("button");
+        chip.className = "nextup-chip side-chip" + (id === side ? " selected" : "");
+        chip.setAttribute("data-side", id);
+        chip.textContent = FEED_SIDES[id].short + " · " + FEED_SIDES[id].label;
+        el.sideChips.appendChild(chip);
+      });
+    }
+
     el.feedBlock.hidden = !isFeed;
     if (isFeed) {
       // A bottle gets asked how much, the breast how long. Same row, same
@@ -4925,7 +5001,7 @@
   // and moving the time invalidates that — so every correction below
   // refreshes it too, exactly as the chips elsewhere on this card already do.
   function reconfirmLoggedButton() {
-    var buttons = { feed: [el.btnFeed, el.feedNote, "feed"],
+    var buttons = { feed: feedButtonInUse || [el.btnFeed, el.feedNote, "feed"],
       diaper: [el.btnDiaper, el.diaperNote, "diaper"], sleep: [el.btnSleep, el.sleepNote, "sleep"] };
     var target = buttons[nextUpKind];
     var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
@@ -4974,11 +5050,34 @@
     // change of regime would rewrite this feed.
     if (fedWithOf(event) === id) delete event.fedWith;
     else event.fedWith = id;
+    // A bottle has no side.
+    if (isBottleFeed(event)) delete event.side;
     // Changing what it was changes which question is asked below, but never
     // throws away an answer already given: a length recorded before the
     // source was tapped stays on the entry and stays in the log.
     touch(event);
 
+    if (!saveEvents(events)) return;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
+
+  el.sideChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".side-chip");
+    if (!chip) return;
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    if (!event) return;
+    var id = chip.getAttribute("data-side");
+    // Same rule as every chip on this card: the answer again clears it.
+    if (sideOf(event) === id) delete event.side;
+    else {
+      event.side = id;
+      // A side is a breast feed, whatever was or was not said about it.
+      if (!fedWithOf(event)) event.fedWith = "breast";
+    }
+    touch(event);
     if (!saveEvents(events)) return;
     renderAll();
     renderNextUp();
@@ -5198,7 +5297,7 @@
 
   // ---------- actions ----------
 
-  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link, fedMl, settle) {
+  function addEvent(type, isoTime, nappy, value, label, unit, fedMin, fedWith, text, link, fedMl, settle, side) {
     var event = { id: uuid(), type: type, time: isoTime || new Date().toISOString() };
     if (NAPPY_TYPES[nappy]) event.nappy = nappy;
     if (type === "feed" && fedMin > 0) event.fedMin = Math.round(fedMin);
@@ -5215,6 +5314,7 @@
     if (type === "note" && text) event.text = text;
     if (type === "note" && link) event.link = link;
     if (type === "sleep_start" && cleanSettle(settle)) event.settle = cleanSettle(settle);
+    if (type === "feed" && FEED_SIDES[side]) event.side = side;
     touch(event);
     events.push(event);
     if (!saveEvents(events)) return null;
@@ -5237,7 +5337,8 @@
   var noteTimers = {};
 
   function confirmOnButton(btn, note, key, at) {
-    note.textContent = "Logged " + formatClockTime(at);
+    // A part of the split Feed button is too narrow for the word.
+    note.textContent = (btn.classList.contains("feed-part") ? "✓ " : "Logged ") + formatClockTime(at);
     btn.classList.add("just-logged");
     clearTimeout(noteTimers[key]);
     noteTimers[key] = setTimeout(function () {
@@ -5255,9 +5356,66 @@
     return id;
   }
 
+  // Which of the feed buttons logged the feed the card is about, so moving
+  // its time re-stamps "Logged …" on that one.
+  var feedButtonInUse = null;
+
   el.btnFeed.addEventListener("click", function () {
+    feedButtonInUse = [el.btnFeed, el.feedNote, "feed"];
     var id = quickLog("feed", el.btnFeed, el.feedNote, "feed");
     if (id) showNextUp("feed", id);
+  });
+
+  // ---------- the feed button split by breast ----------
+
+  // Breastfed: the Feed button becomes L | R, and a tap is a whole feed — the
+  // breast, that side, ten minutes — with the card open to change any of it.
+  // Mixed: L | 🍼 | R, the bottle in the middle asking how much as before.
+  // Anything else keeps the one button.
+  function feedSplitMode() {
+    var regime = loadFeeding();
+    if (regime === "breast") return "LR";
+    if (regime === "mixed") return "LBR";
+    return "";
+  }
+
+  function renderFeedSplit() {
+    var mode = feedSplitMode();
+    el.actions.classList.toggle("feed-split-on", !!mode);
+    el.btnFeed.hidden = !!mode;
+    el.feedSplit.hidden = !mode;
+    el.btnFeedBottle.hidden = mode !== "LBR";
+    if (!mode) return;
+    var last = lastFeedSide();
+    [["L", el.feedBadgeL, el.btnFeedL], ["R", el.feedBadgeR, el.btnFeedR]].forEach(function (part) {
+      var isLast = !!last && last.side === part[0];
+      part[1].hidden = !isLast;
+      part[2].setAttribute("aria-label", "Breast feed, " + FEED_SIDES[part[0]].en +
+        (isLast ? " — the last side, at " + formatClockTime(last.at) : ""));
+    });
+  }
+
+  function logBreastFeed(side, btn, note) {
+    feedButtonInUse = [btn, note, "feed" + side];
+    flashButton(btn);
+    var id = addEvent("feed", null, "", null, "", "", FEED_SIDE_DEFAULT_MIN, "breast",
+      "", "", 0, 0, side);
+    if (!id) return;
+    var saved = events.filter(function (e) { return e.id === id; })[0];
+    confirmOnButton(btn, note, "feed" + side, new Date(saved ? saved.time : Date.now()));
+    showNextUp("feed", id);
+  }
+
+  el.btnFeedL.addEventListener("click", function () { logBreastFeed("L", el.btnFeedL, el.feedNoteL); });
+  el.btnFeedR.addEventListener("click", function () { logBreastFeed("R", el.btnFeedR, el.feedNoteR); });
+  el.btnFeedBottle.addEventListener("click", function () {
+    feedButtonInUse = [el.btnFeedBottle, el.feedNoteBottle, "feedB"];
+    flashButton(el.btnFeedBottle);
+    var id = addEvent("feed", null, "", null, "", "", 0, "formula");
+    if (!id) return;
+    var saved = events.filter(function (e) { return e.id === id; })[0];
+    confirmOnButton(el.btnFeedBottle, el.feedNoteBottle, "feedB", new Date(saved ? saved.time : Date.now()));
+    showNextUp("feed", id);
   });
 
   el.btnDiaper.addEventListener("click", function () {
@@ -5349,7 +5507,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link", "settle"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link", "settle", "side"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -5369,7 +5527,8 @@
         updatedAtOf(e),
         noteTextOf(e),
         noteLinkOf(e),
-        settleOf(e) || ""
+        settleOf(e) || "",
+        sideOf(e) || ""
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -5403,7 +5562,7 @@
         out.push("| " + formatClockTime(new Date(e.time)) +
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
-          (fedWithOf(e) ? " (" + feedSource(e.fedWith).label.toLowerCase() + ")" : "") +
+          (feedDetailText(e) ? " (" + feedDetailText(e) + ")" : "") +
           (measureValueOf(e) !== null ? " — " + measureLine(e) : "") +
           (noteText ? " — " + noteText : "") +
           (noteLink ? " ([photo](" + noteLink + "))" : "") +
@@ -5554,7 +5713,8 @@
           fedMinutesOf(e) || 0,
           FEED_SOURCE_IDS.indexOf(fedWithOf(e)),
           fedMlOf(e) || 0,
-          settleOf(e) || 0
+          settleOf(e) || 0,
+          FEED_SIDE_IDS.indexOf(sideOf(e) || "")
         ];
       })
     };
@@ -5592,6 +5752,8 @@
       if (row[12] && type === "feed") entry.fedMl = row[12];
       // And again: a link from before settling was rated has no thirteenth.
       if (cleanSettle(row[13]) && type === "sleep_start") entry.settle = cleanSettle(row[13]);
+      // And the breast, after that.
+      if (row[14] > 0 && FEED_SIDE_IDS[row[14]] && type === "feed") entry.side = FEED_SIDE_IDS[row[14]];
       out.events.push(entry);
     });
     return out;
@@ -5871,6 +6033,7 @@
       var fedMl = Number(raw.fedMl);
       if (fedMl > 0 && fedMl <= MAX_FEED_ML) entry.fedMl = Math.round(fedMl);
       if (feedSource(raw.fedWith)) entry.fedWith = raw.fedWith;
+      if (!raw.deleted && FEED_SIDES[raw.side]) entry.side = raw.side;
     }
     if (raw.type === "sleep_start" && !raw.deleted && cleanSettle(raw.settle)) {
       entry.settle = cleanSettle(raw.settle);
@@ -7123,6 +7286,7 @@
     // off this, and neither should wait for a reload.
     if (!editingId) el.manualSource.value = defaultFedWith();
     syncManualFields();
+    renderFeedSplit();
     renderNextUp();
   });
 
@@ -8191,6 +8355,7 @@
           : ".");
       },
       feedSource: function (source) { return source.label.toLowerCase(); },
+      feedSide: function (side) { return FEED_SIDES[side].en; },
       nothingLogged: "Nothing has been logged yet.",
       spacing: function (middle, shortest, longest) {
         return "About " + middle + " apart" +
@@ -8320,6 +8485,7 @@
       feedSource: function (source) {
         return { breast: "грудь", formula: "смесь", expressed: "сцеженное" }[source.id] || "";
       },
+      feedSide: function (side) { return FEED_SIDES[side].ru; },
       nothingLogged: "Пока ничего не записано.",
       spacing: function (middle, shortest, longest) {
         return "В среднем каждые " + middle +
@@ -8519,10 +8685,13 @@
       var ml = fedMlOf(last);
       if (ml !== null) extras.push(T.feedAmount(ml));
       var source = feedSource(fedWithOf(last));
-      if (source) {
+      var side = sideOf(last);
+      // The side says "breast" already: "грудь, левая грудь" reads twice.
+      if (source && !(side && source.id === "breast")) {
         var named = T.feedSource(source);
         if (named) extras.push(named);
       }
+      if (side) extras.push(T.feedSide(side));
       row.details.push(T.lastFeed(handoverAgo(new Date(last.time)), extras.join(", ")));
     } else {
       row.details.push(T.nothingLogged);
@@ -13104,6 +13273,7 @@
     renderName();
     renderSleepBanner();
     renderSleepButton();
+    renderFeedSplit();
     renderForecast();
     renderGettingStarted();
     renderFixUps();
