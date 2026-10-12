@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=107">
+<link rel="stylesheet" href="style.css?v=108">
 </head>
 <body>
 
@@ -144,12 +144,31 @@
         </span>
       </section>
 
-      <section class="actions">
+      <section class="actions" id="actions">
         <button class="action-btn" id="btnFeed" data-type="feed">
           <span class="action-icon">🍼</span>
           <span class="action-label">Feed</span>
           <span class="action-note" id="feedNote" aria-live="polite"></span>
         </button>
+        <div class="feed-split" id="feedSplit" role="group" aria-label="Feed" hidden>
+          <button class="action-btn feed-part" id="btnFeedL" data-side="L">
+            <span class="feed-part-badge" id="feedBadgeL" hidden>last</span>
+            <span class="action-icon feed-part-letter">L</span>
+            <span class="action-label">Left</span>
+            <span class="action-note" id="feedNoteL" aria-live="polite"></span>
+          </button>
+          <button class="action-btn feed-part" id="btnFeedBottle" aria-label="Bottle feed" hidden>
+            <span class="action-icon">🍼</span>
+            <span class="action-label">Bottle</span>
+            <span class="action-note" id="feedNoteBottle" aria-live="polite"></span>
+          </button>
+          <button class="action-btn feed-part" id="btnFeedR" data-side="R">
+            <span class="feed-part-badge" id="feedBadgeR" hidden>last</span>
+            <span class="action-icon feed-part-letter">R</span>
+            <span class="action-label">Right</span>
+            <span class="action-note" id="feedNoteR" aria-live="polite"></span>
+          </button>
+        </div>
         <button class="action-btn" id="btnDiaper" data-type="diaper">
           <span class="action-icon">🧷</span>
           <span class="action-label">Nappy</span>
@@ -206,6 +225,10 @@
         <div class="nextup-block" id="sourceBlock" hidden>
           <div class="nextup-sublabel">What was it?</div>
           <div class="nextup-chips feed-chips" id="sourceChips"></div>
+        </div>
+        <div class="nextup-block" id="sideBlock" hidden>
+          <div class="nextup-sublabel">Which side?</div>
+          <div class="nextup-chips feed-chips" id="sideChips"></div>
         </div>
         <div class="nextup-block" id="feedBlock" hidden>
           <div class="nextup-sublabel" id="feedSublabel">How long did it take?</div>
@@ -277,6 +300,15 @@
               <option value="breast">Breast</option>
               <option value="formula">Formula</option>
               <option value="expressed">Expressed</option>
+            </select>
+          </label>
+          <label class="manual-field" id="manualSideField" hidden>
+            <span class="manual-label">Which side?</span>
+            <select id="manualSide" class="manual-select">
+              <option value="">Not recorded</option>
+              <option value="L">Left</option>
+              <option value="R">Right</option>
+              <option value="LR">Both</option>
             </select>
           </label>
           <label class="manual-field" id="manualFedField" hidden>
@@ -384,6 +416,7 @@
             <h3>The three buttons</h3>
             <p>Tap <strong>Feed</strong>, <strong>Nappy</strong> or <strong>Sleep</strong> at the moment it happens. One tap is the whole job — the entry is saved straight away, and you can put the phone down.</p>
             <p>The button tells you it worked: for a few seconds it reads <strong>Logged</strong> with the time it went in. If you are not sure whether a tap registered, look at the button rather than tapping again.</p>
+            <p>If the baby is set as <strong>breastfed</strong> under ⚙️ Settings, <strong>Feed</strong> splits into <strong>L | R</strong>: tap the side you are feeding from and that is the whole feed — the breast, that side, 10 minutes. The card that opens lets you change the side (left, right, or both in one feed) and the length (5, 10, 15 minutes and so on). The side you fed from last time carries a small <strong>last</strong> badge, so nobody has to remember. Set as <strong>mixed</strong>, it is <strong>L | 🍼 | R</strong>, and the bottle in the middle asks how much as before. The side shows in the history next to the feed.</p>
             <p><strong>Sleep</strong> is a toggle. Tap it when your baby goes down, and it changes to <strong>Wake up</strong>; tap it again when they wake, and the app works out how long they slept.</p>
             <p>Below them, <strong>Woke → nappy change → feeding</strong> is one tap for that whole sequence rather than three: it logs a wake-up ten minutes ago, a nappy change (wee &amp; poo) five minutes ago, and a feed right now, recorded as having taken fifteen minutes — five minutes apart, ending at this moment. <strong>Undo</strong> on the confirmation removes all three at once; if any of that was not quite right this time, correct each entry afterwards the same way as any other.</p>
           </article>
@@ -1451,6 +1484,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=107"></script>
+<script src="app.js?v=108"></script>
 </body>
 </html>
