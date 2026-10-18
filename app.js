@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "108";
+    var fallback = "109";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1849,7 +1849,6 @@
     noiseAwakeCount: document.getElementById("noiseAwakeCount"),
     noiseAwakeVerdict: document.getElementById("noiseAwakeVerdict"),
     noiseAwakeWhy: document.getElementById("noiseAwakeWhy"),
-    noiseAuto: document.getElementById("noiseAuto"),
     noiseFab: document.getElementById("noiseFab"),
     noiseFabIcon: document.getElementById("noiseFabIcon"),
     noiseFabLeft: document.getElementById("noiseFabLeft"),
@@ -1972,6 +1971,8 @@
     aiSize: document.getElementById("aiSize"),
     aiTargets: document.getElementById("aiTargets"),
     aiCopy: document.getElementById("aiCopy"),
+    aiShare: document.getElementById("aiShare"),
+    aiShareHint: document.getElementById("aiShareHint"),
     aiEnabled: document.getElementById("aiEnabled"),
     aiUseName: document.getElementById("aiUseName"),
     aiUseJournal: document.getElementById("aiUseJournal"),
@@ -5426,10 +5427,7 @@
   el.btnSleep.addEventListener("click", function () {
     var sleeping = isSleepingNow();
     var id = quickLog(sleeping ? "sleep_end" : "sleep_start", el.btnSleep, el.sleepNote, "sleep");
-    // The one tap already being made at 3am, doing the other thing that tap
-    // is always followed by. Started here rather than after the card opens,
-    // so it is still the same gesture as far as the browser is concerned —
-    // a phone will not begin playing audio for anything else.
+    // Never starts a sound; it only lets go of a borrowed Standby.
     if (id) afterSleepLogged(!sleeping);
     // Waking up does not start a new gap, so there is nothing to plan there —
     // but the card still opens for it, purely for the time correction below,
@@ -11261,8 +11259,8 @@
     if (!noiseOn) {
       return { ready: false, canStart: true,
         line: "Waiting. The app can only keep time while it is playing something. " +
-          "Logging a wake-up turns on Standby by itself \u2014 or turn it on now " +
-          "to be nudged about a wake-up logged on the other phone." };
+          "Turn on Standby to be nudged with the screen off \u2014 it plays nothing you can hear, " +
+          "and logging never turns it on by itself." };
     }
     var status = routineStatus(new Date());
     if (status.sleeping) return { ready: true, line: "Ready. Nothing to count while she is down." };
@@ -11591,7 +11589,7 @@
     wake: "Stopped when a wake-up was logged",
     phone: "Stopped by the phone, which would not let it start again"
   };
-  var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45, auto: false,
+  var NOISE_DEFAULTS = { sound: "brown", level: 2, timer: 45,
     next: "feed", prev: "sleep" };
   // Generated at 44.1kHz, because the pink filter's coefficients are tuned
   // for that rate — run it at any other and its poles land in the wrong
@@ -11640,7 +11638,7 @@
         ? parsed.level : NOISE_DEFAULTS.level;
       var timer = NOISE_TIMERS.indexOf(parsed.timer) !== -1
         ? parsed.timer : NOISE_DEFAULTS.timer;
-      return { sound: sound, level: level, timer: timer, auto: parsed.auto === true,
+      return { sound: sound, level: level, timer: timer,
         next: noiseButtonOr(parsed.next, NOISE_DEFAULTS.next),
         prev: noiseButtonOr(parsed.prev, NOISE_DEFAULTS.prev) };
     } catch (e) {
@@ -11653,7 +11651,7 @@
   }
 
   function copyOf(prefs) {
-    return { sound: prefs.sound, level: prefs.level, timer: prefs.timer, auto: prefs.auto,
+    return { sound: prefs.sound, level: prefs.level, timer: prefs.timer,
       next: prefs.next, prev: prefs.prev };
   }
 
@@ -12018,10 +12016,10 @@
   }
 
   // Borrowed only when there is something to give back. A phone whose chosen
-  // sound is Standby was going to be silent anyway, so a wake-up starting it
-  // is that phone playing what it always plays — and logging the sleep must
-  // not stop it, or the lock screen and the watch would be gone for the night
-  // and the next wake-up could not be logged from either.
+  // sound is Standby was going to be silent anyway, so starting it here is
+  // that phone playing what it always plays — and logging the sleep must not
+  // stop it, or the lock screen and the watch would be gone for the night and
+  // the next wake-up could not be logged from either.
   function noiseStartSilent() {
     noiseSilent = noise.sound !== NOISE_STANDBY;
     noiseStart();
@@ -12088,38 +12086,15 @@
     if (noiseOn) noiseStop("app"); else noiseStart();
   }
 
-  // Only when asked for. Off by default, because an app that starts making
-  // noise because you logged something would be a bad surprise exactly once,
-  // and it would be at night.
-  // Standby is not a sleep aid, it is what keeps the app running, so the
-  // sleep button leaves it alone — stopping it on a wake-up would take away
-  // the notification it was there for. And a sound already playing is left to
-  // play rather than started again, which would only reset its timer.
-  function noiseFollowSleep(goingDown) {
-    if (!noise.auto || noiseIsStandby()) return;
-    if (goingDown) {
-      if (!noiseOn) noiseStart();
-    } else if (noiseOn) {
-      noiseStop("wake");
-    }
-  }
-
-  // Everything a logged sleep or wake-up does to what is playing, in one
-  // place, because two of them want the same moment for opposite reasons and
-  // the order they happen in matters.
+  // Logging never starts anything playing. Sound, and Standby with it, is
+  // only ever started by a tap on the play button or on "Turn on Standby
+  // now": an app that began playing because something was logged drained the
+  // battery all night and surprised people with a noise they had not asked
+  // for. A sleep logged does stop a Standby that was only borrowed for the
+  // wake window, because the window is over; Standby chosen as the sound is
+  // not borrowed, and stays.
   function afterSleepLogged(goingDown) {
-    if (goingDown && noiseSilent) {
-      // The window is over, so the thing that was only borrowed to keep time
-      // can stop. Standby chosen on purpose is not borrowed, and stays.
-      noiseStop("sleep");
-    }
-    noiseFollowSleep(goingDown);
-    if (!goingDown && remind.on && remindAllowed() && routine.on && !noiseOn) {
-      // A wake-up starts the window, and the window needs the app awake to
-      // be counted. This is the gesture that pays for it: a phone will not
-      // begin playing audio outside one.
-      noiseStartSilent();
-    }
+    if (goingDown && noiseSilent) noiseStop("sleep");
     renderNoise();
   }
 
@@ -12314,7 +12289,6 @@
     chipStates(el.noiseNext, noise.next);
     // Nothing to set the volume of when there is no sound.
     el.noiseLevels.hidden = noiseIsStandby();
-    el.noiseAuto.checked = noise.auto;
     renderAwakeLine();
   }
 
@@ -12525,10 +12499,6 @@
   });
   el.noiseBack.addEventListener("click", showMain);
   el.noisePlay.addEventListener("click", noiseToggle);
-  el.noiseAuto.addEventListener("change", function () {
-    noise.auto = el.noiseAuto.checked;
-    saveNoisePrefs(noise);
-  });
 
   // A tap toggles the sound; holding it opens the screen. The hold is a
   // shortcut and never the only way in — the same screen sits at the top of
@@ -13114,6 +13084,32 @@
   el.aiBack.addEventListener("click", showMain);
   el.aiQuestion.addEventListener("input", renderAiPreview);
   el.aiRange.addEventListener("change", renderAiPreview);
+
+  // The share menu is the one road into the assistants' own apps that keeps
+  // the text. A page cannot type into another app, and a link that opens one
+  // arrives with its question stripped off — but each of them takes text from
+  // the share menu straight into a new message, waiting to be sent. Only
+  // offered where the phone has that menu; everywhere else the links stay.
+  var aiCanShare = typeof navigator.share === "function";
+  el.aiShare.hidden = !aiCanShare;
+  el.aiShareHint.hidden = !aiCanShare;
+  el.aiShare.addEventListener("click", function () {
+    var text = aiCurrentPrompt();
+    var sharing;
+    try {
+      sharing = navigator.share({ text: text });
+    } catch (e) {
+      sharing = Promise.reject(e);
+    }
+    sharing.catch(function (err) {
+      // Closing the menu is a choice, not a failure.
+      if (err && err.name === "AbortError") return;
+      copyText(text).then(function (ok) {
+        showToast(ok ? "Couldn't open the share menu — copied instead, so paste it"
+          : "Couldn't open the share menu — copy it from the box above");
+      });
+    });
+  });
 
   el.aiCopy.addEventListener("click", function () {
     copyText(aiCurrentPrompt()).then(function (ok) {

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=108">
+<link rel="stylesheet" href="style.css?v=109">
 </head>
 <body>
 
@@ -835,7 +835,7 @@
           <div class="nz-chips" id="remindLeads" hidden></div>
           <p class="rm-state" id="remindState" hidden>—</p>
           <button type="button" class="data-btn" id="remindStart" hidden>💬 Turn on Standby now</button>
-          <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. So logging a wake-up turns on <strong>Standby</strong>, which keeps the clock going and costs nothing you can hear. Putting her down turns it off again.</p>
+          <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. Turn on <strong>Standby</strong> with the button above, shown while it is off, when you want the nudge: it keeps the clock going and costs nothing you can hear. Logging never turns it on by itself, so nothing plays unless you asked; putting her down turns it off again.</p>
         </div>
       </section>
 
@@ -1076,14 +1076,7 @@
       </section>
 
       <section class="data-panel">
-        <label class="settings-check">
-          <input type="checkbox" id="noiseAuto">
-          <span class="settings-label">Start it when I log a <strong>sleep</strong></span>
-        </label>
-        <p class="data-hint">Tapping 🌙 <strong>Sleep</strong> on the main screen starts the sound, and tapping it again when your baby wakes stops it. No extra taps in the dark. Standby is left alone either way — stopping it on a wake-up would take away the notification it was there for.</p>
-      </section>
-
-      <section class="data-panel">
+        <p class="data-hint">Nothing here starts by itself: logging a sleep, a wake-up or a feed never turns the sound or Standby on. Only the play button does.</p>
         <p class="data-hint">The sound is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button.</p>
         <p class="data-hint">These settings belong to this phone. They are not synced, exported or shared, because the right sound and volume depend on the room.</p>
         <p class="data-hint" id="noiseSilentHint">On an iPhone the ring/silent switch has to be on, or the phone plays nothing.</p>
@@ -1287,6 +1280,8 @@
           <textarea class="share-box ai-preview" id="aiPreview" readonly rows="16"></textarea>
           <p class="data-hint" id="aiSize">—</p>
 
+          <button type="button" class="data-btn ai-target ai-share" id="aiShare" hidden>📤 Send to an AI app</button>
+          <p class="data-hint" id="aiShareHint" hidden>Opens the phone's share menu: pick ChatGPT, Claude or Perplexity and the whole text is already in the message box. A web page cannot type into another app, and the apps drop what a link carries, so this is the one way in that needs no pasting.</p>
           <div class="ai-targets" id="aiTargets"></div>
           <button class="data-btn" id="aiCopy">📋 Copy it — I will paste it myself</button>
 
@@ -1484,6 +1479,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=108"></script>
+<script src="app.js?v=109"></script>
 </body>
 </html>
