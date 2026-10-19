@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=121">
+<link rel="stylesheet" href="style.css?v=122">
 </head>
 <body>
 
@@ -527,7 +527,7 @@
 
           <article class="info-card">
             <h3>Helper (💬)</h3>
-            <p>First in the top bar, and at the foot of the main screen. Ask where something is — "how do I turn on white noise", "how do I share with my partner" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "and yesterday?" or "and nappies?" on their own carry the rest over from the answer before.</p>
+            <p>First in the top bar, and at the foot of the main screen. The box is at the top and the newest answer right under it; older ones follow further down. Ask where something is — "how do I turn on white noise", "how do I share with my partner" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "and yesterday?" or "and nappies?" on their own carry the rest over from the answer before.</p>
             <p>Say what happened instead of asking — "fed on the left 15 min, 10 min ago", "changed a dirty nappy", "fell asleep at 14:30", "woke up, changed a nappy and fed" — and it reads it back and waits. One tap logs exactly what the buttons would, with an undo right there; "Not that" logs nothing. Several said together are spaced five minutes apart, ending at the time said. A sleep said out of turn — a second "asleep" in a row, a wake-up with no sleep — is logged if you say so, but not without a word about it.</p>
             <p>Opened, it says what is worth knowing right now, unasked and three lines at most: a feed the plan says is due, no dirty nappy for two days, sleep entries with no pair, or no backup on this phone for a month. Questions it could not place are kept on this phone; ⚙️ Settings → Helper copies them, so they can be sent to whoever looks after the app, and clears them.</p>
             <p>Speak instead of typing: tap 🎤 beside the box, or hold 💬 in the top bar and let go — it opens already listening. Say it in one go; it stops when you do, or when you tap 🎤 again, and what it heard is asked or offered for logging just as if you had typed it. It understands English and Russian, spoken or typed, and answers in the language you used. It listens for English; <strong>RU</strong> at the top of the helper switches it to Russian, and it stays that way until tapped again. The words are recognised by the phone — on an iPhone by Apple, the same as the microphone on the keyboard — so it asks once before the first time, and ⚙️ Settings → Helper turns it off.</p>
@@ -1270,8 +1270,6 @@
 
     <main class="content">
       <section>
-        <div class="helper-log" id="helperLog" aria-live="polite"></div>
-        <div class="ai-chips helper-chips" id="helperChips"></div>
         <form class="helper-form" id="helperForm" autocomplete="off">
           <input type="text" id="helperInput" class="ai-question helper-input" maxlength="200" enterkeyhint="send" placeholder="Type a question…">
           <button type="button" class="helper-mic" id="helperMic" aria-label="Speak" hidden>🎤</button>
@@ -1280,6 +1278,8 @@
         <div class="helper-voice" id="helperVoice" hidden>
           <span class="helper-voice-state" id="helperVoiceState"></span>
         </div>
+        <div class="ai-chips helper-chips" id="helperChips"></div>
+        <div class="helper-log" id="helperLog" aria-live="polite"></div>
         <p class="data-hint">It knows this app and your log, and nothing else. It is not an AI and sends nothing anywhere: the answers are written in, and every number is the app's own. Ask in English or Russian — or say what happened, and it logs it once you've checked it. 🎤, or holding 💬 in the top bar, lets you say it instead; the phone turns what you say into text, and only the text reaches the helper.</p>
       </section>
     </main>
@@ -1536,6 +1536,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=121"></script>
+<script src="app.js?v=122"></script>
 </body>
 </html>

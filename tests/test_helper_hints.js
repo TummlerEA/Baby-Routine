@@ -45,8 +45,8 @@ const FIXED = (() => { const d = new Date(); d.setHours(16, 0, 0, 0); return d; 
 
   const hints = (page) => page.evaluate(() => {
     const bubbles = [...document.querySelectorAll('.helper-bot[data-topic="hints"]')];
-    const last = bubbles.pop();
-    return { count: bubbles.length + (last ? 1 : 0),
+    const last = bubbles[0];
+    return { count: bubbles.length,
       ids: last ? [...last.querySelectorAll('[data-hint]')].map(x => x.getAttribute('data-hint')) : [],
       text: last ? last.textContent : '' };
   });

@@ -68,7 +68,7 @@ const ok = t.ok;
     aborted: !!r.aborted, ended: !!r.ended })));
   const rec = (page, js) => page.evaluate(js);
   const last = (page) => page.evaluate(() => {
-    const bot = [...document.querySelectorAll('.helper-bot')].pop();
+    const bot = [...document.querySelector('#helperLog > .helper-turn').querySelectorAll('.helper-bot')].pop();
     return { topic: bot && bot.getAttribute('data-topic'), text: bot ? bot.textContent : '' };
   });
   const yous = (page) => page.$$eval('.helper-you', xs => xs.map(x => x.textContent));
@@ -161,7 +161,7 @@ const ok = t.ok;
   await page.press('#helperInput', 'Enter');
   await page.waitForTimeout(100);
   ok('typing while it listens: the typed question wins', (await recs(page))[5].aborted &&
-    (await yous(page)).slice(-1)[0] === 'when was the last feed' && (await last(page)).topic === 'feed');
+    (await yous(page))[0] === 'when was the last feed' && (await last(page)).topic === 'feed');
   await page.click('#helperBack');
 
   // ---- held again: no second asking ----

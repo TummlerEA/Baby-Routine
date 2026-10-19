@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "121";
+    var fallback = "122";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -13615,10 +13615,25 @@
 
   // ---- the conversation ----
 
+  // The log reads newest first, under the box. A question and its answer are
+  // one turn and stay in the order they happened; anything said on its own —
+  // the hello, the hints, a reply to a button — is a turn of its own.
+  var helperTurn = null;
+
+  function helperStartTurn() {
+    helperTurn = document.createElement("div");
+    helperTurn.className = "helper-turn";
+    el.helperLog.insertBefore(helperTurn, el.helperLog.firstChild);
+    return helperTurn;
+  }
+
   function helperBubble(who) {
+    var open = helperTurn;
+    var turn = open || helperStartTurn();
     var bubble = document.createElement("div");
     bubble.className = "helper-msg helper-" + who;
-    el.helperLog.appendChild(bubble);
+    turn.appendChild(bubble);
+    if (!open) helperTurn = null;
     return bubble;
   }
 
@@ -14016,16 +14031,21 @@
     helperScroll();
   }
 
+  // Back to the top, where the box is and the newest turn sits under it.
   function helperScroll() {
-    var last = el.helperLog.lastElementChild;
-    if (last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+    window.scrollTo(0, 0);
   }
 
   function helperAsk(question) {
     var text = cleanText(question, 200);
     if (!text) return;
-    helperText(helperBubble("you"), "helper-line", text);
-    helperAnswer(text);
+    helperStartTurn();
+    try {
+      helperText(helperBubble("you"), "helper-line", text);
+      helperAnswer(text);
+    } finally {
+      helperTurn = null;
+    }
     el.helperInput.value = "";
     helperScroll();
   }
@@ -14116,7 +14136,8 @@
     var key = lang + ":" + hints.map(function (h) { return h.id + "=" + h.text; }).join("|");
     // Not said twice in a row: reopening the screen a minute later should
     // not stack the same lines up.
-    var last = el.helperLog.lastElementChild;
+    var newest = el.helperLog.firstElementChild;
+    var last = newest && newest.lastElementChild;
     if (last && last.getAttribute("data-hints") === key) return;
     var bubble = helperBubble("bot");
     bubble.setAttribute("data-topic", "hints");
