@@ -1681,6 +1681,40 @@ body {
   font-weight: 600;
 }
 
+/* The answer that never left the phone, kept apart from everything below it
+   that does. Green, like the nappy button, because it is the safe one. */
+.local-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.local-ai-ask {
+  border-color: var(--accent-diaper);
+  color: var(--accent-diaper);
+  font-weight: 600;
+}
+
+.local-ai-answer {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--accent-diaper);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.ai-subheading {
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 0;
+}
+
 .settings-check {
   align-items: center;
   cursor: pointer;

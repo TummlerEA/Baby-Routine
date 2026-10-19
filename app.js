@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "109";
+    var fallback = "110";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -568,6 +568,37 @@
     "Why so many night wakings?",
     "What changed this week?"
   ];
+  // A small model that runs on the phone itself, for questions that should not
+  // leave it. WebLLM does the running. It is fetched the first time it is
+  // needed and checked against the fingerprint below before any of it runs:
+  // this page holds the sync token, so code from elsewhere runs only if it is
+  // byte for byte the release that was read. The engine it loads, a
+  // WebAssembly file, is pinned the same way. The model's weights are data
+  // rather than code, and are left to the library's own cache.
+  var LOCAL_AI_KEY = "baby-tracker-local-ai";
+  var LOCAL_AI_LIB_URL = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/lib/index.js";
+  var LOCAL_AI_LIB_SRI = "sha384-rfElDdXnNkSgbLTTGiKHTrsetCVAYzzLZBD96/rZdD9XYvryEyShqz3ph8j+x7HH";
+  var LOCAL_AI_MODEL = {
+    model: "https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC",
+    model_id: "gemma3-1b-it-q4f16_1-MLC",
+    model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm",
+    overrides: { context_window_size: 4096 },
+    integrity: { model_lib: "sha384-SiXN2Oy6qiK59NaOofdJvvOZ8M3k12l9GXkNkizNddPQyIUFMQ+dH46lFSFYTExZ" }
+  };
+  // Everything the library keeps sits in caches named "webllm/…", and so does
+  // the checked copy of the library itself. One rule keeps all of it through an
+  // update of the app — sw.js has the same one — and one rule removes it.
+  var LOCAL_AI_CACHE_PREFIX = "webllm/";
+  var LOCAL_AI_LIB_CACHE = "webllm/baby-tracker-lib";
+  // Asked for before the download starts, with a margin: running out of room
+  // half way through 700 MB is worse than not starting.
+  var LOCAL_AI_NEEDS_BYTES = 900 * 1024 * 1024;
+  // The model reads 4,096 tokens in all, its answer included. A summary this
+  // full of numbers runs at roughly three characters a token, which leaves
+  // room for a fortnight of a quiet week and a few days of a busy one.
+  var LOCAL_AI_MAX_CHARS = 9000;
+  var LOCAL_AI_MAX_TOKENS = 450;
+
   // The handover screen. Six hours covers a shift that has just started,
   // twelve covers the night somebody else had, and a full day is there for
   // the appointment where all of it gets asked about at once.
@@ -1973,6 +2004,20 @@
     aiCopy: document.getElementById("aiCopy"),
     aiShare: document.getElementById("aiShare"),
     aiShareHint: document.getElementById("aiShareHint"),
+    aiIntroCloud: document.getElementById("aiIntroCloud"),
+    aiIntroCloudMore: document.getElementById("aiIntroCloudMore"),
+    aiIntroLocal: document.getElementById("aiIntroLocal"),
+    aiCloudHeading: document.getElementById("aiCloudHeading"),
+    localAiBlock: document.getElementById("localAiBlock"),
+    localAiAsk: document.getElementById("localAiAsk"),
+    localAiStop: document.getElementById("localAiStop"),
+    localAiProgress: document.getElementById("localAiProgress"),
+    localAiAnswer: document.getElementById("localAiAnswer"),
+    localAiNote: document.getElementById("localAiNote"),
+    localAiOn: document.getElementById("localAiOn"),
+    localAiStatus: document.getElementById("localAiStatus"),
+    localAiDownload: document.getElementById("localAiDownload"),
+    localAiRemove: document.getElementById("localAiRemove"),
     aiEnabled: document.getElementById("aiEnabled"),
     aiUseName: document.getElementById("aiUseName"),
     aiUseJournal: document.getElementById("aiUseJournal"),
@@ -13057,6 +13102,12 @@
     if (guardEmpty()) return;
     renderAiChips();
     renderAiPreview();
+    if (!localAi.busy) {
+      el.localAiAnswer.hidden = true;
+      el.localAiNote.hidden = true;
+      el.localAiProgress.hidden = true;
+    }
+    renderLocalAi();
     showScreen("ai");
   }
 
@@ -13117,6 +13168,442 @@
     });
   });
 
+  // ---------- AI on this phone ----------
+
+  // Whether it is switched on, and whether a download ever finished. Per
+  // device and never exported or synced, like the rest of the AI settings: a
+  // 700 MB download is this phone's business alone.
+  function loadLocalAi() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(LOCAL_AI_KEY) || "null");
+      return { on: !!parsed && parsed.on === true, ready: !!parsed && parsed.ready === true };
+    } catch (e) {
+      return { on: false, ready: false };
+    }
+  }
+
+  function saveLocalAi(prefs) {
+    try {
+      localStorage.setItem(LOCAL_AI_KEY, JSON.stringify({ on: !!prefs.on, ready: !!prefs.ready }));
+    } catch (e) {
+      showError("Couldn't save that setting");
+    }
+  }
+
+  function localAiCache(name) {
+    return String(name).indexOf(LOCAL_AI_CACHE_PREFIX) === 0;
+  }
+
+  // One engine at a time, and only while the AI screen is open: it holds
+  // 700 MB of the phone's memory, and a phone short of memory closes the page
+  // in the background — the white noise with it.
+  var localAi = { lib: null, engine: null, loading: null, busy: false, stopped: false,
+    support: null, phase: "", statusToken: 0, wake: null };
+
+  // The checks put a stand-in here before the app loads, in place of the
+  // library and the graphics chip neither of which a test browser has. Nothing
+  // on the page or in the log can set it.
+  function localAiStandIn() {
+    return window.__localAiStandIn || null;
+  }
+
+  function localAiSupport() {
+    if (localAi.support) return localAi.support;
+    var gpu = navigator.gpu;
+    if (!gpu || typeof gpu.requestAdapter !== "function") {
+      localAi.support = Promise.resolve({ ok: false, why: "This browser has no WebGPU, which it needs. " +
+        "On an iPhone that means iOS 26 or later, with Lockdown Mode off." });
+      return localAi.support;
+    }
+    localAi.support = Promise.resolve().then(function () {
+      return gpu.requestAdapter();
+    }).then(function (adapter) {
+      if (!adapter) {
+        return { ok: false, why: "This phone's graphics chip isn't open to web pages here, so it can't run." };
+      }
+      if (!adapter.features || !adapter.features.has("shader-f16")) {
+        return { ok: false, why: "This phone's graphics chip lacks a feature the model needs, so it can't run." };
+      }
+      return { ok: true, why: "" };
+    }, function () {
+      return { ok: false, why: "This phone wouldn't say whether it can run it." };
+    });
+    return localAi.support;
+  }
+
+  // Finished once, and still there: the browser may have cleared its storage
+  // since, and a button that says "answer" must not quietly start a 700 MB
+  // download on a phone's data plan.
+  function localAiDownloaded() {
+    if (!loadLocalAi().ready) return Promise.resolve(false);
+    if (localAiStandIn()) return Promise.resolve(true);
+    if (!window.caches) return Promise.resolve(false);
+    return caches.has(LOCAL_AI_CACHE_PREFIX + "model").then(function (has) {
+      if (!has) return false;
+      return caches.open(LOCAL_AI_CACHE_PREFIX + "model").then(function (cache) {
+        return cache.keys();
+      }).then(function (keys) {
+        return keys.some(function (req) { return req.url.indexOf(LOCAL_AI_MODEL.model_id) >= 0; });
+      });
+    }).catch(function () { return false; });
+  }
+
+  function localAiFingerprint(buffer, sri) {
+    return crypto.subtle.digest("SHA-384", buffer).then(function (hash) {
+      var bytes = new Uint8Array(hash);
+      var bin = "";
+      for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return "sha384-" + btoa(bin) === sri;
+    });
+  }
+
+  function localAiError(kind) {
+    var err = new Error(kind);
+    err.localAi = kind;
+    return err;
+  }
+
+  // Kept after the first fetch so the phone needs no signal afterwards, and
+  // checked every time it is read back, not only the first: a cache is
+  // storage like any other.
+  function localAiLib() {
+    if (localAi.lib) return Promise.resolve(localAi.lib);
+    if (localAiStandIn()) {
+      localAi.lib = localAiStandIn();
+      return Promise.resolve(localAi.lib);
+    }
+    var store = null;
+    return caches.open(LOCAL_AI_LIB_CACHE).then(function (cache) {
+      store = cache;
+      return cache.match(LOCAL_AI_LIB_URL);
+    }).then(function (kept) {
+      if (kept) return kept.arrayBuffer().then(function (buf) { return { buf: buf, fresh: false }; });
+      return fetch(LOCAL_AI_LIB_URL, { mode: "cors", credentials: "omit" }).then(function (res) {
+        if (!res.ok) throw new TypeError("download");
+        return res.arrayBuffer();
+      }).then(function (buf) { return { buf: buf, fresh: true }; });
+    }).then(function (got) {
+      return localAiFingerprint(got.buf, LOCAL_AI_LIB_SRI).then(function (same) {
+        if (!same) {
+          store.delete(LOCAL_AI_LIB_URL);
+          throw localAiError("fingerprint");
+        }
+        if (got.fresh) {
+          store.put(LOCAL_AI_LIB_URL, new Response(got.buf,
+            { headers: { "Content-Type": "text/javascript" } })).catch(function () {});
+        }
+        var href = URL.createObjectURL(new Blob([got.buf], { type: "text/javascript" }));
+        return import(href).then(function (lib) {
+          URL.revokeObjectURL(href);
+          localAi.lib = lib;
+          return lib;
+        }, function (err) {
+          URL.revokeObjectURL(href);
+          throw err;
+        });
+      });
+    });
+  }
+
+  // Only asked before a download: the room it needs is already taken once
+  // the model is here.
+  function localAiRoom() {
+    return localAiDownloaded().then(function (have) {
+      if (have || !navigator.storage || !navigator.storage.estimate) return;
+      return navigator.storage.estimate().then(function (est) {
+        if (est && est.quota && est.quota - (est.usage || 0) < LOCAL_AI_NEEDS_BYTES) {
+          throw localAiError("room");
+        }
+      }, function () {});
+    });
+  }
+
+  // A download of several minutes stops dead when the screen locks itself, so
+  // the screen is kept on while one runs, where the phone allows it.
+  function localAiHoldScreen(hold) {
+    if (!hold) {
+      if (localAi.wake) localAi.wake.release().catch(function () {});
+      localAi.wake = null;
+      return;
+    }
+    if (localAi.wake || !navigator.wakeLock || !navigator.wakeLock.request) return;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      if (localAi.loading) localAi.wake = lock;
+      else lock.release().catch(function () {});
+    }, function () {});
+  }
+
+  function renderLocalAiProgress(fraction) {
+    var pct = Math.max(0, Math.min(100, Math.round((fraction || 0) * 100)));
+    var line = localAi.phase === "download"
+      ? "Downloading the model — " + pct + "%. Keep this screen open; what has arrived is kept if it stops."
+      : "Waking it up — " + pct + "%";
+    el.localAiStatus.textContent = line;
+    el.localAiProgress.textContent = line;
+    el.localAiProgress.hidden = false;
+  }
+
+  function localAiEngine() {
+    if (localAi.engine) return Promise.resolve(localAi.engine);
+    if (localAi.loading) return localAi.loading;
+    localAi.loading = localAiDownloaded().then(function (have) {
+      localAi.phase = have ? "wake" : "download";
+      renderLocalAiProgress(0);
+      if (!have) {
+        localAiHoldScreen(true);
+        // Asked, not assumed: without it the browser may clear 700 MB of
+        // storage the first time the phone runs short.
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+      }
+      return localAiLib();
+    }).then(function (lib) {
+      return lib.CreateMLCEngine(LOCAL_AI_MODEL.model_id, {
+        appConfig: { model_list: [LOCAL_AI_MODEL] },
+        initProgressCallback: function (report) { renderLocalAiProgress(report && report.progress); }
+      });
+    }).then(function (engine) {
+      localAi.engine = engine;
+      localAi.loading = null;
+      localAiHoldScreen(false);
+      var prefs = loadLocalAi();
+      if (!prefs.ready) {
+        prefs.ready = true;
+        saveLocalAi(prefs);
+      }
+      return engine;
+    }, function (err) {
+      localAi.loading = null;
+      localAiHoldScreen(false);
+      throw err;
+    });
+    return localAi.loading;
+  }
+
+  function localAiRelease() {
+    var engine = localAi.engine;
+    if (!engine) return;
+    if (localAi.busy) {
+      localAi.stopped = true;
+      try { engine.interruptGenerate(); } catch (e) { /* already finished */ }
+    }
+    localAi.engine = null;
+    Promise.resolve().then(function () { return engine.unload(); }).catch(function () {});
+  }
+
+  function localAiFailure(err) {
+    var kind = err && err.localAi;
+    var text = String(err && (err.message || err) || "");
+    if (kind === "unsupported") return err.why;
+    if (kind === "fingerprint" || /Integrity verification failed/.test(text)) {
+      return "What was downloaded didn't match its fingerprint, so none of it was run. Try again later.";
+    }
+    if (kind === "room" || (err && err.name === "QuotaExceededError")) {
+      return "There isn't enough free storage on this phone for it — it needs about 0.9 GB.";
+    }
+    if (kind === "long" || /exceed context window/i.test(text)) {
+      return "That is more than the phone's AI can read at once. Pick a shorter stretch above.";
+    }
+    if (err instanceof TypeError || /fetch|network|load failed/i.test(text)) {
+      return "The download stopped — check the connection and try again. What already arrived is kept.";
+    }
+    return "It couldn't answer this time" + (text ? " (" + text.slice(0, 120) + ")" : "") + ".";
+  }
+
+  // Small models write Markdown whether asked to or not, and a box of
+  // asterisks is harder to read at 3am than the plain sentences underneath.
+  function localAiPlain(text) {
+    return String(text)
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // The same summary and framing a bigger AI is handed, so the two answers
+  // are to the same question; the last line keeps a small model short and on
+  // the numbers it was given.
+  function localAiPrompt() {
+    return aiCurrentPrompt() + "\n\nAnswer in a few short sentences, using only what the summary says.";
+  }
+
+  function localAiDrain(stream) {
+    var it = stream[Symbol.asyncIterator]();
+    var text = "";
+    function step() {
+      return it.next().then(function (got) {
+        if (got.done) return text;
+        var choice = got.value && got.value.choices && got.value.choices[0];
+        var piece = choice && choice.delta && choice.delta.content;
+        if (piece) {
+          text += piece;
+          el.localAiAnswer.textContent = localAiPlain(text);
+          el.localAiAnswer.hidden = false;
+        }
+        return step();
+      });
+    }
+    return step();
+  }
+
+  function renderLocalAiBusy() {
+    el.localAiAsk.disabled = localAi.busy;
+    el.localAiStop.hidden = !localAi.busy || !localAi.engine;
+  }
+
+  function localAiAsk() {
+    if (localAi.busy) return;
+    var text = localAiPrompt();
+    localAi.busy = true;
+    localAi.stopped = false;
+    el.localAiAnswer.hidden = true;
+    el.localAiAnswer.textContent = "";
+    el.localAiNote.hidden = true;
+    renderLocalAiBusy();
+    localAiSupport().then(function (support) {
+      if (!support.ok) {
+        var err = localAiError("unsupported");
+        err.why = support.why;
+        throw err;
+      }
+      if (text.length > LOCAL_AI_MAX_CHARS) throw localAiError("long");
+      return localAiRoom();
+    }).then(localAiEngine).then(function (engine) {
+      // Left the screen while it was loading: nothing to answer for.
+      if (currentScreen !== "ai") {
+        localAiRelease();
+        return null;
+      }
+      el.localAiProgress.textContent = "Thinking…";
+      renderLocalAiBusy();
+      return engine.chat.completions.create({
+        messages: [{ role: "user", content: text }],
+        stream: true,
+        max_tokens: LOCAL_AI_MAX_TOKENS,
+        temperature: 0.4
+      }).then(localAiDrain).then(function (answer) {
+        el.localAiNote.hidden = false;
+        if (localAi.stopped) {
+          el.localAiProgress.textContent = "Stopped.";
+        } else if (!localAiPlain(answer)) {
+          el.localAiProgress.textContent = "It had nothing to say. Try asking another way, or ask a bigger AI below.";
+        } else {
+          el.localAiProgress.hidden = true;
+        }
+      });
+    }).catch(function (err) {
+      el.localAiProgress.textContent = localAiFailure(err) +
+        " A bigger AI below can still answer — that part leaves the phone.";
+      el.localAiProgress.hidden = false;
+    }).then(function () {
+      localAi.busy = false;
+      renderLocalAiBusy();
+      renderLocalAiStatus();
+    });
+  }
+
+  function renderLocalAiStatus() {
+    var token = ++localAi.statusToken;
+    var prefs = loadLocalAi();
+    // Not even the graphics chip is asked about until somebody wants it.
+    if (!prefs.on && !prefs.ready) {
+      el.localAiDownload.hidden = true;
+      el.localAiRemove.hidden = true;
+      el.localAiStatus.textContent = "Off. Nothing is downloaded until you switch it on.";
+      return;
+    }
+    Promise.all([localAiSupport(), localAiDownloaded()]).then(function (got) {
+      // A download or an answer under way owns the status line.
+      if (token !== localAi.statusToken || localAi.loading) return;
+      var support = got[0];
+      var have = got[1];
+      prefs = loadLocalAi();
+      el.localAiDownload.hidden = !support.ok || have || !prefs.on;
+      el.localAiRemove.hidden = !have;
+      el.localAiStatus.textContent = !support.ok ? support.why
+        : have ? "Downloaded and ready — it works with no signal at all."
+        : "Not downloaded yet. It downloads the first time you ask, or now with the button below.";
+      el.localAiAsk.hidden = !support.ok;
+      el.localAiAsk.textContent = have ? "📱 Answer on this phone"
+        : "📱 Download it (about 700 MB) and answer on this phone";
+      if (!support.ok && !localAi.busy) {
+        el.localAiProgress.textContent = support.why + " A bigger AI below can still answer — that part leaves the phone.";
+        el.localAiProgress.hidden = false;
+      }
+    });
+  }
+
+  function renderLocalAi() {
+    var on = loadLocalAi().on;
+    el.localAiOn.checked = on;
+    el.localAiBlock.hidden = !on;
+    el.aiCloudHeading.hidden = !on;
+    el.aiIntroLocal.hidden = !on;
+    // The two openers are about the bigger AIs; with the phone answering
+    // first they would be the first thing read about the wrong one.
+    el.aiIntroCloud.hidden = on;
+    el.aiIntroCloudMore.hidden = on;
+    renderLocalAiStatus();
+  }
+
+  el.localAiOn.addEventListener("change", function () {
+    var prefs = loadLocalAi();
+    prefs.on = el.localAiOn.checked;
+    saveLocalAi(prefs);
+    // It answers behind the Ask an AI button, so switching it on with the
+    // button hidden would switch on nothing anybody could reach.
+    if (prefs.on && !loadAiPrefs().on) {
+      var ai = loadAiPrefs();
+      ai.on = true;
+      saveAiPrefs(ai);
+      renderAiPrefs();
+    }
+    renderLocalAi();
+  });
+
+  el.localAiDownload.addEventListener("click", function () {
+    el.localAiDownload.hidden = true;
+    localAiRoom().then(localAiEngine).then(function () {
+      // Fetched to have it ready, not to use it now.
+      if (currentScreen !== "ai") localAiRelease();
+      showToast("Downloaded — it now answers with no signal");
+    }).catch(function (err) {
+      showToast(localAiFailure(err));
+    }).then(renderLocalAiStatus);
+  });
+
+  el.localAiRemove.addEventListener("click", function () {
+    if (localAi.loading) return;
+    localAiRelease();
+    localAi.lib = null;
+    var prefs = loadLocalAi();
+    prefs.ready = false;
+    saveLocalAi(prefs);
+    var clearing = window.caches ? caches.keys().then(function (names) {
+      return Promise.all(names.filter(localAiCache).map(function (name) { return caches.delete(name); }));
+    }) : Promise.resolve();
+    clearing.catch(function () {}).then(function () {
+      showToast("Removed — the space is free again");
+      renderLocalAiStatus();
+    });
+  });
+
+  el.localAiAsk.addEventListener("click", localAiAsk);
+  el.localAiStop.addEventListener("click", function () {
+    if (!localAi.busy || !localAi.engine) return;
+    localAi.stopped = true;
+    try { localAi.engine.interruptGenerate(); } catch (e) { /* already finished */ }
+  });
+
+  el.aiBack.addEventListener("click", localAiRelease);
+  // A locked screen is the moment the phone starts looking for memory to take
+  // back, and an engine sitting in it makes this page the obvious choice.
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") localAiRelease();
+  });
+
+  renderLocalAi();
+
   // ---------- version ----------
 
   function renderVersion() {
@@ -13154,8 +13641,12 @@
     if (navigator.onLine === false) return go();
     var jobs = [];
     if (window.caches && caches.keys) {
+      // All but the AI on this phone: it is not part of the app, nothing an
+      // update gets wrong lives in it, and it is 700 MB to fetch again.
       jobs.push(caches.keys().then(function (names) {
-        return Promise.all(names.map(function (name) { return caches.delete(name); }));
+        return Promise.all(names.map(function (name) {
+          return localAiCache(name) ? null : caches.delete(name);
+        }));
       }));
     }
     if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
