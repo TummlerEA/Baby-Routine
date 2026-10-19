@@ -1681,42 +1681,85 @@ body {
   font-weight: 600;
 }
 
-/* The answer that never left the phone, kept apart from everything below it
-   that does. Green, like the nappy button, because it is the safe one. */
-.local-ai {
+/* ---------- helper ---------- */
+
+.helper-log {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
-/* Filled, because it is the one that sends: the question is asked here. */
-.local-ai-ask {
-  background: var(--accent-diaper);
-  border-color: var(--accent-diaper);
-  color: var(--bg);
-  font-weight: 700;
-}
-
-.local-ai-ask:disabled { opacity: 0.55; }
-
-.local-ai-answer {
-  background: var(--bg-elevated-2);
-  border: 1px solid var(--accent-diaper);
-  border-radius: 10px;
-  color: var(--text);
-  font-size: 16px;
-  line-height: 1.5;
+.helper-msg {
+  border-radius: 14px;
+  line-height: 1.45;
+  max-width: 92%;
   overflow-wrap: anywhere;
-  padding: 12px;
-  white-space: pre-wrap;
+  padding: 10px 14px;
 }
 
-.ai-subheading {
-  color: var(--text-dim);
-  font-size: 15px;
+.helper-bot {
+  align-self: flex-start;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+}
+
+.helper-you {
+  align-self: flex-end;
+  background: var(--accent-sleep);
+  color: var(--bg);
   font-weight: 600;
-  margin: 12px 0 0;
+}
+
+.helper-title { font-weight: 700; margin-top: 2px; }
+.helper-line { font-size: 15px; margin-top: 4px; }
+.helper-dim { color: var(--text-dim); }
+.helper-urgent { color: var(--overdue); }
+.helper-row + .helper-row { margin-top: 10px; }
+.helper-row-quiet .helper-title { color: var(--text-dim); font-size: 13px; font-weight: 600; }
+.helper-more { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 6px; }
+
+.helper-action {
+  background: none;
+  border: 1px solid var(--accent-sleep);
+  border-radius: 999px;
+  color: var(--accent-sleep);
+  cursor: pointer;
+  display: inline-block;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 8px 8px 0 0;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+.helper-action:active { opacity: 0.7; }
+
+.helper-form {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.helper-input { flex: 1; min-width: 0; }
+
+.helper-send {
+  background: var(--accent-sleep);
+  border: none;
+  border-radius: 10px;
+  color: var(--bg);
+  cursor: pointer;
+  font-size: 20px;
+  min-width: 56px;
+}
+
+/* Where the helper sent you, lit up for a moment. */
+.helper-spot {
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px var(--accent-awake);
+  transition: box-shadow 0.3s;
 }
 
 .settings-check {

@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "113";
+    var fallback = "114";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -568,57 +568,6 @@
     "Why so many night wakings?",
     "What changed this week?"
   ];
-  // A small model that runs on the phone itself, for questions that should not
-  // leave it. WebLLM does the running. It is fetched the first time it is
-  // needed and checked against the fingerprint below before any of it runs:
-  // this page holds the sync token, so code from elsewhere runs only if it is
-  // byte for byte the release that was read. The engine it loads, a
-  // WebAssembly file, is pinned the same way. The model's weights are data
-  // rather than code, and are left to the library's own cache.
-  var LOCAL_AI_KEY = "baby-tracker-local-ai";
-  var LOCAL_AI_LIB_URL = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/lib/index.js";
-  var LOCAL_AI_LIB_SRI = "sha384-rfElDdXnNkSgbLTTGiKHTrsetCVAYzzLZBD96/rZdD9XYvryEyShqz3ph8j+x7HH";
-  // Two models, one at a time. Gemma is the better writer; on a phone with
-  // 4 GB, an iPhone 13 mini, loading it into memory closed the page, so a
-  // lighter one is offered beside it. Both read 2,048 tokens rather than the
-  // 4,096 they could: the window is memory set aside up front, and a summary
-  // with its question fits in half of it.
-  //
-  // Gemma 3 comes configured with a 512-token sliding window, and the library
-  // refuses a full window alongside one ("only one of them can be
-  // positive"). A sliding window would forget the start of the summary by the
-  // time the question arrives, so it is the one switched off.
-  var LOCAL_AI_WINDOW = { context_window_size: 2048, sliding_window_size: -1 };
-  var LOCAL_AI_MODELS = [
-    { id: "gemma", label: "Gemma 3, 1B — Google", size: "about 700 MB", bytes: 900 * 1024 * 1024,
-      record: {
-        model: "https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC",
-        model_id: "gemma3-1b-it-q4f16_1-MLC",
-        model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm",
-        overrides: LOCAL_AI_WINDOW,
-        integrity: { model_lib: "sha384-SiXN2Oy6qiK59NaOofdJvvOZ8M3k12l9GXkNkizNddPQyIUFMQ+dH46lFSFYTExZ" }
-      } },
-    { id: "smol", label: "SmolLM2, 360M — lighter", size: "about 250 MB", bytes: 400 * 1024 * 1024,
-      record: {
-        model: "https://huggingface.co/mlc-ai/SmolLM2-360M-Instruct-q4f16_1-MLC",
-        model_id: "SmolLM2-360M-Instruct-q4f16_1-MLC",
-        model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm",
-        overrides: LOCAL_AI_WINDOW,
-        integrity: { model_lib: "sha384-orS1wyCqzySQio0yY+PZDZZAZclbgZNdjmO4FRo/7SF1jyUPqMHVwkvUo28pPsCB" }
-      } }
-  ];
-  var LOCAL_AI_DEFAULT_MODEL = "gemma";
-  // Everything the library keeps sits in caches named "webllm/…", and so does
-  // the checked copy of the library itself. One rule keeps all of it through an
-  // update of the app — sw.js has the same one — and one rule removes it.
-  var LOCAL_AI_CACHE_PREFIX = "webllm/";
-  var LOCAL_AI_LIB_CACHE = "webllm/baby-tracker-lib";
-  // The model reads 2,048 tokens in all, its answer included. A summary this
-  // full of numbers runs at roughly three characters a token, which leaves
-  // room for a week of a quiet stretch and a few days of a busy one.
-  var LOCAL_AI_MAX_CHARS = 5000;
-  var LOCAL_AI_MAX_TOKENS = 350;
-
   // The handover screen. Six hours covers a shift that has just started,
   // twelve covers the night somebody else had, and a full day is there for
   // the appointment where all of it gets asked about at once.
@@ -2012,6 +1961,14 @@
     rotaWeekRange: document.getElementById("rotaWeekRange"),
     rotaWeekTotal: document.getElementById("rotaWeekTotal"),
     rotaWeekDays: document.getElementById("rotaWeekDays"),
+    screenHelper: document.getElementById("screenHelper"),
+    helperOpen: document.getElementById("helperOpen"),
+    helperMenuOpen: document.getElementById("helperMenuOpen"),
+    helperBack: document.getElementById("helperBack"),
+    helperLog: document.getElementById("helperLog"),
+    helperChips: document.getElementById("helperChips"),
+    helperForm: document.getElementById("helperForm"),
+    helperInput: document.getElementById("helperInput"),
     aiRow: document.getElementById("aiRow"),
     aiOpen: document.getElementById("aiOpen"),
     aiBack: document.getElementById("aiBack"),
@@ -2024,21 +1981,6 @@
     aiCopy: document.getElementById("aiCopy"),
     aiShare: document.getElementById("aiShare"),
     aiShareHint: document.getElementById("aiShareHint"),
-    aiIntroCloud: document.getElementById("aiIntroCloud"),
-    aiIntroCloudMore: document.getElementById("aiIntroCloudMore"),
-    aiIntroLocal: document.getElementById("aiIntroLocal"),
-    aiCloudHeading: document.getElementById("aiCloudHeading"),
-    localAiBlock: document.getElementById("localAiBlock"),
-    localAiAsk: document.getElementById("localAiAsk"),
-    localAiStop: document.getElementById("localAiStop"),
-    localAiProgress: document.getElementById("localAiProgress"),
-    localAiAnswer: document.getElementById("localAiAnswer"),
-    localAiNote: document.getElementById("localAiNote"),
-    localAiOn: document.getElementById("localAiOn"),
-    localAiStatus: document.getElementById("localAiStatus"),
-    localAiModel: document.getElementById("localAiModel"),
-    localAiDownload: document.getElementById("localAiDownload"),
-    localAiRemove: document.getElementById("localAiRemove"),
     aiEnabled: document.getElementById("aiEnabled"),
     aiUseName: document.getElementById("aiUseName"),
     aiUseJournal: document.getElementById("aiUseJournal"),
@@ -6298,12 +6240,12 @@
     el.screenRota.hidden = name !== "rota";
     el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
+    el.screenHelper.hidden = name !== "helper";
     renderNoiseFab();
     window.scrollTo(0, 0);
   }
 
   function showSettings(focusName) {
-    renderLocalAi();
     showScreen("settings");
     if (focusName) el.babyName.focus();
   }
@@ -8858,11 +8800,12 @@
     return row;
   }
 
-  function handoverDueRow(analysis) {
+  // `only` narrows it to some of the kinds, for the helper answering about one.
+  function handoverDueRow(analysis, only) {
     var T = ho();
     var now = Date.now();
     var row = { icon: "⏭", title: T.dueTitle, details: [] };
-    KINDS.forEach(function (kind) {
+    (only || KINDS).forEach(function (kind) {
       if (kind === "sleep" && analysis.active) {
         row.details.push(T.dueAsleep(KIND_META.sleep.icon, T.kind("sleep")));
         return;
@@ -13124,12 +13067,6 @@
     if (guardEmpty()) return;
     renderAiChips();
     renderAiPreview();
-    if (!localAi.busy) {
-      el.localAiAnswer.hidden = true;
-      el.localAiNote.hidden = true;
-      el.localAiProgress.hidden = true;
-    }
-    renderLocalAi();
     showScreen("ai");
   }
 
@@ -13190,591 +13127,561 @@
     });
   });
 
-  // ---------- AI on this phone ----------
+  // ---------- helper ----------
 
-  // Whether it is switched on, and whether a download ever finished. Per
-  // device and never exported or synced, like the rest of the AI settings: a
-  // 700 MB download is this phone's business alone.
-  // `error` is what went wrong the last time, kept until something works: a
-  // toast is gone before anybody can read it out to whoever is helping.
-  // `pending` is set while the model loads or answers and cleared after. Found
-  // still set when the app starts, it means the phone closed the page part of
-  // the way through — which is how running out of memory looks from inside.
-  function loadLocalAi() {
-    var prefs = { on: false, ready: false, error: "", model: LOCAL_AI_DEFAULT_MODEL, pending: false };
-    try {
-      var parsed = JSON.parse(localStorage.getItem(LOCAL_AI_KEY) || "null");
-      if (!parsed || typeof parsed !== "object") return prefs;
-      prefs.on = parsed.on === true;
-      prefs.ready = parsed.ready === true;
-      prefs.pending = parsed.pending === true;
-      if (typeof parsed.error === "string") prefs.error = parsed.error.slice(0, 400);
-      if (localAiModelById(parsed.model)) prefs.model = parsed.model;
-    } catch (e) { /* the defaults stand */ }
-    return prefs;
+  // Questions about the app and the log, answered on the phone with nothing
+  // generated: the answers about the app are written out below, and the ones
+  // about the log are the handover screen's own sentences. It replaced a small
+  // AI model that ran in the browser (versions 110 to 113), which on a 4 GB
+  // iPhone either closed the page or made up numbers. A wrong answer here can
+  // only be the wrong entry picked, and the entry it picked is named in it.
+  //
+  // `words` are matched against the question by their first letters, which
+  // copes with Russian endings (кормление, кормления, кормил) and English
+  // ones (feed, feeds, feeding) without a dictionary. `go` is where the Open
+  // button takes you: a button to press, or something on the main screen or
+  // in Settings to scroll to and light up.
+  var HELPER_TOPICS = [
+    { id: "feed", data: "feed",
+      words: "feed feeds fed ate eat eaten bottle breast кормил кормлен корм ел ела ели поел поела кушал кушала грудь бутылочк смесь" },
+    { id: "nappy", data: "nappy",
+      words: "nappy nappies diaper diapers wee poo poop wet dirty подгузник памперс какал какала писал писала пописал покакал стул" },
+    { id: "sleep", data: "sleep",
+      words: "sleep slept asleep nap naps awake woke спал спала сон спит уснул уснула заснул заснула проснулся проснулась бодрствует дрем" },
+    { id: "next", data: "next",
+      words: "next due upcoming soon следующ дальше скоро пора" },
+    { id: "today", data: "today",
+      words: "summary overview going status day итог сводк *дела день" },
+    { id: "age", data: "age",
+      words: "*old *age weeks months *возраст недель месяцев лет" },
+    { id: "weight", data: "weight",
+      words: "weight weigh weighs grams kilos вес весит взвешив грамм килограмм" },
+
+    { id: "backdate", title: { en: "Logging something you forgot", ru: "Записать забытое или поменять время" }, go: { main: "manualToggle" },
+      words: "*forgot *earlier later time *backdate past *missed *забыл *забыла *раньше позже время прошл *пропустил вчера",
+      en: "Right after a tap, the card has a time wheel — wind it back. For anything older, or on another day, use Add or edit an entry on the main screen and set the date and time it really happened.",
+      ru: "Сразу после нажатия в карточке есть колесо времени — прокрутите его назад. Для более старых записей или другого дня используйте «Add or edit an entry» на главном экране и укажите настоящие дату и время." },
+    { id: "log-feed", title: { en: "Logging a feed", ru: "Записать кормление" }, go: { main: "btnFeed" },
+      words: "feed feeding log record bottle breast side кормлен корм записать отметить грудь бутылочк сторон",
+      en: "Tap Feed on the main screen the moment it starts — that one tap is the whole job. If the baby is set as breastfed, the button splits into L | R: tap the side. The card that opens lets you change the side, the length, or how many millilitres from a bottle.",
+      ru: "Нажмите «Feed» на главном экране, когда кормление началось, — одного нажатия достаточно. Если в настройках указано грудное вскармливание, кнопка делится на L | R: нажмите нужную сторону. В открывшейся карточке можно поменять сторону, длительность или сколько миллилитров из бутылочки." },
+    { id: "log-nappy", title: { en: "Logging a nappy", ru: "Записать подгузник" }, go: { main: "btnDiaper" },
+      words: "nappy diaper change log wee poo подгузник памперс смена сменить записать отметить",
+      en: "Tap Nappy on the main screen. The card that opens asks what was in it — wee, poo, both or dry. Answering is optional.",
+      ru: "Нажмите «Nappy» на главном экране. В карточке можно отметить, что было в подгузнике: пописал, покакал, оба или сухой. Это необязательно." },
+    { id: "log-sleep", title: { en: "Logging sleep", ru: "Записать сон" }, go: { main: "btnSleep" },
+      words: "sleep nap asleep wake woke log сон уснул заснул проснулся записать отметить",
+      en: "Sleep is a toggle: tap it when the baby goes down and it turns into Wake up; tap it again when they wake, and the app works out how long they slept.",
+      ru: "«Sleep» работает как переключатель: нажмите, когда малыш уснул, — кнопка станет «Wake up». Нажмите ещё раз, когда проснётся, и приложение посчитает, сколько он спал." },
+    { id: "combo", title: { en: "Woke, nappy and feed in one tap", ru: "Проснулся, подгузник и кормление одним нажатием" }, go: { main: "btnWakeChangeFeed" },
+      words: "combo three once together sequence woke nappy feed три сразу одной вместе последовательн",
+      en: "Below the three buttons, Woke → nappy change → feeding logs all three at once: a wake-up ten minutes ago, a nappy five minutes ago and a feed now. Undo removes all three. It never turns on any sound.",
+      ru: "Под тремя кнопками есть «Woke → nappy change → feeding»: одно нажатие записывает пробуждение 10 минут назад, подгузник 5 минут назад и кормление сейчас. «Undo» отменяет все три. Звук при этом не включается." },
+    { id: "edit", title: { en: "Fixing or deleting an entry", ru: "Исправить или удалить запись" }, go: { main: "logToggle" },
+      words: "*edit *delete *remove *mistake undo wrong *fix change correct *удалить *удалит *исправить *ошибк *ошиблась *ошибся отменить отмена поменять изменить неправильн",
+      en: "Open Show history on the main screen and tap the entry: you can change its type, time or details, or delete it. A delete gives you seven seconds to undo.",
+      ru: "Откройте «Show history» на главном экране и нажмите на запись: можно поменять тип, время, детали или удалить. После удаления есть 7 секунд, чтобы отменить." },
+    { id: "history", title: { en: "History", ru: "История записей" }, go: { main: "logToggle" },
+      words: "history log list past entries yesterday история журнал список записи вчера прошлые",
+      en: "Show history on the main screen lists every entry by day — today and yesterday open, older days a tap away. Each day's heading totals its feeds, nappies and sleep.",
+      ru: "«Show history» на главном экране показывает все записи по дням: сегодня и вчера раскрыты, более старые — по нажатию. В заголовке дня — итоги кормлений, подгузников и сна." },
+    { id: "measure", title: { en: "Weight, length, temperature", ru: "Вес, рост, температура" }, go: { main: "measureToggle" },
+      words: "weight length height head *temperature measure measurement centile вес рост *температур голов окружност измерен замер",
+      en: "Measurements, on the main screen, holds weight, length, head circumference and temperature, plus anything else with a number. Weight shows in kg and in pounds and ounces, with the change since last time.",
+      ru: "Раздел «Measurements» на главном экране: вес, рост, окружность головы, температура и любые другие измерения. Вес показывается в кг и в фунтах, с изменением с прошлого раза." },
+    { id: "note", title: { en: "Notes and photos", ru: "Заметки и фото" }, go: { main: "measureToggle" },
+      words: "note notes photo picture rash album заметк фото фотограф сыпь альбом",
+      en: "Measurements → Add note is for anything that isn't a number, such as a rash. A photo never lives in the app; paste a link to a shared album instead. The album's link can be saved in Settings.",
+      ru: "Measurements → «Add note» — для всего, что не число, например сыпь. Фото в приложении не хранятся: вставьте ссылку на общий альбом. Ссылку на альбом можно сохранить в настройках." },
+    { id: "noise", title: { en: "White noise", ru: "Белый шум" }, go: { click: "noiseOpen" },
+      words: "white noise sound shush rain play music белый шум звук шшш дождь музык",
+      en: "White noise is behind ⋯ in the top bar. Pick a sound and press play; it keeps going with the screen off. Nothing in the app ever starts it by itself.",
+      ru: "Белый шум — в меню ⋯ вверху. Выберите звук и нажмите play; он играет и с выключенным экраном. Сам по себе он никогда не включается." },
+    { id: "remind", title: { en: "The wake-window reminder", ru: "Напоминание о времени бодрствования" }, go: { click: "routineOpen" },
+      words: "remind reminder alarm nudge standby notification wake window напомин будильник уведомлен standby",
+      en: "The reminder lives on ⏰ Daily routine. It needs Standby — silent playback that keeps the app awake — which only starts when you turn it on there.",
+      ru: "Напоминание находится в ⏰ Daily routine. Ему нужен Standby — беззвучное воспроизведение, которое не даёт приложению уснуть. Включается только вручную, там же." },
+    { id: "routine", title: { en: "Daily routine", ru: "Режим дня" }, go: { click: "routineOpen" },
+      words: "*routine schedule timetable day naps *режим *распорядок расписан дня",
+      en: "⏰ in the top bar is the day by the clock: when each sleep starts and ends, and where the feeds fall. Switched on, the main screen says what comes next and how long the baby has been awake against it.",
+      ru: "⏰ вверху — режим дня по часам: когда начинается и заканчивается каждый сон и где кормления. Если включить, на главном экране будет видно, что дальше и сколько малыш уже бодрствует." },
+    { id: "intervals", title: { en: "How often feeds are due", ru: "Как часто кормить по плану" }, go: { settings: "intervalFeed" },
+      words: "*interval *intervals hours gap planned *интервал каждые часа промежуток",
+      en: "Settings → Planned intervals sets how far apart feeds, nappies and sleeps are expected — three hours by default. What's next on the main screen counts from those.",
+      ru: "Settings → «Planned intervals» — через сколько ждать кормление, подгузник и сон (по умолчанию 3 часа). От них считается «What's next» на главном экране." },
+    { id: "night", title: { en: "When the night starts", ru: "Когда начинается ночь" }, go: { settings: "nightStart" },
+      words: "night evening morning starts ends ночь вечер утро начинается заканчивается",
+      en: "Settings, beside the planned intervals, sets where the night starts and ends. The Nights chart and the routine's day-or-night split both follow it.",
+      ru: "В настройках рядом с интервалами задаётся, когда начинается и заканчивается ночь. По ней считаются ночи в статистике и режим дня." },
+    { id: "stats", title: { en: "Statistics", ru: "Статистика" }, go: { click: "statsOpen" },
+      words: "*statistics *stats *chart *charts *graph average trend *статистик *график средн динамик",
+      en: "📊 in the top bar: feeds, nappies, sleep and time awake per day over 7, 14 or 30 days, the nights, the feed-to-wake splits, and charts of every measurement.",
+      ru: "📊 вверху: кормления, подгузники, сон и бодрствование по дням за 7, 14 или 30 дней, ночи, промежутки «кормление → пробуждение» и графики всех измерений." },
+    { id: "handover", title: { en: "Handing over to someone", ru: "Передать малыша другому" }, go: { click: "handoverOpen" },
+      words: "*handover hand over nanny grandma grandparent carer babysitter *передать передача няня бабушк дедушк",
+      en: "🤝 in the top bar says, in sentences, what whoever takes over will ask: the last feed, the nappies, the sleep, what's due next. It reads in English or Russian.",
+      ru: "🤝 вверху словами рассказывает то, что спросит тот, кто принимает малыша: последнее кормление, подгузники, сон, что дальше. Можно читать по-английски или по-русски." },
+    { id: "rota", title: { en: "Carer rota", ru: "График няни" }, go: { click: "rotaOpen" },
+      words: "*rota *shifts hours working week carer nanny *график *смены часы работает неделя няни няня",
+      en: "🤗 in the top bar is a week of shifts. Tap a day to step it: off, working, then clear. A working day gets its hours and a start time.",
+      ru: "🤗 вверху — неделя смен. Нажмите на день: выходной, рабочий, сброс. Для рабочего дня указываются часы и время начала." },
+    { id: "plan", title: { en: "Appointments", ru: "Визиты и прививки" }, go: { click: "planOpen" },
+      words: "appointment appointments gp midwife health visitor jab jabs vaccine vaccination doctor weigh визит приём прием врач педиатр прививк вакцин патронаж",
+      en: "📅 in the top bar is the diary of what's coming up — midwife, health visitor, GP, jabs. The main screen shows a quiet line when one falls today or tomorrow.",
+      ru: "📅 вверху — список предстоящего: акушерка, патронаж, врач, прививки. На главном экране появится строка, если что-то сегодня или завтра." },
+    { id: "shop", title: { en: "Shopping list", ru: "Список покупок" }, go: { click: "shopOpen" },
+      words: "shopping shop buy amazon list order покупк купить магазин список заказ",
+      en: "The shopping list is behind ⋯ in the top bar. Type a name or paste an Amazon link; mark it ordered, arrived, then tick it off.",
+      ru: "Список покупок — в меню ⋯ вверху. Впишите название или вставьте ссылку Amazon; отмечайте «заказано», «пришло», потом вычёркивайте." },
+    { id: "diary", title: { en: "Diary", ru: "Дневник" }, go: { click: "journalOpen" },
+      words: "diary journal mood feelings coping дневник настроение чувств",
+      en: "The diary is behind ⋯ in the top bar: how the day went and how you are both coping, plus notes for a specialist.",
+      ru: "Дневник — в меню ⋯ вверху: как прошёл день и как вы справляетесь, плюс заметки для специалиста." },
+    { id: "milk", title: { en: "Milk in the freezer", ru: "Запас молока" }, go: { click: "milkOpen" },
+      words: "freezer frozen milk stash expressed pumped bags морозилк заморож молоко запас сцеж пакет",
+      en: "Milk stash, behind ⋯, keeps count of bags and millilitres in the freezer: froze one, took one out, or counted what is really there.",
+      ru: "«Milk stash» в меню ⋯ считает пакеты и миллилитры в морозилке: заморозили, достали или пересчитали." },
+    { id: "leaps", title: { en: "Leaps", ru: "Скачки развития" }, go: { click: "leapOpen" },
+      words: "leap leaps wonder weeks fussy development скачок скачки кризис развити",
+      en: "Leaps, behind ⋯, shows the developmental leaps by age, worked out from the due date.",
+      ru: "«Leaps» в меню ⋯ показывает скачки развития по возрасту." },
+    { id: "share", title: { en: "Sharing with your partner", ru: "Поделиться с партнёром" }, go: { settings: "inviteCreate" },
+      words: "*share *partner husband wife link invite send parent *поделиться *партнер муж мужу мужем жена жене ссылк пригласить отправить второй родитель",
+      en: "Settings → Share with your partner. Invite your partner the first time; after that, make a link with recent entries — their app asks before merging. For automatic two-way sync, use Sync across phones.",
+      ru: "Settings → «Share with your partner». В первый раз — «Invite your partner», дальше — ссылка с последними записями, приложение партнёра спросит перед объединением. Для автоматической синхронизации — «Sync across phones»." },
+    { id: "sync", title: { en: "Keeping two phones in step", ru: "Синхронизация двух телефонов" }, go: { settings: "syncRepo" },
+      words: "sync synchronise synchronize github repository token two phones automatic синхрон github репозитор токен два телефона автоматически",
+      en: "Settings → Sync across phones keeps both phones in step through a private GitHub repository you own. Each phone needs the repository name and a fine-grained token limited to it.",
+      ru: "Settings → «Sync across phones» синхронизирует телефоны через ваш приватный репозиторий GitHub. На каждом телефоне нужны имя репозитория и токен, ограниченный только им." },
+    { id: "backup", title: { en: "Backup and export", ru: "Резервная копия и экспорт" }, go: { settings: "exportJson" },
+      words: "backup back up export import restore json csv file save new phone бэкап резерв копи экспорт импорт восстановить файл сохранить новый телефон",
+      en: "Settings → Export & backup → Download JSON, every so often. Restoring merges rather than replaces. Clearing browser data or changing phone loses everything not backed up.",
+      ru: "Settings → «Export & backup» → «Download JSON» — время от времени. Восстановление объединяет, а не заменяет. Если очистить данные браузера или сменить телефон без копии, всё пропадёт." },
+    { id: "baby", title: { en: "Name, birthday and feeding", ru: "Имя, дата рождения и кормление" }, go: { settings: "babyName" },
+      words: "*name *birthday born birth date dob breastfed formula mixed *имя рождения родился дата грудн смешан",
+      en: "Settings → Baby: the name, the date of birth and how the baby is fed (breast, formula or mixed). Breastfed splits the Feed button into L | R.",
+      ru: "Settings → «Baby»: имя, дата рождения и тип кормления (грудь, смесь или смешанное). При грудном кнопка Feed делится на L | R." },
+    { id: "font", title: { en: "The name's style", ru: "Шрифт имени" }, go: { settings: "nameFontsToggle" },
+      words: "font style lettering pretty шрифт стиль надпись",
+      en: "Settings → Baby has a choice of styles for the name at the top of the screen.",
+      ru: "Settings → «Baby» — выбор шрифта для имени вверху экрана." },
+    { id: "ai", title: { en: "Asking a bigger AI", ru: "Спросить большой AI" }, go: { settings: "aiEnabled" },
+      words: "ai claude chatgpt gpt perplexity chat bot нейросет ии чат бот",
+      en: "Settings → Ask an AI adds a button that hands a summary of the log to Claude, ChatGPT or Perplexity. You see the exact text first; that is the one part of the app that leaves the phone.",
+      ru: "Settings → «Ask an AI» добавляет кнопку, которая передаёт сводку в Claude, ChatGPT или Perplexity. Сначала вы видите весь текст; это единственное, что уходит с телефона." },
+    { id: "install", title: { en: "On the home screen, and offline", ru: "Иконка на экране и работа без сети" }, go: { click: "infoOpen" },
+      words: "home screen install icon app offline signal internet установить иконк значок экран офлайн интернет сеть",
+      en: "On iPhone: open it in Safari, tap Share, then Add to Home Screen. After the first opening it works with no signal at all.",
+      ru: "На iPhone: откройте в Safari → «Поделиться» → «На экран Домой». После первого запуска работает без интернета." },
+    { id: "update", title: { en: "Getting the latest version", ru: "Обновить приложение" }, go: { main: "appVersion" },
+      words: "update version latest new refresh stuck old обнов верси новая последн старая завис",
+      en: "Tap the version number at the foot of the main screen: it fetches the app afresh. Your entries are not touched.",
+      ru: "Нажмите на номер версии внизу главного экрана — приложение загрузится заново. Записи не пострадают." },
+    { id: "language", title: { en: "Russian", ru: "Русский язык" }, go: { click: "handoverOpen" },
+      words: "russian language translate русский язык перевод",
+      en: "The handover and shopping screens read in Russian too — the en | ru buttons on them. The rest of the app is in English. This helper understands both.",
+      ru: "Экраны передачи (🤝) и покупок читаются и по-русски — кнопки en | ru на них. Остальное приложение на английском. Помощник понимает оба языка." },
+    { id: "unpaired", title: { en: "Sleep entries with no pair", ru: "Сон без пары" }, go: { main: "logToggle" },
+      words: "pair unpaired missing sleep total wrong пары непарн пропущен",
+      en: "A fell-asleep with no woke-up (or the other way round) can't be measured and is left out of sleep totals. A panel above the history lists them — tap one to fix or delete it.",
+      ru: "«Уснул» без «проснулся» (или наоборот) нельзя измерить, и он не входит в итоги сна. Над историей есть панель с такими записями — нажмите, чтобы исправить или удалить." },
+    { id: "settle", title: { en: "How hard it was to settle", ru: "Как тяжело укладывался" }, go: { main: "logToggle" },
+      words: "*settle *settling *rocking hard *укачив *укладыв долго засыпал",
+      en: "Under every fell-asleep in the history is a strip of five segments: tap one to say how long settling took, from on their own to two hours of rocking.",
+      ru: "Под каждым «уснул» в истории есть полоска из пяти делений: отметьте, сколько заняло укладывание — от «сам» до двух часов укачивания." },
+    { id: "help", title: { en: "The full guide", ru: "Полная инструкция" }, go: { click: "infoOpen" },
+      words: "*help guide manual instructions explain помощь инструкц справк руководств объясни",
+      en: "Help, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",
+      ru: "«Help» в меню ⋯ объясняет каждую часть приложения, там же раздел для новых родителей." },
+    { id: "health", title: { en: "A question about the baby", ru: "Вопрос о малыше" }, bigger: true,
+      words: "*normal *normally *cry *cries *crying *cried *colic *why *should *advice *enough *worry " +
+        "*нормально *нормальн *плачет *плач *колик *почему *стоит *совет *достаточно *хватает",
+      en: "That's one for someone who can see the baby — a midwife, health visitor or GP. For a first opinion, a bigger AI can read the log's figures with your question.",
+      ru: "На это лучше ответит тот, кто видит малыша: акушерка, патронажная сестра или врач. Для первого мнения можно спросить большой AI — он получит цифры из журнала вместе с вопросом." },
+    { id: "urgent", title: { en: "If you are worried right now", ru: "Если вы волнуетесь прямо сейчас" }, go: { click: "infoOpen" }, urgent: true,
+      words: "ambulance emergency breathing blue fever floppy worried sick ill unwell 999 111 скорая экстренн дыхан дышит синеет жар вялый волнуюсь болеет заболел",
+      en: "If the baby is struggling to breathe, turning blue, floppy, or you think it's an emergency, call 999 now. For anything else you're worried about, call NHS 111 or your GP. Help → For new parents lists the signs.",
+      ru: "Если малыш с трудом дышит, синеет, вялый или вы думаете, что это срочно, — звоните 999 прямо сейчас. Если просто беспокоит — NHS 111 или ваш врач. В Help → «For new parents» перечислены признаки." }
+  ];
+
+  // Words that say "tell me about the log" rather than "show me the button",
+  // and the other way round. Each one tips the scales by a point.
+  var HELPER_DATA_CUES = "when last latest ago many much long today yesterday tonight since often has did status " +
+    "когда последн давно сколько долго сегодня вчера ночью сейчас уже было часто";
+  var HELPER_HOW_CUES = "how where find setting settings turn switch enable add change set log record button " +
+    "как где найти настро включ выключ добав помен измен постав запис отмет кнопк";
+  // Too common to tell anything apart.
+  var HELPER_STOP = "the a an to is are do does i my me of in on it for can what this that with and or be " +
+    "baby babies she he her his him our we you " +
+    "и в на по с у а ли мне мой моя что это не же бы малыш малыша малышу ребенок ребенка она он её его наш";
+  var HELPER_STARTERS = {
+    en: ["When was the last feed?", "How much sleep today?", "What's next?",
+      "How do I turn on white noise?", "How do I share with my partner?"],
+    ru: ["Когда было последнее кормление?", "Сколько спал сегодня?", "Что дальше?",
+      "Как включить белый шум?", "Как поделиться с партнёром?"]
+  };
+
+  var helperLang = uiLang;
+  var helperIndex = null;
+
+  function helperLangOf(text) {
+    return /[а-яё]/i.test(text) ? "ru" : "en";
   }
 
-  function saveLocalAi(prefs) {
-    try {
-      var out = { on: !!prefs.on, ready: !!prefs.ready, model: prefs.model || LOCAL_AI_DEFAULT_MODEL };
-      if (prefs.pending) out.pending = true;
-      if (prefs.error) out.error = String(prefs.error).slice(0, 400);
-      localStorage.setItem(LOCAL_AI_KEY, JSON.stringify(out));
-    } catch (e) {
-      showError("Couldn't save that setting");
-    }
+  // The front of a word, long enough to tell words apart and short enough
+  // that the endings fall away: кормлен/кормления, feed/feeding.
+  function helperStem(word) {
+    var w = word.toLowerCase().replace(/ё/g, "е");
+    if (/[а-я]/.test(w)) return w.length > 5 ? w.slice(0, 5) : w;
+    w = w.replace(/(ing|ed|es|s)$/, "");
+    return w.length > 5 ? w.slice(0, 5) : w;
   }
 
-  function localAiModelById(id) {
-    for (var i = 0; i < LOCAL_AI_MODELS.length; i++) {
-      if (LOCAL_AI_MODELS[i].id === id) return LOCAL_AI_MODELS[i];
-    }
-    return null;
+  // "How many", "how much", "how long" and "how is" ask about the log, not
+  // about a button, so the "how" is dropped before it can say otherwise.
+  function helperWords(text) {
+    var stop = helperIndex.stop;
+    return String(text).toLowerCase().replace(/ё/g, "е")
+      .replace(/\bhow(?= (many|much|long|old|often|is|are|was|did|has)\b)/g, " ")
+      .replace(/\bhow's\b/g, " is ")
+      .split(/[^a-zа-я0-9]+/)
+      .filter(function (w) { return w; })
+      .map(helperStem)
+      .filter(function (w) { return !stop[w]; });
   }
 
-  function localAiModel() {
-    return localAiModelById(loadLocalAi().model) || LOCAL_AI_MODELS[0];
-  }
-
-  function localAiPending(on) {
-    var prefs = loadLocalAi();
-    if (prefs.pending === on) return;
-    prefs.pending = on;
-    saveLocalAi(prefs);
-  }
-
-  function localAiCache(name) {
-    return String(name).indexOf(LOCAL_AI_CACHE_PREFIX) === 0;
-  }
-
-  // One engine at a time, and only while the AI screen is open: it holds
-  // 700 MB of the phone's memory, and a phone short of memory closes the page
-  // in the background — the white noise with it.
-  var localAi = { lib: null, engine: null, loading: null, busy: false, stopped: false,
-    support: null, phase: "", statusToken: 0, wake: null };
-
-  // The checks put a stand-in here before the app loads, in place of the
-  // library and the graphics chip neither of which a test browser has. Nothing
-  // on the page or in the log can set it.
-  function localAiStandIn() {
-    return window.__localAiStandIn || null;
-  }
-
-  function localAiSupport() {
-    if (localAi.support) return localAi.support;
-    var gpu = navigator.gpu;
-    if (!gpu || typeof gpu.requestAdapter !== "function") {
-      localAi.support = Promise.resolve({ ok: false, why: "This browser has no WebGPU, which it needs. " +
-        "On an iPhone that means iOS 26 or later, with Lockdown Mode off." });
-      return localAi.support;
-    }
-    localAi.support = Promise.resolve().then(function () {
-      return gpu.requestAdapter();
-    }).then(function (adapter) {
-      if (!adapter) {
-        return { ok: false, why: "This phone's graphics chip isn't open to web pages here, so it can't run." };
-      }
-      if (!adapter.features || !adapter.features.has("shader-f16")) {
-        return { ok: false, why: "This phone's graphics chip lacks a feature the model needs, so it can't run." };
-      }
-      return { ok: true, why: "" };
-    }, function () {
-      return { ok: false, why: "This phone wouldn't say whether it can run it." };
+  // A word marked * counts twice: the one that settles which topic it is
+  // ("forgot", "delete") rather than one several topics share ("feed").
+  function helperSet(text) {
+    var out = {};
+    String(text).toLowerCase().replace(/ё/g, "е").split(/\s+/).forEach(function (w) {
+      var weight = w.charAt(0) === "*" ? 2 : 1;
+      w = w.replace(/^\*/, "");
+      if (w) out[helperStem(w)] = Math.max(out[helperStem(w)] || 0, weight);
     });
-    return localAi.support;
+    return out;
   }
 
-  // Every piece of the model is on the phone. Asked of the files themselves,
-  // the way the library asks it — the list of pieces is kept, and so is each
-  // piece on it — and not of whether the model has ever run: a download that
-  // finished and then would not load is still downloaded, and must not be
-  // offered for another 700 MB. A download cut off half way, or storage the
-  // browser has since cleared, reads as not downloaded, which is what it is.
-  function localAiDownloaded() {
-    if (localAiStandIn()) return Promise.resolve(loadLocalAi().ready);
-    if (!window.caches) return Promise.resolve(false);
-    var base = localAiModel().record.model + "/resolve/main/";
-    var scope = LOCAL_AI_CACHE_PREFIX + "model";
-    return caches.has(scope).then(function (has) {
-      if (!has) return false;
-      return caches.open(scope).then(function (cache) {
-        return Promise.all([cache.match(base + "tensor-cache.json"), cache.keys()]);
-      }).then(function (got) {
-        if (!got[0]) return false;
-        var kept = {};
-        got[1].forEach(function (req) { kept[req.url] = true; });
-        return got[0].json().then(function (list) {
-          var records = (list && list.records) || [];
-          return records.length > 0 && records.every(function (rec) {
-            return kept[new URL(rec.dataPath, base).href];
-          });
-        });
+  function helperBuildIndex() {
+    if (helperIndex) return helperIndex;
+    var stop = {};
+    HELPER_STOP.split(/\s+/).forEach(function (w) { stop[helperStem(w)] = true; });
+    helperIndex = {
+      stop: stop,
+      data: helperSet(HELPER_DATA_CUES),
+      how: helperSet(HELPER_HOW_CUES),
+      topics: HELPER_TOPICS.map(function (topic) {
+        return { topic: topic, words: helperSet(topic.words) };
+      })
+    };
+    return helperIndex;
+  }
+
+  // Two stems match when they are the same, or when the shorter, at four
+  // letters or more, starts the longer: "spa" must not find "space".
+  // The weight of the match, nought for none.
+  function helperHit(stem, words) {
+    if (words[stem]) return words[stem];
+    if (stem.length < 4) return 0;
+    for (var w in words) {
+      if (w.length >= 4 && (w.indexOf(stem) === 0 || stem.indexOf(w) === 0)) return words[w];
+    }
+    return 0;
+  }
+
+  // Every topic scored: a point for each of its words in the question, and
+  // one more when the question is the kind that topic answers.
+  function helperRank(question) {
+    var index = helperBuildIndex();
+    var words = helperWords(question);
+    var asksData = words.some(function (w) { return helperHit(w, index.data); });
+    var asksHow = words.some(function (w) { return helperHit(w, index.how); });
+    return index.topics.map(function (entry) {
+      var score = 0;
+      var seen = {};
+      words.forEach(function (w) {
+        var hit = seen[w] ? 0 : helperHit(w, entry.words);
+        if (!hit) return;
+        seen[w] = true;
+        score += hit;
       });
-    }).catch(function () { return false; });
+      if (score && entry.topic.data && asksData && !asksHow) score++;
+      if (score && !entry.topic.data && asksHow) score++;
+      // Worry is said once and wins: nobody frightened should be handed a
+      // chart because they also used the word "sleep".
+      if (score && entry.topic.urgent) score += 3;
+      return { topic: entry.topic, score: score };
+    }).filter(function (r) { return r.score > 0; })
+      .sort(function (a, b) { return b.score - a.score; });
   }
 
-  function localAiFingerprint(buffer, sri) {
-    return crypto.subtle.digest("SHA-384", buffer).then(function (hash) {
-      var bytes = new Uint8Array(hash);
-      var bin = "";
-      for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-      return "sha384-" + btoa(bin) === sri;
-    });
+  // The handover screen's sentences, in the language the question was asked
+  // in, whichever one that screen is set to.
+  function helperInLang(lang, fn) {
+    var was = uiLang;
+    uiLang = lang;
+    try { return fn(); } finally { uiLang = was; }
   }
 
-  function localAiError(kind) {
-    var err = new Error(kind);
-    err.localAi = kind;
-    return err;
+  function helperWindow(question) {
+    var now = Date.now();
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    // "Today" means since midnight when somebody says it, and otherwise the
+    // last day round, which still holds the night just gone.
+    var today = /today|сегодн/i.test(question);
+    return { fromMs: today ? +midnight : now - 24 * MS_HOUR, toMs: now, hours: 24, today: today };
   }
 
-  // Kept after the first fetch so the phone needs no signal afterwards, and
-  // checked every time it is read back, not only the first: a cache is
-  // storage like any other.
-  function localAiLib() {
-    if (localAi.lib) return Promise.resolve(localAi.lib);
-    if (localAiStandIn()) {
-      localAi.lib = localAiStandIn();
-      return Promise.resolve(localAi.lib);
+  function helperAgeLine(lang) {
+    var days = ageDaysAt(Date.now());
+    if (days === null) {
+      return lang === "ru" ? "Дата рождения не указана — её можно добавить в Settings → Baby."
+        : "There's no date of birth yet — add it under Settings → Baby.";
     }
-    var store = null;
-    return caches.open(LOCAL_AI_LIB_CACHE).then(function (cache) {
-      store = cache;
-      return cache.match(LOCAL_AI_LIB_URL);
-    }).then(function (kept) {
-      if (kept) return kept.arrayBuffer().then(function (buf) { return { buf: buf, fresh: false }; });
-      return fetch(LOCAL_AI_LIB_URL, { mode: "cors", credentials: "omit" }).then(function (res) {
-        if (!res.ok) throw new TypeError("download");
-        return res.arrayBuffer();
-      }).then(function (buf) { return { buf: buf, fresh: true }; });
-    }).then(function (got) {
-      return localAiFingerprint(got.buf, LOCAL_AI_LIB_SRI).then(function (same) {
-        if (!same) {
-          store.delete(LOCAL_AI_LIB_URL);
-          throw localAiError("fingerprint");
-        }
-        if (got.fresh) {
-          store.put(LOCAL_AI_LIB_URL, new Response(got.buf,
-            { headers: { "Content-Type": "text/javascript" } })).catch(function () {});
-        }
-        var href = URL.createObjectURL(new Blob([got.buf], { type: "text/javascript" }));
-        return import(href).then(function (lib) {
-          URL.revokeObjectURL(href);
-          localAi.lib = lib;
-          return lib;
-        }, function (err) {
-          URL.revokeObjectURL(href);
-          throw err;
-        });
-      });
+    if (lang !== "ru") return formatAge(days) + " old.";
+    var weeks = Math.floor(days / 7);
+    var rest = days % 7;
+    var line = weeks ? weeks + " " + pluralRu(weeks, "неделя", "недели", "недель") : "";
+    if (rest || !weeks) line += (line ? " и " : "") + rest + " " + pluralRu(rest, "день", "дня", "дней");
+    return "Возраст: " + line + ".";
+  }
+
+  function helperWeightRows(lang) {
+    var weights = sortedByTimeDesc(liveEvents().filter(function (e) {
+      return e.type === "weight" && measureValueOf(e) !== null;
+    }));
+    if (!weights.length) {
+      return [{ icon: "⚖️", title: lang === "ru" ? "Вес ещё не записан" : "No weight logged yet",
+        details: [lang === "ru" ? "Добавьте его в Measurements на главном экране."
+          : "Add one under Measurements on the main screen."] }];
+    }
+    var last = weights[0];
+    var row = { icon: "⚖️", title: formatMeasure("weight", measureValueOf(last), ""), details: [] };
+    row.details.push(helperInLang(lang, function () { return handoverAgo(new Date(last.time)); }));
+    if (weights[1]) {
+      var diff = measureValueOf(last) - measureValueOf(weights[1]);
+      row.details.push((lang === "ru" ? "С прошлого взвешивания: " : "Since the weighing before: ") +
+        (diff >= 0 ? "+" : "−") + Math.abs(Math.round(diff)) + " g");
+    }
+    return [row];
+  }
+
+  function helperDataRows(kind, question, lang) {
+    if (!liveEvents().length) {
+      return [{ icon: "📝", title: lang === "ru" ? "Пока ничего не записано" : "Nothing's logged yet",
+        details: [lang === "ru" ? "Нажмите Feed, Nappy или Sleep на главном экране и спросите ещё раз."
+          : "Tap Feed, Nappy or Sleep on the main screen, then ask again."] }];
+    }
+    if (kind === "age") return [{ icon: "👶", title: helperAgeLine(lang), details: [] }];
+    if (kind === "weight") return helperWeightRows(lang);
+    var w = helperWindow(question);
+    return helperInLang(lang, function () {
+      var live = liveEvents();
+      var analysis = analyzeSleep();
+      var rows = [];
+      if (kind === "feed") rows = [handoverFeedRow(w, live), handoverDueRow(analysis, ["feed"])];
+      else if (kind === "nappy") rows = [handoverNappyRow(w, live), handoverDueRow(analysis, ["diaper"])];
+      else if (kind === "sleep") {
+        rows = [handoverStateRow(analysis), handoverSleepRow(w, analysis), handoverDueRow(analysis, ["sleep"])];
+      } else if (kind === "next") rows = [handoverDueRow(analysis)];
+      else {
+        rows = [handoverStateRow(analysis), handoverFeedRow(w, live), handoverNappyRow(w, live),
+          handoverSleepRow(w, analysis), handoverDueRow(analysis)];
+      }
+      rows = rows.filter(function (row) { return !!row; });
+      if (kind !== "next") {
+        rows.unshift({ icon: "🕐", title: w.today
+          ? (lang === "ru" ? "С полуночи" : "Since midnight")
+          : (lang === "ru" ? "За последние 24 часа" : "In the last 24 hours"), details: [], quiet: true });
+      }
+      return rows;
     });
   }
 
-  // Only asked before a download: the room it needs is already taken once
-  // the model is here.
-  function localAiRoom() {
-    return localAiDownloaded().then(function (have) {
-      if (have || !navigator.storage || !navigator.storage.estimate) return;
-      return navigator.storage.estimate().then(function (est) {
-        if (est && est.quota && est.quota - (est.usage || 0) < localAiModel().bytes) {
-          throw localAiError("room");
-        }
-      }, function () {});
+  // ---- the conversation ----
+
+  function helperBubble(who) {
+    var bubble = document.createElement("div");
+    bubble.className = "helper-msg helper-" + who;
+    el.helperLog.appendChild(bubble);
+    return bubble;
+  }
+
+  function helperText(parent, cls, text) {
+    var p = document.createElement("div");
+    p.className = cls;
+    p.textContent = text;
+    parent.appendChild(p);
+    return p;
+  }
+
+  function helperButton(parent, label, onClick) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "helper-action";
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    parent.appendChild(btn);
+    return btn;
+  }
+
+  // Lit up for a moment where it was found, so "it's under Settings" ends
+  // with the thing itself in front of you rather than a hunt for it.
+  function helperSpotlight(id) {
+    var target = document.getElementById(id);
+    if (!target) return;
+    var spot = target.closest("label") || target;
+    [].forEach.call(document.querySelectorAll(".helper-spot"), function (lit) {
+      lit.classList.remove("helper-spot");
+    });
+    setTimeout(function () {
+      if (spot.scrollIntoView) spot.scrollIntoView({ block: "center" });
+      spot.classList.add("helper-spot");
+      setTimeout(function () { spot.classList.remove("helper-spot"); }, 2600);
+    }, 60);
+  }
+
+  function helperGo(go) {
+    if (go.click) {
+      var btn = document.getElementById(go.click);
+      if (btn) btn.click();
+    } else if (go.settings) {
+      showSettings();
+      helperSpotlight(go.settings);
+    } else if (go.main) {
+      showMain();
+      helperSpotlight(go.main);
+    }
+  }
+
+  // Anything it cannot answer goes on to the assistant somebody already uses,
+  // with the question carried across — if they have said they want that.
+  function helperBigger(parent, question, lang) {
+    var on = loadAiPrefs().on;
+    helperButton(parent, on
+      ? (lang === "ru" ? "Спросить большой AI →" : "Ask a bigger AI →")
+      : (lang === "ru" ? "Включить «Ask an AI» в настройках →" : "Turn on Ask an AI in Settings →"),
+    function () {
+      if (!on) {
+        helperGo({ settings: "aiEnabled" });
+        return;
+      }
+      el.aiQuestion.value = question;
+      openAi();
     });
   }
 
-  // A download of several minutes stops dead when the screen locks itself, so
-  // the screen is kept on while one runs, where the phone allows it.
-  function localAiHoldScreen(hold) {
-    if (!hold) {
-      if (localAi.wake) localAi.wake.release().catch(function () {});
-      localAi.wake = null;
+  function helperAnswer(question) {
+    var lang = helperLangOf(question);
+    helperLang = lang;
+    var ranked = helperRank(question);
+    var bubble = helperBubble("bot");
+    var best = ranked[0];
+
+    if (!best) {
+      bubble.setAttribute("data-topic", "none");
+      helperText(bubble, "helper-line", lang === "ru"
+        ? "Тут я не помогу: я знаю только кнопки этого приложения и то, что записано в журнале. На такой вопрос лучше ответит большой AI."
+        : "I can't help with that one — I only know this app's buttons and what's in the log. A bigger AI is the place for it.");
+      helperBigger(bubble, question, lang);
+      renderHelperChips();
       return;
     }
-    if (localAi.wake || !navigator.wakeLock || !navigator.wakeLock.request) return;
-    navigator.wakeLock.request("screen").then(function (lock) {
-      if (localAi.loading) localAi.wake = lock;
-      else lock.release().catch(function () {});
-    }, function () {});
-  }
 
-  // Two stretches, each running 0 to 100%: fetching the pieces, then loading
-  // them into the phone's memory. Named apart, because the second one
-  // counting up from nothing looks exactly like the download starting again.
-  function renderLocalAiProgress(report) {
-    var pct = Math.max(0, Math.min(100, Math.round(((report && report.progress) || 0) * 100)));
-    var text = String((report && report.text) || "");
-    var fetching = /^Fetching/.test(text) || (!/^Loading/.test(text) && localAi.phase === "download");
-    var line = fetching
-      ? "Downloading the model — " + pct + "%. Keep this screen open; what has arrived is kept if it stops."
-      : /^Loading model/.test(text)
-        ? "Downloaded. Loading it into the phone's memory — " + pct + "%"
-        : "Getting it ready — " + pct + "%";
-    el.localAiStatus.textContent = line;
-    el.localAiProgress.textContent = line;
-    el.localAiProgress.hidden = false;
-  }
-
-  function localAiEngine() {
-    if (localAi.engine) return Promise.resolve(localAi.engine);
-    if (localAi.loading) return localAi.loading;
-    localAi.loading = localAiDownloaded().then(function (have) {
-      localAi.phase = have ? "wake" : "download";
-      renderLocalAiProgress(null);
-      if (!have) {
-        localAiHoldScreen(true);
-        // Asked, not assumed: without it the browser may clear hundreds of
-        // megabytes of storage the first time the phone runs short.
-        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
-      }
-      return localAiLib();
-    }).then(function (lib) {
-      var record = localAiModel().record;
-      localAiPending(true);
-      return lib.CreateMLCEngine(record.model_id, {
-        appConfig: { model_list: [record] },
-        initProgressCallback: renderLocalAiProgress
+    var topic = best.topic;
+    bubble.setAttribute("data-topic", topic.id);
+    if (topic.data) {
+      helperDataRows(topic.data, question, lang).forEach(function (row) {
+        var block = document.createElement("div");
+        block.className = "helper-row" + (row.quiet ? " helper-row-quiet" : "");
+        helperText(block, "helper-title", (row.icon ? row.icon + " " : "") + row.title);
+        row.details.forEach(function (line) { helperText(block, "helper-line", line); });
+        bubble.appendChild(block);
       });
-    }).then(function (engine) {
-      localAi.engine = engine;
-      localAi.loading = null;
-      localAiHoldScreen(false);
-      var prefs = loadLocalAi();
-      prefs.ready = true;
-      prefs.error = "";
-      prefs.pending = false;
-      saveLocalAi(prefs);
-      return engine;
-    }, function (err) {
-      localAi.loading = null;
-      localAiHoldScreen(false);
-      var prefs = loadLocalAi();
-      prefs.pending = false;
-      prefs.error = localAiFailure(err) + localAiDetail(err);
-      saveLocalAi(prefs);
-      throw err;
-    });
-    return localAi.loading;
-  }
-
-  function localAiRelease() {
-    var engine = localAi.engine;
-    if (!engine) return;
-    if (localAi.busy) {
-      localAi.stopped = true;
-      try { engine.interruptGenerate(); } catch (e) { /* already finished */ }
+    } else {
+      helperText(bubble, "helper-title", topic.title[lang]);
+      helperText(bubble, "helper-line", topic[lang]);
+      if (topic.urgent) helperText(bubble, "helper-line helper-urgent", lang === "ru"
+        ? "Это не медицинский совет: приложение не видит малыша."
+        : "This isn't medical advice: the app can't see your baby.");
+      if (topic.bigger) helperBigger(bubble, question, lang);
+      else helperButton(bubble, lang === "ru" ? "Открыть →" : "Show me →", function () { helperGo(topic.go); });
     }
-    localAi.engine = null;
-    Promise.resolve().then(function () { return engine.unload(); }).catch(function () {});
-  }
 
-  // The library's own words, for whoever is helping work out what went wrong;
-  // left off where the plain explanation already carries them.
-  function localAiDetail(err) {
-    var text = String((err && (err.message || err)) || "").split("\n")[0].slice(0, 160);
-    var kind = err && err.localAi;
-    if (!text || kind === "unsupported" || kind === "room" || kind === "long" || kind === "fingerprint") return "";
-    var plain = localAiFailure(err);
-    // The catch-all already quotes them.
-    return plain.indexOf("It couldn't answer this time") === 0 || plain.indexOf(text) >= 0 ? "" : " [" + text + "]";
-  }
-
-  function localAiFailure(err) {
-    var kind = err && err.localAi;
-    var text = String(err && (err.message || err) || "").split("\n")[0];
-    if (kind === "unsupported") return err.why;
-    if (kind === "fingerprint" || /Integrity verification failed/.test(text)) {
-      return "What was downloaded didn't match its fingerprint, so none of it was run. Try again later.";
-    }
-    if (kind === "room" || (err && err.name === "QuotaExceededError")) {
-      return "There isn't enough free storage on this phone for it — it needs " + localAiModel().size + " and some room to spare.";
-    }
-    if (kind === "long" || /exceed context window/i.test(text)) {
-      return "That is more than the phone's AI can read at once. Pick a shorter stretch above.";
-    }
-    if (err instanceof TypeError || /fetch|network|load failed/i.test(text)) {
-      return "The download stopped — check the connection and try again. What already arrived is kept.";
-    }
-    return "It couldn't answer this time" + (text ? " (" + text.slice(0, 120) + ")" : "") + ".";
-  }
-
-  // Small models write Markdown whether asked to or not, and a box of
-  // asterisks is harder to read at 3am than the plain sentences underneath.
-  function localAiPlain(text) {
-    return String(text)
-      .replace(/\*\*(.+?)\*\*/g, "$1")
-      .replace(/^#{1,6}\s+/gm, "")
-      .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  }
-
-  // The same summary and framing a bigger AI is handed, so the two answers
-  // are to the same question; the last line keeps a small model short and on
-  // the numbers it was given.
-  function localAiPrompt() {
-    return aiCurrentPrompt() + "\n\nAnswer in a few short sentences, using only what the summary says.";
-  }
-
-  function localAiDrain(stream) {
-    var it = stream[Symbol.asyncIterator]();
-    var text = "";
-    function step() {
-      return it.next().then(function (got) {
-        if (got.done) return text;
-        var choice = got.value && got.value.choices && got.value.choices[0];
-        var piece = choice && choice.delta && choice.delta.content;
-        if (piece) {
-          text += piece;
-          el.localAiAnswer.textContent = localAiPlain(text);
-          el.localAiAnswer.hidden = false;
-        }
-        return step();
+    // A near tie is said rather than settled silently, so a wrong guess costs
+    // one more tap rather than a question asked again in other words.
+    // After figures, the nearest how-to is offered too: "feed" asked about
+    // the log is one tap from "feed" asked about the button.
+    var others = ranked.slice(1).filter(function (r) {
+      if (r.topic.data) return false;
+      return topic.data ? r.score >= best.score - 1 : r.score === best.score;
+    }).slice(0, topic.data ? 1 : 2);
+    if (others.length) {
+      var more = document.createElement("div");
+      more.className = "helper-more";
+      helperText(more, "helper-line helper-dim", lang === "ru" ? "Или вы про это?" : "Or did you mean:");
+      others.forEach(function (r) {
+        helperButton(more, r.topic.title[lang], function () { helperShowTopic(r.topic, lang); });
       });
+      bubble.appendChild(more);
     }
-    return step();
+    renderHelperChips();
   }
 
-  function renderLocalAiBusy() {
-    el.localAiAsk.disabled = localAi.busy;
-    el.localAiStop.hidden = !localAi.busy || !localAi.engine;
+  function helperShowTopic(topic, lang) {
+    var bubble = helperBubble("bot");
+    helperText(bubble, "helper-title", topic.title[lang]);
+    helperText(bubble, "helper-line", topic[lang]);
+    helperButton(bubble, lang === "ru" ? "Открыть →" : "Show me →", function () { helperGo(topic.go); });
+    helperScroll();
   }
 
-  function localAiAsk() {
-    if (localAi.busy) return;
-    var text = localAiPrompt();
-    localAi.busy = true;
-    localAi.stopped = false;
-    el.localAiAnswer.hidden = true;
-    el.localAiAnswer.textContent = "";
-    el.localAiNote.hidden = true;
-    renderLocalAiBusy();
-    localAiSupport().then(function (support) {
-      if (!support.ok) {
-        var err = localAiError("unsupported");
-        err.why = support.why;
-        throw err;
-      }
-      if (text.length > LOCAL_AI_MAX_CHARS) throw localAiError("long");
-      return localAiRoom();
-    }).then(localAiEngine).then(function (engine) {
-      // Left the screen while it was loading: nothing to answer for.
-      if (currentScreen !== "ai") {
-        localAiRelease();
-        return null;
-      }
-      el.localAiProgress.textContent = "Thinking…";
-      renderLocalAiBusy();
-      localAiPending(true);
-      return engine.chat.completions.create({
-        messages: [{ role: "user", content: text }],
-        stream: true,
-        max_tokens: LOCAL_AI_MAX_TOKENS,
-        temperature: 0.4
-      }).then(localAiDrain).then(function (answer) {
-        el.localAiNote.hidden = false;
-        var prefs = loadLocalAi();
-        if (prefs.error) {
-          prefs.error = "";
-          saveLocalAi(prefs);
-        }
-        if (localAi.stopped) {
-          el.localAiProgress.textContent = "Stopped.";
-        } else if (!localAiPlain(answer)) {
-          el.localAiProgress.textContent = "It had nothing to say. Try asking another way, or ask a bigger AI below.";
-        } else {
-          el.localAiProgress.hidden = true;
-        }
-      });
-    }).catch(function (err) {
-      var kind = err && err.localAi;
-      if (kind !== "unsupported" && kind !== "long") {
-        var prefs = loadLocalAi();
-        prefs.error = localAiFailure(err) + localAiDetail(err);
-        saveLocalAi(prefs);
-      }
-      el.localAiProgress.textContent = localAiFailure(err) + localAiDetail(err) +
-        " A bigger AI below can still answer — that part leaves the phone.";
-      el.localAiProgress.hidden = false;
-    }).then(function () {
-      localAiPending(false);
-      localAi.busy = false;
-      renderLocalAiBusy();
-      renderLocalAiStatus();
+  function helperScroll() {
+    var last = el.helperLog.lastElementChild;
+    if (last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+  }
+
+  function helperAsk(question) {
+    var text = cleanText(question, 200);
+    if (!text) return;
+    helperText(helperBubble("you"), "helper-line", text);
+    helperAnswer(text);
+    el.helperInput.value = "";
+    helperScroll();
+  }
+
+  function renderHelperChips() {
+    el.helperChips.innerHTML = "";
+    HELPER_STARTERS[helperLang === "ru" ? "ru" : "en"].forEach(function (question) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "ai-chip";
+      chip.textContent = question;
+      chip.addEventListener("click", function () { helperAsk(question); });
+      el.helperChips.appendChild(chip);
     });
   }
 
-  function renderLocalAiStatus() {
-    var token = ++localAi.statusToken;
-    var prefs = loadLocalAi();
-    // Switched off, only the files are looked at — the graphics chip is not
-    // even asked about until somebody wants it — so a model still on the
-    // phone can be removed without switching it back on first.
-    if (!prefs.on) {
-      el.localAiDownload.hidden = true;
-      localAiDownloaded().then(function (have) {
-        if (token !== localAi.statusToken) return;
-        el.localAiRemove.hidden = !have;
-        el.localAiStatus.textContent = have
-          ? "Off. The model is still on this phone, taking " + localAiModel().size + ", until you remove it."
-          : "Off. Nothing is downloaded until you switch it on.";
-      });
-      return;
+  function openHelper() {
+    if (!el.helperLog.children.length) {
+      helperLang = uiLang;
+      var hello = helperBubble("bot");
+      helperText(hello, "helper-line",
+        "Ask where something is in the app, or about the log — the last feed, today's nappies, how much sleep, what's next.");
+      helperText(hello, "helper-line helper-dim", "Можно спрашивать по-русски.");
     }
-    Promise.all([localAiSupport(), localAiDownloaded()]).then(function (got) {
-      // A download or an answer under way owns the status line.
-      if (token !== localAi.statusToken || localAi.loading) return;
-      var support = got[0];
-      var have = got[1];
-      prefs = loadLocalAi();
-      var lastTry = prefs.error ? " Last try: " + prefs.error : "";
-      el.localAiDownload.hidden = !support.ok || have;
-      el.localAiDownload.textContent = "⬇️ Download it now — " + localAiModel().size;
-      el.localAiRemove.hidden = !have;
-      el.localAiStatus.textContent = !support.ok ? support.why
-        : have && prefs.ready ? "Downloaded and ready — it works with no signal at all." + lastTry
-        : have ? "Downloaded. It hasn't run on this phone yet." + lastTry
-        : "Not downloaded yet. It downloads the first time you ask, or now with the button below." + lastTry;
-      el.localAiAsk.hidden = !support.ok;
-      el.localAiAsk.textContent = have ? "📱 Ask the AI on this phone"
-        : "📱 Download it (" + localAiModel().size + ") and ask";
-      if (localAi.busy) return;
-      if (!support.ok) {
-        el.localAiProgress.textContent = support.why + " A bigger AI below can still answer — that part leaves the phone.";
-        el.localAiProgress.hidden = false;
-      } else if (prefs.error && el.localAiAnswer.hidden) {
-        el.localAiProgress.textContent = "Last try didn't work: " + prefs.error +
-          " A bigger AI below can still answer — that part leaves the phone.";
-        el.localAiProgress.hidden = false;
-      }
-    });
+    renderHelperChips();
+    showScreen("helper");
   }
 
-  function renderLocalAi() {
-    var prefs = loadLocalAi();
-    var on = prefs.on;
-    el.localAiOn.checked = on;
-    if (!el.localAiModel.options.length) {
-      LOCAL_AI_MODELS.forEach(function (model) {
-        var opt = document.createElement("option");
-        opt.value = model.id;
-        opt.textContent = model.label + " · " + model.size;
-        el.localAiModel.appendChild(opt);
-      });
-    }
-    el.localAiModel.value = prefs.model;
-    el.localAiBlock.hidden = !on;
-    el.aiCloudHeading.hidden = !on;
-    el.aiIntroLocal.hidden = !on;
-    // The two openers are about the bigger AIs; with the phone answering
-    // first they would be the first thing read about the wrong one.
-    el.aiIntroCloud.hidden = on;
-    el.aiIntroCloudMore.hidden = on;
-    renderLocalAiStatus();
-  }
-
-  el.localAiOn.addEventListener("change", function () {
-    var prefs = loadLocalAi();
-    prefs.on = el.localAiOn.checked;
-    saveLocalAi(prefs);
-    // It answers behind the Ask an AI button, so switching it on with the
-    // button hidden would switch on nothing anybody could reach.
-    if (prefs.on && !loadAiPrefs().on) {
-      var ai = loadAiPrefs();
-      ai.on = true;
-      saveAiPrefs(ai);
-      renderAiPrefs();
-    }
-    renderLocalAi();
+  el.helperOpen.addEventListener("click", openHelper);
+  el.helperMenuOpen.addEventListener("click", openHelper);
+  el.helperBack.addEventListener("click", showMain);
+  el.helperForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    helperAsk(el.helperInput.value);
   });
-
-  el.localAiDownload.addEventListener("click", function () {
-    el.localAiDownload.hidden = true;
-    localAiRoom().then(localAiEngine).then(function () {
-      // Fetched to have it ready, not to use it now.
-      if (currentScreen !== "ai") localAiRelease();
-      showToast("Downloaded — it now answers with no signal");
-    }).catch(function (err) {
-      showToast(localAiFailure(err));
-    }).then(renderLocalAiStatus);
-  });
-
-  el.localAiRemove.addEventListener("click", function () {
-    if (localAi.loading) return;
-    localAiRelease();
-    localAi.lib = null;
-    var prefs = loadLocalAi();
-    prefs.ready = false;
-    saveLocalAi(prefs);
-    var clearing = window.caches ? caches.keys().then(function (names) {
-      return Promise.all(names.filter(localAiCache).map(function (name) { return caches.delete(name); }));
-    }) : Promise.resolve();
-    clearing.catch(function () {}).then(function () {
-      showToast("Removed — the space is free again");
-      renderLocalAiStatus();
-    });
-  });
-
-  // One model on the phone at a time: switching removes the other one's
-  // pieces, which is the space a phone short of it needs back. What both share
-  // — the library itself — stays.
-  el.localAiModel.addEventListener("change", function () {
-    var next = localAiModelById(el.localAiModel.value);
-    var prefs = loadLocalAi();
-    if (!next || next.id === prefs.model) return;
-    if (localAi.loading || localAi.busy) {
-      el.localAiModel.value = prefs.model;
-      showToast("Wait for it to finish first");
-      return;
-    }
-    var before = localAiModel().record;
-    localAiRelease();
-    prefs.model = next.id;
-    prefs.ready = false;
-    prefs.error = "";
-    saveLocalAi(prefs);
-    var clearing = !window.caches ? Promise.resolve() : caches.keys().then(function (names) {
-      return Promise.all(names.filter(localAiCache).map(function (name) {
-        return caches.open(name).then(function (cache) {
-          return cache.keys().then(function (keys) {
-            return Promise.all(keys.filter(function (req) {
-              return req.url.indexOf(before.model_id) >= 0 || req.url === before.model_lib;
-            }).map(function (req) { return cache.delete(req); }));
-          });
-        });
-      }));
-    });
-    clearing.catch(function () {}).then(renderLocalAi);
-  });
-
-  el.localAiAsk.addEventListener("click", localAiAsk);
-  el.localAiStop.addEventListener("click", function () {
-    if (!localAi.busy || !localAi.engine) return;
-    localAi.stopped = true;
-    try { localAi.engine.interruptGenerate(); } catch (e) { /* already finished */ }
-  });
-
-  el.aiBack.addEventListener("click", localAiRelease);
-  // A locked screen is the moment the phone starts looking for memory to take
-  // back, and an engine sitting in it makes this page the obvious choice.
-  document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "hidden") localAiRelease();
-  });
-
-  // Left set by a load or an answer that never finished: the page was closed
-  // under it. Said once, and kept on the status line until something works.
-  (function () {
-    var prefs = loadLocalAi();
-    if (!prefs.pending) return;
-    prefs.pending = false;
-    prefs.error = "The app closed while the AI was loading or answering — most likely the phone ran out of memory." +
-      (prefs.model === LOCAL_AI_DEFAULT_MODEL
-        ? " Try the lighter model in Settings, which needs about half as much."
-        : "");
-    saveLocalAi(prefs);
-  })();
-
-  renderLocalAi();
 
   // ---------- version ----------
 
@@ -13813,12 +13720,8 @@
     if (navigator.onLine === false) return go();
     var jobs = [];
     if (window.caches && caches.keys) {
-      // All but the AI on this phone: it is not part of the app, nothing an
-      // update gets wrong lives in it, and it is 700 MB to fetch again.
       jobs.push(caches.keys().then(function (names) {
-        return Promise.all(names.map(function (name) {
-          return localAiCache(name) ? null : caches.delete(name);
-        }));
+        return Promise.all(names.map(function (name) { return caches.delete(name); }));
       }));
     }
     if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
@@ -13834,6 +13737,21 @@
   }
 
   el.appVersion.addEventListener("click", reloadFresh);
+
+  // Versions 110 to 113 could download an AI model of several hundred
+  // megabytes into this browser. It was taken out in 114 — on a 4 GB iPhone it
+  // closed the page or made up numbers — and whatever it left behind goes with
+  // it. The offline copy's worker clears the same caches on its next update;
+  // this is for a phone where the worker is not running.
+  (function () {
+    try { localStorage.removeItem("baby-tracker-local-ai"); } catch (e) { /* nothing to free */ }
+    if (!window.caches || !caches.keys) return;
+    caches.keys().then(function (names) {
+      return Promise.all(names.filter(function (name) {
+        return name.indexOf("webllm/") === 0;
+      }).map(function (name) { return caches.delete(name); }));
+    }).catch(function () {});
+  })();
 
   // ---------- the offline copy ----------
 
