@@ -89,7 +89,7 @@ const QUESTIONS = [
     await page.press('#helperInput', 'Enter');
     await page.waitForTimeout(40);
     return page.evaluate(() => {
-      const last = [...document.querySelectorAll('.helper-bot')].pop();
+      const last = [...document.querySelector('#helperLog > .helper-turn').querySelectorAll('.helper-bot')].pop();
       return { topic: last.getAttribute('data-topic'), text: last.textContent };
     });
   }
@@ -128,6 +128,23 @@ const QUESTIONS = [
   ok('no date of birth is said plainly', /no date of birth/.test(a.text), a.text);
   a = await ask(page, 'When was the last feed?');
   ok('figures offer the matching how-to as well', /Logging a feed/.test(a.text), a.text);
+
+  // ---- newest first, under the box ----
+  const order = await page.evaluate(() => {
+    const turns = [...document.querySelectorAll('#helperLog > .helper-turn')];
+    const first = turns[0];
+    const box = document.getElementById('helperInput').getBoundingClientRect();
+    const log = document.getElementById('helperLog').getBoundingClientRect();
+    return { you: first.querySelector('.helper-you').textContent,
+      youFirst: first.firstElementChild.classList.contains('helper-you'),
+      hello: /Ask where something is/.test(turns[turns.length - 1].textContent),
+      boxAbove: box.bottom <= log.top, scrolled: window.scrollY };
+  });
+  ok('the newest question is at the top of the log', order.you === 'When was the last feed?', order);
+  ok('with its answer under it', order.youFirst, order);
+  ok('and the hello at the very bottom', order.hello, order);
+  ok('the box sits above all of it', order.boxAbove, order);
+  ok('and an answer leaves the screen at the top, by the box', order.scrolled === 0, order);
 
   // ---- the button goes there ----
   await ask(page, 'Как включить белый шум?');

@@ -58,7 +58,7 @@ const FIXED = (() => { const d = new Date(); d.setHours(16, 0, 0, 0); return d; 
     await page.press('#helperInput', 'Enter');
     await page.waitForTimeout(40);
     return page.evaluate(() => {
-      const last = [...document.querySelectorAll('.helper-bot')].pop();
+      const last = [...document.querySelector('#helperLog > .helper-turn').querySelectorAll('.helper-bot')].pop();
       return { topic: last.getAttribute('data-topic'), window: last.getAttribute('data-window'),
         text: last.textContent };
     });
