@@ -42,7 +42,8 @@ const APP = h.APP;
     ['#handoverOpen', '#handoverBack', '#screenHandover', 'handover'],
     ['#planOpen', '#planBack', '#screenPlan', 'the diary'],
     ['#rotaOpen', '#rotaBack', '#screenRota', 'the carer rota'],
-    ['#routineOpen', '#routineBack', '#screenRoutine', 'the daily routine'],
+    ['#noiseOpen', '#noiseBack', '#screenNoise', 'white noise'],
+    ['#helperTopOpen', '#helperBack', '#screenHelper', 'the helper'],
     ['#settingsOpen', '#settingsBack', '#screenSettings', 'settings']
   ];
   for (const [open, back, screen, name] of screens) {
@@ -57,11 +58,12 @@ const APP = h.APP;
 
   // And every screen behind the dots.
   const behindDots = [
+    ['#routineOpen', '#routineBack', '#screenRoutine', 'the daily routine'],
     ['#journalOpen', '#journalBack', '#screenJournal', 'the diary'],
     ['#milkOpen', '#milkBack', '#screenMilk', 'the milk stash'],
     ['#leapOpen', '#leapBack', '#screenLeaps', 'leaps'],
     ['#shopOpen', '#shopBack', '#screenShop', 'the shopping list'],
-    ['#infoOpen', '#infoBack', '#screenInfo', 'help']
+    ['#infoOpen', '#infoBack', '#screenInfo', 'info']
   ];
   for (const [open, back, screen, name] of behindDots) {
     await page.click('#moreOpen');
@@ -73,6 +75,27 @@ const APP = h.APP;
     await page.waitForTimeout(300);
     ok(name + ' closes again', await page.isVisible('#screenMain'));
   }
+
+  // The order asked for: the helper first along the top, white noise where
+  // the routine was, the routine first behind the dots, and Info rather than
+  // Help so it is not mistaken for the helper.
+  const order = await page.evaluate(() => ({
+    top: [...document.querySelectorAll('.topbar-icons > .icon-btn')].map(b => b.id),
+    menu: [...document.querySelectorAll('#moreMenu .more-item')].map(b => b.id),
+    labels: [...document.querySelectorAll('#moreMenu .more-label')].map(l => l.textContent)
+  }));
+  ok('the top bar runs helper, handover, rota, diary, noise, stats, settings',
+    order.top.join() === 'helperTopOpen,handoverOpen,rotaOpen,planOpen,noiseOpen,statsOpen,settingsOpen', order.top);
+  ok('the routine leads the dots menu', order.menu[0] === 'routineOpen', order.menu);
+  ok('the guide is called Info', order.labels.indexOf('Info') >= 0 && order.labels.indexOf('Help') < 0, order.labels);
+  ok('the helper is not in the menu twice', order.menu.indexOf('helperMenuOpen') < 0, order.menu);
+  const narrow = await b.newPage({ viewport: { width: 360, height: 700 } });
+  await narrow.goto(h.APP);
+  await narrow.waitForTimeout(300);
+  const topRows = await narrow.evaluate(() => new Set([...document.querySelectorAll('.topbar-icons > *')]
+    .map(x => Math.round(x.getBoundingClientRect().top))).size);
+  ok("the top bar holds one line on a 360px phone", topRows === 1, topRows);
+  await narrow.close();
 
   // The top line carries the name, then the date, then the age, and no clock
   // of its own — the phone has one an inch above it.

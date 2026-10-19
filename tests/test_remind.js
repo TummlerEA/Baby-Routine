@@ -55,6 +55,8 @@ const APP = h.APP;
   const playing = () => page.evaluate(() => !document.getElementById('noisePlayer').paused);
   const openRoutine = async () => {
     if (await page.isVisible('#screenRoutine')) return;
+    await page.click('#moreOpen');
+    await page.waitForTimeout(150);
     await page.click('#routineOpen');
     await page.waitForTimeout(250);
   };
@@ -364,8 +366,6 @@ const APP = h.APP;
   await openRoutine();
   await page.click('#routineBack');
   await page.waitForTimeout(200);
-  await page.click('#moreOpen');
-  await page.waitForTimeout(150);
   await page.click('#noiseOpen');
   await page.waitForTimeout(250);
   await page.click('#noiseSounds .nz-chip[data-value="standby"]');

@@ -37,6 +37,8 @@ const mins = s => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
 
   const openRoutine = async () => {
     if (await page.isVisible('#screenRoutine')) return;
+    await page.click('#moreOpen');
+    await page.waitForTimeout(150);
     await page.click('#routineOpen');
     await page.waitForTimeout(250);
   };

@@ -132,10 +132,11 @@ const QUESTIONS = [
   await page.click('.helper-bot:last-child .helper-action');
   await page.waitForTimeout(300);
   ok('Open on white noise opens white noise', await page.isVisible('#screenNoise'));
-  await page.click('#helperMenuOpen').catch(() => {});
-  await page.evaluate(() => document.getElementById('helperMenuOpen').click());
+  await page.click('#noiseBack');
+  await page.waitForTimeout(150);
+  await page.click('#helperTopOpen');
   await page.waitForTimeout(200);
-  ok('the helper is behind ⋯ too, and keeps the conversation',
+  ok('the helper is first in the top bar too, and keeps the conversation',
     await page.isVisible('#screenHelper') && (await page.$$('.helper-you')).length > 10);
   await ask(page, 'sync two phones');
   await page.click('.helper-bot:last-child .helper-action');
@@ -143,7 +144,9 @@ const QUESTIONS = [
   ok('a setting opens Settings', await page.isVisible('#screenSettings'));
   ok('with the setting lit up', await page.evaluate(() =>
     !!document.querySelector('.helper-spot') && document.querySelector('.helper-spot').contains(document.getElementById('syncRepo'))));
-  await page.evaluate(() => document.getElementById('helperMenuOpen').click());
+  await page.click('#settingsBack');
+  await page.waitForTimeout(150);
+  await page.click('#helperTopOpen');
   await page.waitForTimeout(200);
   await ask(page, 'как удалить запись');
   await page.click('.helper-bot:last-child .helper-action');

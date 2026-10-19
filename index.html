@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=116">
+<link rel="stylesheet" href="style.css?v=117">
 </head>
 <body>
 
@@ -33,19 +33,20 @@
 
     <header class="topbar topbar-main">
       <div class="topbar-icons">
+        <button class="icon-btn" id="helperTopOpen" aria-label="Helper">💬</button>
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
         <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">🤗</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
-        <button class="icon-btn" id="routineOpen" aria-label="Daily routine">⏰</button>
+        <button class="icon-btn" id="noiseOpen" aria-label="White noise">🔊</button>
         <button class="icon-btn" id="statsOpen" aria-label="Statistics">📊</button>
         <button class="icon-btn" id="settingsOpen" aria-label="Settings">⚙️</button>
         <div class="more-wrap">
           <button class="icon-btn icon-btn-badged" id="moreOpen" aria-label="More" aria-haspopup="true" aria-expanded="false">⋯<span class="icon-badge" id="shopBadge" hidden>0</span></button>
           <div class="more-backdrop" id="moreBackdrop" hidden></div>
           <div class="more-menu" id="moreMenu" hidden>
-            <button type="button" class="more-item" id="noiseOpen">
-              <span class="more-icon">🔊</span>
-              <span class="more-label">White noise</span>
+            <button type="button" class="more-item" id="routineOpen">
+              <span class="more-icon">⏰</span>
+              <span class="more-label">Daily routine</span>
             </button>
             <button type="button" class="more-item" id="journalOpen">
               <span class="more-icon">📔</span>
@@ -64,13 +65,9 @@
               <span class="more-label">Shopping list</span>
               <span class="more-count" id="shopMenuCount" hidden>0</span>
             </button>
-            <button type="button" class="more-item" id="helperMenuOpen">
-              <span class="more-icon">💬</span>
-              <span class="more-label">Helper</span>
-            </button>
             <button type="button" class="more-item" id="infoOpen">
               <span class="more-icon">ℹ️</span>
-              <span class="more-label">Help</span>
+              <span class="more-label">Info</span>
             </button>
           </div>
         </div>
@@ -414,7 +411,7 @@
 
     <header class="topbar topbar-settings">
       <button class="icon-btn" id="infoBack" aria-label="Back">←</button>
-      <span class="topbar-heading">Help</span>
+      <span class="topbar-heading">Info</span>
     </header>
 
     <main class="content">
@@ -465,7 +462,7 @@
             <p>Before something is bought, a small pill shows where it stands: <strong>New</strong>, <strong>Ordered</strong> or <strong>Arrived</strong>. Tapping it moves it on a step, wrapping back to New so a mis-tap is one more tap from undone. Buying does not depend on it — tick something off from any status, New included.</p>
             <p>Once something is <strong>Ordered</strong>, a date field appears beside the pill for when it is expected — optional, and only there while it is on order. Set it and everyone who opens the list sees it too, the same way as everything else here. Moving off Ordered, either way, clears it, so a later re-order never inherits a date left over from the first one.</p>
             <p>Tick something off when it is bought. It stays crossed out under <strong>Bought</strong> for a day, so a mis-tap is easy to undo, then it clears itself.</p>
-            <p>The list lives behind the ⋯ at the end of the top row, along with this help screen — the two screens opened least often, tucked away so the row of buttons holds one line on a small phone. The number on ⋯ is how many items are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
+            <p>The list lives behind the ⋯ at the end of the top row, along with this Info screen — the two screens opened least often, tucked away so the row of buttons holds one line on a small phone. The number on ⋯ is how many items are still outstanding, and the handover screen names them — the two places you are already looking. There is still no way for this app to actually notify anybody: an item added at eight is seen whenever the other person next opens the app.</p>
             <p>Reads in English or Russian, the same choice and the same button as the handover screen above. Whatever anybody types stays exactly as typed.</p>
           </article>
 
@@ -512,7 +509,7 @@
           </article>
 
           <article class="info-card">
-            <h3>A daily routine, behind ⏰</h3>
+            <h3>A daily routine (⏰, behind ⋯)</h3>
             <p>The planned intervals under ⚙️ Settings answer "how long since the last one". They cannot answer "what should be happening now", and that is the question a day that has slid needs — an overtired baby who would not go down, a nap that ran to four hours, a night that started two hours late. ⏰ <strong>Daily routine</strong> is the shape of the day by the clock instead: when each sleep starts, when it is meant to end, and where the feeds fall between them.</p>
             <p>It arrives switched off and filled in, with three sleeps overnight and four naps through the day. Turn it on and the main screen gains a line saying what comes next and how long your baby has actually been awake against it. While she is asleep that same line replaces the separate <strong>Asleep for</strong> banner rather than sitting under it: it opens with how long she has been down — the one figure here nobody can work out in their head at 3am — and goes on to when the routine has her up again. Switch the routine off and the original banner comes straight back, unchanged. Feeds and nappies under 📈 What's next keep working from the intervals exactly as before — the sleep card is the one that changes hands.</p>
             <p>A sleep carries both of its ends, and the gap between one ending and the next beginning is the stretch awake the app holds the day to — taken from your own routine rather than asked for as another setting, which is why the evening stretch is allowed to run longer than the ones between daytime naps.</p>
@@ -530,7 +527,7 @@
 
           <article class="info-card">
             <h3>Helper (💬)</h3>
-            <p>At the foot of the main screen, and behind ⋯. Ask where something is — "how do I turn on white noise", "как поделиться с партнёром" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen, in the language you asked in. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "а вчера?" or "and nappies?" on their own carry the rest over from the answer before.</p>
+            <p>First in the top bar, and at the foot of the main screen. Ask where something is — "how do I turn on white noise", "как поделиться с партнёром" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen, in the language you asked in. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "а вчера?" or "and nappies?" on their own carry the rest over from the answer before.</p>
             <p>Say what happened instead of asking — "fed on the left 15 min, 10 min ago", "поменяла подгузник, покакал", "уснул в 14:30", "проснулся, поменяла подгузник и покормила" — and it reads it back and waits. One tap logs exactly what the buttons would, with an undo right there; "Not that" logs nothing. Several said together are spaced five minutes apart, ending at the time said. A sleep said out of turn — a second "asleep" in a row, a wake-up with no sleep — is logged if you say so, but not without a word about it.</p>
             <p>Opened, it says what is worth knowing right now, unasked and three lines at most: a feed the plan says is due, no dirty nappy for two days, sleep entries with no pair, or no backup on this phone for a month. Questions it could not place are kept on this phone; ⚙️ Settings → Helper copies them, so they can be sent to whoever looks after the app, and clears them.</p>
             <p>It is not an AI. Nothing is generated and nothing leaves the phone: the answers about the app are written in, and every number is one the app has already worked out. A question it cannot place — anything medical, say — it says so and offers <strong>Ask an AI</strong> instead, with your question carried across. Worry wins over everything else: mention breathing, turning blue or a fever and it gives the numbers to ring first.</p>
@@ -1528,6 +1525,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=116"></script>
+<script src="app.js?v=117"></script>
 </body>
 </html>
