@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "114";
+    var fallback = "115";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -13143,7 +13143,7 @@
   // in Settings to scroll to and light up.
   var HELPER_TOPICS = [
     { id: "feed", data: "feed",
-      words: "feed feeds fed ate eat eaten bottle breast кормил кормлен корм ел ела ели поел поела кушал кушала грудь бутылочк смесь" },
+      words: "feed feeds fed ate eat eaten bottle breast кормил кормлен корм покормила покормил покормили ел ела ели поел поела кушал кушала грудь бутылочк смесь" },
     { id: "nappy", data: "nappy",
       words: "nappy nappies diaper diapers wee poo poop wet dirty подгузник памперс какал какала писал писала пописал покакал стул" },
     { id: "sleep", data: "sleep",
@@ -13306,8 +13306,8 @@
 
   // Words that say "tell me about the log" rather than "show me the button",
   // and the other way round. Each one tips the scales by a point.
-  var HELPER_DATA_CUES = "when last latest ago many much long today yesterday tonight since often has did status " +
-    "когда последн давно сколько долго сегодня вчера ночью сейчас уже было часто";
+  var HELPER_DATA_CUES = "when last latest ago many much long today yesterday tonight night week since often has did status " +
+    "когда последн давно сколько долго сегодня вчера ночью неделю сейчас уже было часто";
   var HELPER_HOW_CUES = "how where find setting settings turn switch enable add change set log record button " +
     "как где найти настро включ выключ добав помен измен постав запис отмет кнопк";
   // Too common to tell anything apart.
@@ -13315,9 +13315,9 @@
     "baby babies she he her his him our we you " +
     "и в на по с у а ли мне мой моя что это не же бы малыш малыша малышу ребенок ребенка она он её его наш";
   var HELPER_STARTERS = {
-    en: ["When was the last feed?", "How much sleep today?", "What's next?",
+    en: ["When was the last feed?", "How much sleep last night?", "What's next?",
       "How do I turn on white noise?", "How do I share with my partner?"],
-    ru: ["Когда было последнее кормление?", "Сколько спал сегодня?", "Что дальше?",
+    ru: ["Когда было последнее кормление?", "Сколько спал ночью?", "Что дальше?",
       "Как включить белый шум?", "Как поделиться с партнёром?"]
   };
 
@@ -13423,14 +13423,100 @@
     try { return fn(); } finally { uiLang = was; }
   }
 
-  function helperWindow(question) {
+  // Which stretch a question is about, when it says. Unsaid, it is the last
+  // day round, which still holds the night just gone.
+  function helperWindowKey(question) {
+    var q = String(question).toLowerCase().replace(/ё/g, "е");
+    if (/yesterday|вчера/.test(q)) return "yesterday";
+    if (/week|7 days|недел|7 дней|семь дней/.test(q)) return "week";
+    if (/night|tonight|ночь|ночью|ночн/.test(q)) return "night";
+    if (/today|сегодн/.test(q)) return "today";
+    return null;
+  }
+
+  function helperWindow(key) {
     var now = Date.now();
     var midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    // "Today" means since midnight when somebody says it, and otherwise the
-    // last day round, which still holds the night just gone.
-    var today = /today|сегодн/i.test(question);
-    return { fromMs: today ? +midnight : now - 24 * MS_HOUR, toMs: now, hours: 24, today: today };
+    if (key === "today") return { key: key, fromMs: +midnight, toMs: now, endsNow: true };
+    if (key === "yesterday") return { key: key, fromMs: +midnight - MS_DAY, toMs: +midnight, endsNow: false };
+    if (key === "week") return { key: key, fromMs: +midnight - 6 * MS_DAY, toMs: now, endsNow: true };
+    if (key === "night") {
+      // The night under way, or the one just gone: where it starts and ends
+      // is the household's own, set beside the planned intervals.
+      var night = currentNightRange(new Date(now));
+      return { key: key, fromMs: night.from, toMs: Math.min(night.to, now), endsNow: night.to > now };
+    }
+    return { key: "day", fromMs: now - MS_DAY, toMs: now, endsNow: true };
+  }
+
+  function helperWindowName(w, lang) {
+    var ru = lang === "ru";
+    if (w.key === "today") return ru ? "С полуночи" : "Since midnight";
+    if (w.key === "yesterday") return ru ? "Вчера" : "Yesterday";
+    if (w.key === "week") return ru ? "За 7 дней" : "The last 7 days";
+    if (w.key === "night") {
+      var span = " (" + formatClockTime(new Date(w.fromMs)) + "–" + formatClockTime(new Date(w.toMs)) + ")";
+      return (w.endsNow ? (ru ? "Эта ночь" : "Tonight so far") : (ru ? "Прошлая ночь" : "Last night")) + span;
+    }
+    return ru ? "За последние 24 часа" : "In the last 24 hours";
+  }
+
+  // How many feeds or nappies, or how much sleep, in a stretch.
+  function helperAmount(kind, fromMs, toMs, live, analysis) {
+    if (kind === "sleep") return sleepMsInRange(analysis, fromMs, toMs, Date.now());
+    var type = kind === "feed" ? "feed" : "diaper";
+    return live.filter(function (e) {
+      var t = +new Date(e.time);
+      return e.type === type && t >= fromMs && t < toMs;
+    }).length;
+  }
+
+  // The same stretch on each of the seven days before, averaged: "by this
+  // time" for today, the whole day for yesterday, the night for a night. A
+  // day with nothing logged at all is a day the app was not in use, and is
+  // left out rather than counted as a day with no feeds.
+  function helperUsual(kind, w, live, analysis) {
+    if (w.key === "week") return null;
+    var total = 0;
+    var days = 0;
+    for (var d = 1; d <= 7; d++) {
+      var fromMs = w.fromMs - d * MS_DAY;
+      var toMs = w.toMs - d * MS_DAY;
+      var used = live.some(function (e) {
+        var t = +new Date(e.time);
+        return t >= fromMs && t < toMs;
+      });
+      if (!used) continue;
+      total += helperAmount(kind, fromMs, toMs, live, analysis);
+      days++;
+    }
+    return days >= 3 ? { value: total / days, days: days } : null;
+  }
+
+  function helperUsualRow(kind, w, live, analysis, lang) {
+    var ru = lang === "ru";
+    var shown = function (value) {
+      return kind === "sleep" ? (ru ? durationRu(value) : formatDuration(value)) : String(Math.round(value));
+    };
+    if (w.key === "week") {
+      var spanDays = (w.toMs - w.fromMs) / MS_DAY;
+      var perDay = helperAmount(kind, w.fromMs, w.toMs, live, analysis) / spanDays;
+      return { icon: "📊", title: ru ? "В среднем " + shown(perDay) + " в день" : "About " + shown(perDay) + " a day", details: [] };
+    }
+    var usual = helperUsual(kind, w, live, analysis);
+    if (!usual) return null;
+    var when = {
+      today: ru ? "Обычно к этому времени" : "By this time of day it's usually",
+      yesterday: ru ? "В обычный день" : "On a usual day",
+      night: ru ? "Обычно за ночь" : "On a usual night",
+      day: ru ? "Обычно за сутки" : "In a usual 24 hours"
+    }[w.key];
+    var about = ru ? "около " : "about ";
+    var line = w.key === "today" && !ru ? when + " " + about + shown(usual.value) : when + " — " + about + shown(usual.value);
+    return { icon: "📊", title: line + ".", details: [ru
+      ? "Среднее за " + usual.days + " " + pluralRu(usual.days, "день", "дня", "дней") + " до этого."
+      : "The average of the " + usual.days + " days before."] };
   }
 
   function helperAgeLine(lang) {
@@ -13467,7 +13553,7 @@
     return [row];
   }
 
-  function helperDataRows(kind, question, lang) {
+  function helperDataRows(kind, key, lang) {
     if (!liveEvents().length) {
       return [{ icon: "📝", title: lang === "ru" ? "Пока ничего не записано" : "Nothing's logged yet",
         details: [lang === "ru" ? "Нажмите Feed, Nappy или Sleep на главном экране и спросите ещё раз."
@@ -13475,26 +13561,29 @@
     }
     if (kind === "age") return [{ icon: "👶", title: helperAgeLine(lang), details: [] }];
     if (kind === "weight") return helperWeightRows(lang);
-    var w = helperWindow(question);
+    var w = helperWindow(key);
     return helperInLang(lang, function () {
       var live = liveEvents();
       var analysis = analyzeSleep();
+      // What is due, and whether the baby is asleep, belong to now: a
+      // question about yesterday or last night gets neither.
+      var due = function (kinds) { return w.endsNow ? handoverDueRow(analysis, kinds) : null; };
       var rows = [];
-      if (kind === "feed") rows = [handoverFeedRow(w, live), handoverDueRow(analysis, ["feed"])];
-      else if (kind === "nappy") rows = [handoverNappyRow(w, live), handoverDueRow(analysis, ["diaper"])];
-      else if (kind === "sleep") {
-        rows = [handoverStateRow(analysis), handoverSleepRow(w, analysis), handoverDueRow(analysis, ["sleep"])];
-      } else if (kind === "next") rows = [handoverDueRow(analysis)];
-      else {
-        rows = [handoverStateRow(analysis), handoverFeedRow(w, live), handoverNappyRow(w, live),
-          handoverSleepRow(w, analysis), handoverDueRow(analysis)];
+      if (kind === "feed") {
+        rows = [handoverFeedRow(w, live), helperUsualRow("feed", w, live, analysis, lang), due(["feed"])];
+      } else if (kind === "nappy") {
+        rows = [handoverNappyRow(w, live), helperUsualRow("nappy", w, live, analysis, lang), due(["diaper"])];
+      } else if (kind === "sleep") {
+        rows = [w.endsNow ? handoverStateRow(analysis) : null, handoverSleepRow(w, analysis),
+          helperUsualRow("sleep", w, live, analysis, lang), due(["sleep"])];
+      } else if (kind === "next") {
+        rows = [handoverDueRow(analysis)];
+      } else {
+        rows = [w.endsNow ? handoverStateRow(analysis) : null, handoverFeedRow(w, live),
+          handoverNappyRow(w, live), handoverSleepRow(w, analysis), due()];
       }
       rows = rows.filter(function (row) { return !!row; });
-      if (kind !== "next") {
-        rows.unshift({ icon: "🕐", title: w.today
-          ? (lang === "ru" ? "С полуночи" : "Since midnight")
-          : (lang === "ru" ? "За последние 24 часа" : "In the last 24 hours"), details: [], quiet: true });
-      }
+      if (kind !== "next") rows.unshift({ icon: "🕐", title: helperWindowName(w, lang), details: [], quiet: true });
       return rows;
     });
   }
@@ -13572,13 +13661,282 @@
     });
   }
 
+  // ---- logging by saying so ----
+
+  // "Fed on the left for 15 minutes, 10 minutes ago", "поменяла подгузник,
+  // покакал", "уснул в 14:30". Said, not asked: a question, or anything about
+  // a button, is left to the topics. What it understood is shown back before
+  // anything is written, and a tap writes it — the same entry the buttons
+  // make — with an undo right there.
+  var HELPER_QUESTION_START = /^(is|are|did|does|do|was|were|when|how|what|where|why|which|can|could|has|have|should|will)\b/;
+  var HELPER_QUESTION_WORD = /(^|[^а-я])(когда|сколько|как|где|почему|зачем|ли|что|какой|какая|какие)([^а-я]|$)/;
+  var HELPER_NOT_A_LOG = /button|setting|how|help|кнопк|настро|помощ|забыл|forgot/;
+
+  // Every way of saying each thing, with whether it is enough on its own
+  // ("покормила") or only with something more alongside it ("кормление
+  // 15 минут"). A bare noun is more often the start of a question.
+  var HELPER_SAYS = [
+    { type: "sleep_end", strong: /проснул|\bwoke\b|\bwoken\b|\bawake\b|wakes up/ },
+    { type: "diaper", strong: /покакал|пописал|какал|писал|\bpooed\b|\bweed\b|(помен|смен)[а-я]* подгуз|changed (the |a |her |his )?(nappy|diaper)/,
+      weak: /подгуз|памперс|\bnappy\b|\bnappies\b|\bdiaper\b/ },
+    { type: "feed", strong: /покорм|кормил|поел|съел|выпил|\bfed\b|\bate\b|breastfed|gave (her |him )?(a )?bottle|дала бутыл|дал бутыл/,
+      weak: /кормлен|\bfeed\b|\bfeeding\b|\bbottle\b|бутылочк/ },
+    { type: "sleep_start", strong: /уснул|заснул|уложил|fell asleep|went down|\basleep\b|\bnap started\b/ }
+  ];
+
+  function helperNorm(text) {
+    return String(text).toLowerCase().replace(/ё/g, "е");
+  }
+
+  // When it happened, and the text with that part taken out so "15 минут
+  // назад" is not read again as a 15-minute feed.
+  function helperWhen(text, now) {
+    var at = null;
+    var rest = text;
+    var ago = /(?:(\d+(?:[.,]\d+)?)\s*(?:часа|часов|час|ч|hours|hour|hrs|hr|h)\.?\s*)?(?:(\d+)\s*(?:минуты|минут|минуту|мин|minutes|minute|mins|min|m)\.?\s*)?(назад|ago)/;
+    var m = ago.exec(rest);
+    if (m && (m[1] || m[2])) {
+      var mins = (m[1] ? parseFloat(m[1].replace(",", ".")) * 60 : 0) + (m[2] ? parseInt(m[2], 10) : 0);
+      at = new Date(now - mins * MS_MIN);
+      rest = rest.replace(m[0], " ");
+    } else if (/полчаса назад|half an hour ago/.test(rest)) {
+      at = new Date(now - 30 * MS_MIN);
+      rest = rest.replace(/полчаса назад|half an hour ago/, " ");
+    } else if (/(^|\s)час назад|an hour ago/.test(rest)) {
+      at = new Date(now - 60 * MS_MIN);
+      rest = rest.replace(/час назад|an hour ago/, " ");
+    }
+    if (!at) {
+      var hh = null;
+      var mm = 0;
+      var clock = /(?:^|\s)(?:в|at)?\s*(\d{1,2})[:.](\d{2})(?!\d)\s*(am|pm)?/.exec(rest);
+      var ampm = /(?:^|\s)(?:at\s*)?(\d{1,2})\s*(am|pm)\b/.exec(rest);
+      var part = /(?:^|\s)в\s*(\d{1,2})\s*(ночи|утра|дня|вечера)/.exec(rest);
+      if (clock) {
+        hh = parseInt(clock[1], 10);
+        mm = parseInt(clock[2], 10);
+        if (clock[3] === "pm" && hh < 12) hh += 12;
+        if (clock[3] === "am" && hh === 12) hh = 0;
+        rest = rest.replace(clock[0], " ");
+      } else if (ampm) {
+        hh = parseInt(ampm[1], 10) % 12 + (ampm[2] === "pm" ? 12 : 0);
+        rest = rest.replace(ampm[0], " ");
+      } else if (part) {
+        hh = parseInt(part[1], 10) % 12;
+        if (part[2] === "дня" || part[2] === "вечера") hh += 12;
+        rest = rest.replace(part[0], " ");
+      }
+      if (hh !== null && hh < 24 && mm < 60) {
+        var day = new Date(now);
+        day.setHours(hh, mm, 0, 0);
+        // A clock time still to come today is last night's, not tonight's.
+        if (+day > now + 2 * MS_MIN) day = new Date(+day - MS_DAY);
+        at = day;
+      }
+    }
+    return { at: at, rest: rest };
+  }
+
+  function helperParseLog(question) {
+    var text = helperNorm(question);
+    if (/\?/.test(text) || HELPER_QUESTION_START.test(text.trim()) || HELPER_QUESTION_WORD.test(text) ||
+      HELPER_NOT_A_LOG.test(text)) return null;
+    var now = Date.now();
+    var when = helperWhen(text, now);
+    var rest = when.rest;
+
+    var minutes = null;
+    var m = /(\d{1,3})\s*(минуты|минут|минуту|мин|minutes|minute|mins|min|m)(?![a-zа-я])/.exec(rest);
+    if (m) minutes = parseInt(m[1], 10);
+    else if (/полчаса|half an hour/.test(rest)) minutes = 30;
+    var ml = null;
+    var amount = /(\d{1,4})\s*(мл|ml|миллилитр)/.exec(rest);
+    var ounces = /(\d+(?:[.,]\d+)?)\s*(oz|унц)/.exec(rest);
+    if (amount) ml = parseInt(amount[1], 10);
+    else if (ounces) ml = Math.round(parseFloat(ounces[1].replace(",", ".")) * 30);
+
+    var side = null;
+    if (/(^|\s)(обе|обеими|обоими)|both (sides|breasts)/.test(rest)) side = "LR";
+    else if (/(^|\s)лев|\bleft\b/.test(rest)) side = "L";
+    else if (/(^|\s)прав|\bright\b/.test(rest)) side = "R";
+    var fedWith;
+    if (side || /(^|\s)груд|\bbreast/.test(rest)) fedWith = "breast";
+    else if (/(^|\s)смес|\bformula\b/.test(rest)) fedWith = "formula";
+    else if (/сцеж|\bexpressed\b|\bpumped\b/.test(rest)) fedWith = "expressed";
+    else if (/бутыл|\bbottle\b/.test(rest)) fedWith = defaultFedWith() === "breast" ? "" : undefined;
+
+    var dirty = /покак|какал|какашк|грязн|(^|\s)кака|\bpoo|\bdirty\b/.test(rest);
+    var wet = /пописал|писал|мокр|\bwee\b|\bweed\b|\bwet\b/.test(rest);
+    var nappy = /(^|\s)сух|\bdry\b/.test(rest) ? "dry" : dirty && wet ? "both" : dirty ? "dirty" : wet ? "wet" : null;
+    if (!nappy && /\bboth\b|и то и другое/.test(rest) && !side) nappy = "both";
+
+    var detail = !!(when.at || minutes || ml || side || fedWith || nappy);
+    var found = [];
+    HELPER_SAYS.forEach(function (say) {
+      var hit = say.strong.exec(rest) || (detail && say.weak ? say.weak.exec(rest) : null);
+      // "Changed her nappy" says nappy; a poo or a wee said alone does too.
+      if (!hit && say.type === "diaper" && (dirty || wet)) hit = { index: rest.search(/покак|какал|пописал|писал|poo|wee|wet|dirty|мокр|грязн/) };
+      if (hit) found.push({ type: say.type, index: hit.index });
+    });
+    if (!found.length) return null;
+    found.sort(function (a, b) { return a.index - b.index; });
+
+    // Several said together are spaced five minutes apart, ending at the
+    // time said — the way the Woke → nappy → feed button spaces its three.
+    var at = when.at || new Date(now);
+    return found.map(function (f, i) {
+      var entry = { type: f.type, at: new Date(+at - (found.length - 1 - i) * 5 * MS_MIN) };
+      if (f.type === "feed") {
+        entry.fedWith = fedWith;
+        entry.side = side;
+        entry.fedMl = ml;
+        // A side said with no length is what a tap on L or R records.
+        entry.fedMin = minutes || (side && side !== "LR" && !ml ? FEED_SIDE_DEFAULT_MIN : null);
+      }
+      if (f.type === "diaper") entry.nappy = nappy;
+      return entry;
+    });
+  }
+
+  var HELPER_NAPPY_WORDS = {
+    en: { wet: "wee", dirty: "poo", both: "wee & poo", dry: "dry" },
+    ru: { wet: "пописал", dirty: "покакал", both: "пописал и покакал", dry: "сухой" }
+  };
+  var HELPER_SOURCE_WORDS = {
+    en: { breast: "breast", formula: "formula", expressed: "expressed milk" },
+    ru: { breast: "грудь", formula: "смесь", expressed: "сцеженное молоко" }
+  };
+
+  function helperEntryLine(entry, lang) {
+    var ru = lang === "ru";
+    var meta = KIND_META[entry.type === "diaper" ? "diaper" : entry.type === "feed" ? "feed" : "sleep"];
+    var name = {
+      feed: ru ? "Кормление" : "Feed",
+      diaper: ru ? "Подгузник" : "Nappy",
+      sleep_start: ru ? "Уснул(а)" : "Fell asleep",
+      sleep_end: ru ? "Проснулся(-ась)" : "Woke up"
+    }[entry.type];
+    var bits = [];
+    if (entry.type === "feed") {
+      if (entry.side) bits.push(FEED_SIDES[entry.side][lang === "ru" ? "ru" : "en"]);
+      else if (entry.fedWith) bits.push(HELPER_SOURCE_WORDS[ru ? "ru" : "en"][entry.fedWith]);
+      if (entry.fedMin) bits.push(entry.fedMin + (ru ? " мин" : " min"));
+      if (entry.fedMl) bits.push(entry.fedMl + (ru ? " мл" : " ml"));
+    }
+    if (entry.type === "diaper" && entry.nappy) bits.push(HELPER_NAPPY_WORDS[ru ? "ru" : "en"][entry.nappy]);
+    var when = Date.now() - +entry.at < 90 * 1000 ? (ru ? "сейчас" : "now")
+      : helperInLang(ru ? "ru" : "en", function () { return handoverAgo(entry.at); });
+    return meta.icon + " " + name + (bits.length ? " — " + bits.join(", ") : "") + " · " + when;
+  }
+
+  // A sleep can only start when the baby is awake and end when asleep. Said
+  // out of turn it is still written if asked — the log is the parent's — but
+  // not without saying what it will look like.
+  function helperLogWarning(entries, lang) {
+    var ru = lang === "ru";
+    var active = analyzeSleep().active;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (e.type === "sleep_start" && active && +new Date(active.time) <= +e.at) {
+        return ru ? "Сон уже идёт с " + formatClockTime(new Date(active.time)) + " — это будет второе «уснул» подряд."
+          : "A sleep is already going since " + formatClockTime(new Date(active.time)) + " — this would be a second one in a row.";
+      }
+      if (e.type === "sleep_end" && !active && !entries.some(function (o) { return o.type === "sleep_start"; })) {
+        return ru ? "Сейчас не отмечено, что малыш спит, — у этого пробуждения не будет пары."
+          : "No sleep is going right now, so this wake-up will have nothing to pair with.";
+      }
+    }
+    return "";
+  }
+
+  function helperOfferLog(entries, lang) {
+    var ru = lang === "ru";
+    var bubble = helperBubble("bot");
+    bubble.setAttribute("data-topic", "log");
+    helperText(bubble, "helper-title", ru ? "Записать?" : "Log this?");
+    entries.forEach(function (entry) { helperText(bubble, "helper-line", helperEntryLine(entry, lang)); });
+    var warning = helperLogWarning(entries, lang);
+    if (warning) helperText(bubble, "helper-line helper-urgent", warning);
+    var row = document.createElement("div");
+    bubble.appendChild(row);
+    var ids = [];
+    var write = helperButton(row, ru ? "✓ Записать" : "✓ Log it", function () {
+      entries.forEach(function (entry) {
+        var id = addEvent(entry.type, entry.at.toISOString(), entry.nappy, undefined, undefined, undefined,
+          entry.fedMin, entry.fedWith, undefined, undefined, entry.fedMl, undefined, entry.side);
+        if (id) ids.push(id);
+        if (id && (entry.type === "sleep_start" || entry.type === "sleep_end")) afterSleepLogged(entry.type === "sleep_start");
+      });
+      row.innerHTML = "";
+      if (!ids.length) {
+        helperText(row, "helper-line helper-urgent", ru ? "Не получилось сохранить." : "Couldn't save that.");
+        return;
+      }
+      helperText(row, "helper-line", ru ? "✓ Записано." : "✓ Logged.");
+      helperButton(row, ru ? "Отменить" : "Undo", function () {
+        ids.forEach(function (id) { tombstoneEventQuiet(id); });
+        saveEvents(events);
+        renderAll();
+        row.innerHTML = "";
+        helperText(row, "helper-line helper-dim", ru ? "Отменено — ничего не записано." : "Undone — nothing logged.");
+      });
+    });
+    write.classList.add("helper-action-main");
+    helperButton(row, ru ? "Не то" : "Not that", function () {
+      row.innerHTML = "";
+      helperText(row, "helper-line helper-dim", ru
+        ? "Хорошо, ничего не записано. Можно сказать иначе или нажать кнопку на главном экране."
+        : "Fine — nothing logged. Say it another way, or use the buttons on the main screen.");
+    });
+    renderHelperChips();
+  }
+
+  // What the last answer about the log was about, so "а вчера?" or "and
+  // nappies?" can be asked on its own.
+  var helperContext = null;
+  var HELPER_PERIOD_KINDS = { feed: true, nappy: true, sleep: true, today: true };
+
+  function helperDataAnswer(bubble, kind, key, lang) {
+    bubble.setAttribute("data-topic", kind === "today" ? "today" : kind);
+    bubble.setAttribute("data-window", helperWindow(key).key);
+    helperDataRows(kind, key, lang).forEach(function (row) {
+      var block = document.createElement("div");
+      block.className = "helper-row" + (row.quiet ? " helper-row-quiet" : "");
+      helperText(block, "helper-title", (row.icon ? row.icon + " " : "") + row.title);
+      row.details.forEach(function (line) { helperText(block, "helper-line", line); });
+      bubble.appendChild(block);
+    });
+    if (HELPER_PERIOD_KINDS[kind]) helperContext = { kind: kind, key: key };
+  }
+
   function helperAnswer(question) {
     var lang = helperLangOf(question);
     helperLang = lang;
+    var logged = helperParseLog(question);
+    if (logged) {
+      helperOfferLog(logged, lang);
+      return;
+    }
     var ranked = helperRank(question);
-    var bubble = helperBubble("bot");
     var best = ranked[0];
+    var key = helperWindowKey(question);
 
+    // A follow-up borrows what it leaves out from the answer before: "а
+    // вчера?" keeps the subject, "and nappies?" keeps the stretch. Only one
+    // that reads as a follow-up — opening with "а" or "and", or a single
+    // word — so a whole new question starts afresh.
+    var followUp = /^\s*(а|и|ну а|and|what about|how about)(\s|$)/i.test(question) ||
+      helperWords(question).length <= 1;
+    if (helperContext && followUp) {
+      var named = best && HELPER_PERIOD_KINDS[best.topic.data] ? best.topic.data : null;
+      if (key || named) {
+        helperDataAnswer(helperBubble("bot"), named || helperContext.kind, key || helperContext.key, lang);
+        renderHelperChips();
+        return;
+      }
+    }
+
+    var bubble = helperBubble("bot");
     if (!best) {
       bubble.setAttribute("data-topic", "none");
       helperText(bubble, "helper-line", lang === "ru"
@@ -13590,16 +13948,10 @@
     }
 
     var topic = best.topic;
-    bubble.setAttribute("data-topic", topic.id);
     if (topic.data) {
-      helperDataRows(topic.data, question, lang).forEach(function (row) {
-        var block = document.createElement("div");
-        block.className = "helper-row" + (row.quiet ? " helper-row-quiet" : "");
-        helperText(block, "helper-title", (row.icon ? row.icon + " " : "") + row.title);
-        row.details.forEach(function (line) { helperText(block, "helper-line", line); });
-        bubble.appendChild(block);
-      });
+      helperDataAnswer(bubble, topic.data, key, lang);
     } else {
+      bubble.setAttribute("data-topic", topic.id);
       helperText(bubble, "helper-title", topic.title[lang]);
       helperText(bubble, "helper-line", topic[lang]);
       if (topic.urgent) helperText(bubble, "helper-line helper-urgent", lang === "ru"
@@ -13668,8 +14020,10 @@
       helperLang = uiLang;
       var hello = helperBubble("bot");
       helperText(hello, "helper-line",
-        "Ask where something is in the app, or about the log — the last feed, today's nappies, how much sleep, what's next.");
-      helperText(hello, "helper-line helper-dim", "Можно спрашивать по-русски.");
+        "Ask where something is in the app, or about the log — the last feed, yesterday's nappies, last night's sleep, what's next.");
+      helperText(hello, "helper-line",
+        "Or say what happened — \"fed on the left 15 min, 10 min ago\" — and it logs it once you've checked it.");
+      helperText(hello, "helper-line helper-dim", "Можно по-русски: «покормила левой 15 минут», «сколько спал вчера».");
     }
     renderHelperChips();
     showScreen("helper");
