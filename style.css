@@ -1736,6 +1736,13 @@ body {
 
 .helper-action:active { opacity: 0.7; }
 
+/* The one that writes to the log. */
+.helper-action-main {
+  background: var(--accent-diaper);
+  border-color: var(--accent-diaper);
+  color: var(--bg);
+}
+
 .helper-form {
   align-items: stretch;
   display: flex;
