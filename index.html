@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=117">
+<link rel="stylesheet" href="style.css?v=118">
 </head>
 <body>
 
@@ -33,7 +33,7 @@
 
     <header class="topbar topbar-main">
       <div class="topbar-icons">
-        <button class="icon-btn" id="helperTopOpen" aria-label="Helper">💬</button>
+        <button class="icon-btn" id="helperTopOpen" aria-label="Helper — hold to speak">💬</button>
         <button class="icon-btn" id="handoverOpen" aria-label="Handover">🤝</button>
         <button class="icon-btn" id="rotaOpen" aria-label="Carer rota">🤗</button>
         <button class="icon-btn" id="planOpen" aria-label="What's coming up">📅</button>
@@ -530,7 +530,8 @@
             <p>First in the top bar, and at the foot of the main screen. Ask where something is — "how do I turn on white noise", "как поделиться с партнёром" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen, in the language you asked in. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "а вчера?" or "and nappies?" on their own carry the rest over from the answer before.</p>
             <p>Say what happened instead of asking — "fed on the left 15 min, 10 min ago", "поменяла подгузник, покакал", "уснул в 14:30", "проснулся, поменяла подгузник и покормила" — and it reads it back and waits. One tap logs exactly what the buttons would, with an undo right there; "Not that" logs nothing. Several said together are spaced five minutes apart, ending at the time said. A sleep said out of turn — a second "asleep" in a row, a wake-up with no sleep — is logged if you say so, but not without a word about it.</p>
             <p>Opened, it says what is worth knowing right now, unasked and three lines at most: a feed the plan says is due, no dirty nappy for two days, sleep entries with no pair, or no backup on this phone for a month. Questions it could not place are kept on this phone; ⚙️ Settings → Helper copies them, so they can be sent to whoever looks after the app, and clears them.</p>
-            <p>It is not an AI. Nothing is generated and nothing leaves the phone: the answers about the app are written in, and every number is one the app has already worked out. A question it cannot place — anything medical, say — it says so and offers <strong>Ask an AI</strong> instead, with your question carried across. Worry wins over everything else: mention breathing, turning blue or a fever and it gives the numbers to ring first.</p>
+            <p>Speak instead of typing: tap 🎤 beside the box, or hold 💬 in the top bar and let go — it opens already listening. Say it in one go; it stops when you do, or when you tap 🎤 again, and what it heard is asked or offered for logging just as if you had typed it. The button under it switches between English and Russian, and it remembers which you spoke last. The words are recognised by the phone — on an iPhone by Apple, the same as the microphone on the keyboard — so it asks once before the first time, and ⚙️ Settings → Helper turns it off.</p>
+            <p>It is not an AI. Nothing is generated and, apart from speech you have chosen to say to it, nothing leaves the phone: the answers about the app are written in, and every number is one the app has already worked out. A question it cannot place — anything medical, say — it says so and offers <strong>Ask an AI</strong> instead, with your question carried across. Worry wins over everything else: mention breathing, turning blue or a fever and it gives the numbers to ring first.</p>
 
             <h3>Fixing mistakes</h3>
             <ul>
@@ -1272,9 +1273,14 @@
         <div class="ai-chips helper-chips" id="helperChips"></div>
         <form class="helper-form" id="helperForm" autocomplete="off">
           <input type="text" id="helperInput" class="ai-question helper-input" maxlength="200" enterkeyhint="send" placeholder="Type a question…">
+          <button type="button" class="helper-mic" id="helperMic" aria-label="Speak" hidden>🎤</button>
           <button type="submit" class="helper-send" id="helperSend" aria-label="Send">➤</button>
         </form>
-        <p class="data-hint">It knows this app and your log, and nothing else. It is not an AI and sends nothing anywhere: the answers are written in, and every number is the app's own. Ask in English or Russian — or say what happened, and it logs it once you've checked it.</p>
+        <div class="helper-voice" id="helperVoice" hidden>
+          <span class="helper-voice-state" id="helperVoiceState"></span>
+          <button type="button" class="helper-action" id="helperVoiceLang"></button>
+        </div>
+        <p class="data-hint">It knows this app and your log, and nothing else. It is not an AI and sends nothing anywhere: the answers are written in, and every number is the app's own. Ask in English or Russian — or say what happened, and it logs it once you've checked it. 🎤, or holding 💬 in the top bar, lets you say it instead; the phone turns what you say into text, and only the text reaches the helper.</p>
       </section>
     </main>
   </div>
@@ -1410,6 +1416,11 @@
           <p class="settings-hint" id="helperMissesState">—</p>
           <button type="button" class="data-btn" id="helperMissesCopy" hidden>📋 Copy the list</button>
           <button type="button" class="data-btn" id="helperMissesClear" hidden>🗑 Clear the list</button>
+          <label class="settings-check">
+            <input type="checkbox" id="helperVoiceOn">
+            <span class="settings-label">Speak to it — 🎤, or hold 💬</span>
+          </label>
+          <p class="settings-hint" id="helperVoiceHint">What you say is turned into text by the phone or the browser, not by this app: on an iPhone by Apple, as with the microphone on the keyboard; in Chrome by Google. The sound may go to their servers to be recognised. Only the text comes back, and nothing is logged until you tap ✓. Off, 🎤 asks first. This setting stays on this phone.</p>
           <p class="settings-hint">Only ever copied by you. It stays on this phone and is never synced, backed up or shared — the questions are in your own words, and some will be about your baby.</p>
         </div>
       </section>
@@ -1525,6 +1536,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=117"></script>
+<script src="app.js?v=118"></script>
 </body>
 </html>

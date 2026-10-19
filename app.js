@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "117";
+    var fallback = "118";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -553,6 +553,13 @@
   // device, never synced, exported or shared.
   var HELPER_MISSES_KEY = "baby-tracker-helper-misses";
   var HELPER_MISSES_MAX = 50;
+  // Whether this phone may hand speech to the browser's recogniser, and the
+  // language it was last spoken in. Per device, never synced, exported or
+  // shared: like Ask an AI, it is a way out of the phone, and that is each
+  // phone's own decision.
+  var HELPER_VOICE_KEY = "baby-tracker-helper-voice";
+  var HELPER_HOLD_MS = 450;
+  var HELPER_LISTEN_MAX = 30 * 1000;
   // When this phone last saved a JSON backup. Per device too: it is about
   // this phone's copy, and a backup made on another phone says nothing of it.
   var BACKUP_AT_KEY = "baby-tracker-backup-at";
@@ -1980,6 +1987,12 @@
     helperChips: document.getElementById("helperChips"),
     helperForm: document.getElementById("helperForm"),
     helperInput: document.getElementById("helperInput"),
+    helperMic: document.getElementById("helperMic"),
+    helperVoice: document.getElementById("helperVoice"),
+    helperVoiceState: document.getElementById("helperVoiceState"),
+    helperVoiceLang: document.getElementById("helperVoiceLang"),
+    helperVoiceOn: document.getElementById("helperVoiceOn"),
+    helperVoiceHint: document.getElementById("helperVoiceHint"),
     aiRow: document.getElementById("aiRow"),
     aiOpen: document.getElementById("aiOpen"),
     aiBack: document.getElementById("aiBack"),
@@ -6253,12 +6266,14 @@
     el.screenRoutine.hidden = name !== "routine";
     el.screenStats.hidden = name !== "stats";
     el.screenHelper.hidden = name !== "helper";
+    if (name !== "helper") helperVoiceStop();
     renderNoiseFab();
     window.scrollTo(0, 0);
   }
 
   function showSettings(focusName) {
     renderHelperMisses();
+    renderHelperVoice();
     showScreen("settings");
     if (focusName) el.babyName.focus();
   }
@@ -14165,6 +14180,242 @@
     showToast("Cleared");
   });
 
+  // ---- speaking instead of typing ----
+
+  // The browser's own speech recogniser: Apple's on an iPhone — the same one
+  // as the microphone on the keyboard — and Google's in Chrome. Either may
+  // send the sound to its maker to be turned into text, which makes it a way
+  // out of the phone like Ask an AI, so it is asked for once and can be
+  // turned off. Only the text comes back, it goes into the box exactly as if
+  // it had been typed, and nothing is logged without the same ✓.
+  var HelperRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var helperRec = null;
+  var helperRecTimer = null;
+
+  function loadHelperVoice() {
+    try {
+      var v = JSON.parse(localStorage.getItem(HELPER_VOICE_KEY) || "null");
+      if (v && typeof v === "object") {
+        return { on: v.on === true, lang: v.lang === "ru" || v.lang === "en" ? v.lang : null };
+      }
+    } catch (e) { /* asked afresh */ }
+    return { on: false, lang: null };
+  }
+
+  function saveHelperVoice(change) {
+    var v = loadHelperVoice();
+    Object.keys(change).forEach(function (k) { v[k] = change[k]; });
+    try { localStorage.setItem(HELPER_VOICE_KEY, JSON.stringify(v)); } catch (e) { /* asked again next time */ }
+  }
+
+  // The language it was last spoken in; before the first time, the one the
+  // helper was last asked in, or Russian on a phone that lists it.
+  function helperVoiceLang() {
+    var kept = loadHelperVoice().lang;
+    if (kept) return kept;
+    var phone = [].concat(navigator.languages || [], navigator.language || []);
+    var ru = helperLang === "ru" || phone.some(function (l) { return /^ru/i.test(l); });
+    return ru ? "ru" : "en";
+  }
+
+  function renderHelperVoice() {
+    el.helperMic.hidden = !HelperRecognition;
+    el.helperVoiceOn.checked = !!HelperRecognition && loadHelperVoice().on;
+    el.helperVoiceOn.disabled = !HelperRecognition;
+    if (!HelperRecognition) {
+      el.helperVoiceHint.textContent = "This browser cannot turn speech into text for a web page. Tap the box instead and use the microphone on the keyboard — that works anywhere.";
+    }
+  }
+
+  // 🎤, or 💬 held. Asked first if speech has not been allowed on this phone;
+  // with no recogniser at all, the box gets the keyboard, whose own
+  // microphone is the next best thing. Called straight from a touch: a phone
+  // lets a page start the microphone, or bring up the keyboard, only then.
+  function helperListen() {
+    if (!HelperRecognition) {
+      el.helperInput.focus();
+      return;
+    }
+    if (!loadHelperVoice().on) {
+      helperAskVoice();
+      return;
+    }
+    helperVoiceStart(helperVoiceLang());
+  }
+
+  function helperAskVoice() {
+    var lang = helperLang === "ru" ? "ru" : "en";
+    var bubble = helperBubble("bot");
+    bubble.setAttribute("data-topic", "voice");
+    helperText(bubble, "helper-title", lang === "ru" ? "🎤 Голосом" : "🎤 Speaking to it");
+    helperText(bubble, "helper-line", lang === "ru"
+      ? "Речь в текст переводит телефон, а не это приложение: на iPhone — Apple, как микрофон на клавиатуре, в Chrome — Google. Звук может уйти к ним на серверы. Сюда возвращается только текст, и ничего не записывается, пока вы не нажмёте ✓."
+      : "Speech is turned into text by the phone, not by this app: on an iPhone by Apple, as with the microphone on the keyboard; in Chrome by Google. The sound may go to their servers. Only the text comes back here, and nothing is logged until you tap ✓.");
+    var yes = helperButton(bubble, lang === "ru" ? "🎤 Включить и говорить" : "🎤 Turn on and speak", function () {
+      saveHelperVoice({ on: true });
+      helperVoiceStart(helperVoiceLang());
+    });
+    yes.classList.add("helper-action-main");
+    helperButton(bubble, lang === "ru" ? "Нет, напечатаю" : "No, I'll type", function () {
+      el.helperInput.focus();
+    });
+    helperScroll();
+  }
+
+  function helperVoiceStart(lang) {
+    helperVoiceStop();
+    var rec;
+    try {
+      rec = new HelperRecognition();
+      rec.lang = lang === "ru" ? "ru-RU" : "en-GB";
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.maxAlternatives = 1;
+    } catch (e) {
+      helperVoiceFailed("start", lang);
+      return;
+    }
+    var said = "";
+    var failed = null;
+    rec.onresult = function (ev) {
+      var text = "";
+      for (var i = 0; i < ev.results.length; i++) text += ev.results[i][0].transcript;
+      said = text;
+      if (helperRec === rec) el.helperInput.value = text.trim();
+    };
+    rec.onerror = function (ev) { failed = (ev && ev.error) || "error"; };
+    rec.onend = function () {
+      if (helperRec !== rec) return;
+      helperRec = null;
+      clearTimeout(helperRecTimer);
+      helperVoiceShow(null);
+      if (said.trim()) {
+        saveHelperVoice({ lang: lang });
+        helperAsk(said);
+      } else {
+        el.helperInput.value = "";
+        helperVoiceFailed(failed || "no-speech", lang);
+      }
+    };
+    helperRec = rec;
+    try {
+      rec.start();
+    } catch (e) {
+      helperRec = null;
+      helperVoiceFailed("start", lang);
+      return;
+    }
+    // A recogniser that never hears the end of a sentence would otherwise
+    // keep the microphone on until the screen is left.
+    helperRecTimer = setTimeout(function () {
+      if (helperRec === rec) { try { rec.stop(); } catch (e) { /* already over */ } }
+    }, HELPER_LISTEN_MAX);
+    helperVoiceShow(lang);
+  }
+
+  // Abandoned, not finished: whatever was half-heard is not asked.
+  function helperVoiceStop() {
+    var rec = helperRec;
+    helperRec = null;
+    clearTimeout(helperRecTimer);
+    if (rec) { try { rec.abort(); } catch (e) { /* already over */ } }
+    helperVoiceShow(null);
+  }
+
+  function helperVoiceShow(lang) {
+    var on = !!lang;
+    el.helperMic.classList.toggle("listening", on);
+    el.helperMic.setAttribute("aria-label", on ? "Stop listening" : "Speak");
+    el.helperVoice.hidden = !on;
+    if (!on) {
+      el.helperInput.placeholder = "Type a question…";
+      return;
+    }
+    el.helperInput.value = "";
+    el.helperInput.placeholder = lang === "ru" ? "Слушаю…" : "Listening…";
+    el.helperVoiceState.textContent = lang === "ru" ? "🎤 Слушаю — говорите по-русски" : "🎤 Listening — speak English";
+    el.helperVoiceLang.textContent = lang === "ru" ? "English" : "По-русски";
+    el.helperVoiceLang.setAttribute("data-lang", lang === "ru" ? "en" : "ru");
+  }
+
+  function helperVoiceFailed(code, lang) {
+    var ru = lang === "ru";
+    var text;
+    if (code === "not-allowed" || code === "service-not-allowed") {
+      text = ru
+        ? "Микрофон не разрешён. Разрешите его, когда телефон спросит (на iPhone: Настройки → Приложения → Safari → Микрофон). А пока можно нажать на поле и диктовать с 🎤 на клавиатуре."
+        : "The microphone isn't allowed. Allow it when the phone asks (on an iPhone: Settings → Apps → Safari → Microphone). Meanwhile, tap the box and use 🎤 on the keyboard.";
+    } else if (code === "network") {
+      text = ru
+        ? "Распознавание речи сейчас недоступно — нет связи. Можно напечатать или продиктовать с 🎤 на клавиатуре."
+        : "Speech recognition isn't available right now — no connection. Type it, or use 🎤 on the keyboard.";
+    } else if (code === "no-speech" || code === "aborted") {
+      text = ru ? "Ничего не расслышал — нажмите 🎤 и скажите ещё раз." : "Didn't catch anything — tap 🎤 and say it again.";
+    } else {
+      text = ru
+        ? "Не получилось распознать речь. Можно напечатать или продиктовать с 🎤 на клавиатуре."
+        : "Couldn't make out what was said. Type it, or use 🎤 on the keyboard.";
+    }
+    var bubble = helperBubble("bot");
+    bubble.setAttribute("data-topic", "voice");
+    helperText(bubble, "helper-line", text);
+    helperScroll();
+  }
+
+  el.helperMic.addEventListener("click", function () {
+    if (helperRec) {
+      // Finished rather than abandoned: what has been said so far is asked.
+      try { helperRec.stop(); } catch (e) { helperVoiceStop(); }
+      return;
+    }
+    helperListen();
+  });
+
+  el.helperVoiceLang.addEventListener("click", function () {
+    var lang = el.helperVoiceLang.getAttribute("data-lang") === "ru" ? "ru" : "en";
+    saveHelperVoice({ lang: lang });
+    helperVoiceStart(lang);
+  });
+
+  el.helperVoiceOn.addEventListener("change", function () {
+    saveHelperVoice({ on: el.helperVoiceOn.checked });
+  });
+
+  // Held, the 💬 opens the helper already listening. It starts on letting go
+  // rather than at the half-second mark: the microphone can be started only
+  // straight off a touch, and a timer is not one. Lit up once it has been held
+  // long enough, so the moment to let go is plain.
+  var helperHoldTimer = null;
+  var helperWasHeld = false;
+  var helperHeldAt = 0;
+
+  function cancelHelperHold() {
+    if (helperHoldTimer) clearTimeout(helperHoldTimer);
+    helperHoldTimer = null;
+    helperWasHeld = false;
+    el.helperTopOpen.classList.remove("helper-held");
+  }
+
+  el.helperTopOpen.addEventListener("pointerdown", function () {
+    cancelHelperHold();
+    helperHoldTimer = setTimeout(function () {
+      helperHoldTimer = null;
+      helperWasHeld = true;
+      el.helperTopOpen.classList.add("helper-held");
+    }, HELPER_HOLD_MS);
+  });
+  el.helperTopOpen.addEventListener("pointerup", function () {
+    var held = helperWasHeld;
+    cancelHelperHold();
+    if (!held) return;
+    helperHeldAt = Date.now();
+    openHelper();
+    helperListen();
+  });
+  el.helperTopOpen.addEventListener("pointercancel", cancelHelperHold);
+  el.helperTopOpen.addEventListener("pointerleave", cancelHelperHold);
+  el.helperTopOpen.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+
   function openHelper() {
     if (!el.helperLog.children.length) {
       helperLang = uiLang;
@@ -14177,15 +14428,23 @@
     }
     helperShowHints();
     renderHelperChips();
+    renderHelperVoice();
     showScreen("helper");
   }
 
   el.helperOpen.addEventListener("click", openHelper);
-  el.helperTopOpen.addEventListener("click", openHelper);
+  el.helperTopOpen.addEventListener("click", function () {
+    // The tap a held button still produces on letting go is not a second
+    // opening.
+    if (Date.now() - helperHeldAt < 1000) return;
+    openHelper();
+  });
   el.helperBack.addEventListener("click", showMain);
   el.helperForm.addEventListener("submit", function (ev) {
     ev.preventDefault();
-    helperAsk(el.helperInput.value);
+    var typed = el.helperInput.value;
+    helperVoiceStop();
+    helperAsk(typed);
   });
 
   // ---------- version ----------
