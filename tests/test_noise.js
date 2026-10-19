@@ -201,8 +201,8 @@ function rms(s, from, count) {
   ok('the default sound is the deep one', await picked('#noiseSounds') === 'brown');
   ok('the default volume is low', await picked('#noiseLevels') === '2');
   ok('the default timer is 45 minutes', await picked('#noiseTimers') === '45');
-  ok('it does not follow the sleep button until asked',
-    !(await page.isChecked('#noiseAuto')));
+  ok('there is no setting that starts it from the sleep button',
+    (await page.$('#noiseAuto')) === null);
   ok('the right-hand watch button logs a feed to begin with',
     await picked('#noiseNext') === 'feed');
   ok('and the left-hand one the sleep', await picked('#noisePrev') === 'sleep');
@@ -593,43 +593,33 @@ function rms(s, from, count) {
   await page.click('#noisePlay');
   await page.waitForTimeout(300);
 
-  // ---------- following the sleep button ----------
+  // ---------- logging never starts it ----------
 
+  // Sound starts only from a tap on play. Logging a sleep, a wake-up or the
+  // combined wake button leaves the player alone, even with a setting from
+  // an older version that asked for the sleep button to start it.
   await fresh();
+  await page.evaluate(() => localStorage.setItem('baby-tracker-noise',
+    JSON.stringify({ sound: 'brown', level: 2, timer: 15, auto: true })));
+  await page.reload();
+  await page.waitForTimeout(500);
   await page.click('#btnSleep');
   await page.waitForTimeout(700);
-  ok('logging a sleep makes no noise by default', !(await player()).playing);
-  await page.click('#btnSleep');
-  await page.waitForTimeout(400);
-
-  await openNoise();
-  await page.check('#noiseAuto');
-  await page.click('#noiseTimers .nz-chip[data-value="15"]');
-  await page.click('#noiseBack');
-  await page.waitForTimeout(250);
-
-  await page.click('#btnSleep');
-  await page.waitForTimeout(1200);
-  ok('switched on, the sleep button starts it with no second tap',
-    (await player()).playing);
-  ok('and the shortcut shows the timer running', (await fab()).left === '15m');
-
+  ok('logging a sleep makes no noise, even for a phone that once asked it to',
+    !(await player()).playing);
   await page.click('#btnSleep');
   await page.waitForTimeout(500);
-  ok('and the wake-up stops it', !(await player()).playing);
-
+  ok('nor does waking up', !(await player()).playing);
   await page.click('#btnWakeChangeFeed');
   await page.waitForTimeout(500);
-  ok('the combined wake button counts as a wake-up too', !(await player()).playing);
+  ok('nor the combined wake button', !(await player()).playing);
 
   // ---------- the remote is not a sleep aid ----------
 
-  // Following the sleep button is for a sound that helps a baby off. The
-  // remote is a set of buttons, and stopping it on a wake-up would take away
-  // the very control that had just been used.
+  // Started by hand, Standby stays through a logged sleep and a wake-up, or
+  // the watch buttons would vanish the moment they were used.
   await fresh();
   await openNoise();
-  await page.check('#noiseAuto');
   await page.click('#noiseSounds .nz-chip[data-value="standby"]');
   await page.click('#noiseTimers .nz-chip[data-value="0"]');
   await page.waitForTimeout(150);
@@ -647,24 +637,28 @@ function rms(s, from, count) {
   ok('and so does waking up, or the buttons would vanish when used',
     (await player()).playing);
 
-  // A sound that is a sound still follows it, and still is not restarted
-  // from the top just because another sleep was logged.
+  // A sound started by hand is not restarted, or stopped, by what is logged.
+  // Picking another sound while one plays switches to it there and then.
   await openNoise();
   await page.click('#noiseSounds .nz-chip[data-value="brown"]');
   await page.click('#noiseTimers .nz-chip[data-value="15"]');
-  await page.waitForTimeout(150);
-  await page.click('#noisePlay');
   await page.waitForTimeout(1200);
+  ok('the hand-picked sound is playing', (await player()).playing);
   await page.evaluate(() => { document.getElementById('noisePlayer').currentTime = 120; });
   await page.click('#noiseBack');
   await page.waitForTimeout(250);
   await page.click('#btnSleep');
   await page.waitForTimeout(700);
-  ok('a sound already playing is not started again by another sleep',
+  ok('a sound already playing is not started again by a sleep',
     (await player()).at > 100, (await player()).at);
   await page.click('#btnSleep');
   await page.waitForTimeout(500);
-  ok('but waking up does stop it', !(await player()).playing);
+  ok('and a wake-up leaves it to its timer', (await player()).playing);
+  await openNoise();
+  await page.click('#noisePlay');
+  await page.waitForTimeout(400);
+  await page.click('#noiseBack');
+  await page.waitForTimeout(250);
 
   // ---------- how much of it the app was awake for ----------
 
@@ -781,13 +775,6 @@ function rms(s, from, count) {
   // ---------- what is remembered, and where ----------
 
   await openNoise();
-  await page.check('#noiseAuto');
-  await page.waitForTimeout(150);
-  await page.reload();
-  await page.waitForTimeout(500);
-  await openNoise();
-  ok('the choice survives a reload', await page.isChecked('#noiseAuto'));
-
   await page.click('#noiseSounds .nz-chip[data-value="pink"]');
   await page.click('#noiseLevels .nz-chip[data-value="4"]');
   await page.click('#noiseTimers .nz-chip[data-value="60"]');
@@ -835,8 +822,6 @@ function rms(s, from, count) {
     (await picked('#noiseSounds')) === 'brown');
   ok('so does a volume out of range', (await picked('#noiseLevels')) === '2');
   ok('and a timer nobody offered', (await picked('#noiseTimers')) === '45');
-  ok('and only a real true switches the sleep button on',
-    !(await page.isChecked('#noiseAuto')));
 
   // It was called "remote" before the notification became the point of it. A
   // phone that had chosen it must not quietly come back making a noise.

@@ -4,8 +4,8 @@
 // done at a particular minute rather than when somebody looked at it, and it
 // only works on a knife edge: a phone suspends a page's timers once the
 // screen is off, except while that page is playing audio. So the nudge rides
-// on the same thing the white noise does, and logging a wake-up starts a
-// silent remote to pay for it.
+// on the same thing the white noise does. Logging never starts it: the
+// parent turns Standby on by hand, and a wake-up only starts the count.
 //
 // Most of what is checked here is therefore the honesty of one line: whether
 // the screen ever says the nudge will arrive when it will not.
@@ -107,7 +107,7 @@ const APP = h.APP;
   ok('with nothing playing it says it is waiting, and does not claim ready',
     /Waiting/.test(says.line) && !says.ready, says.line);
 
-  // ---------- a wake-up pays for the clock ----------
+  // ---------- Standby is turned on by hand, never by a log ----------
 
   await back();
   await page.click('#btnSleep');
@@ -118,8 +118,20 @@ const APP = h.APP;
   await page.click('#btnSleep');
   await page.waitForTimeout(900);
   await clearCard();
-  ok('but a wake-up starts the silent remote, which is what keeps the clock',
+  ok('and neither does a wake-up, so nothing plays that was not asked for',
+    !(await playing()));
+
+  await openRoutine();
+  says = await state();
+  ok('it still says it is waiting rather than ready',
+    /Waiting/.test(says.line) && !says.ready, says.line);
+  ok('and does not claim a wake-up will turn Standby on',
+    !/turns on Standby by itself/.test(says.line), says.line);
+  await page.click('#remindStart');
+  await page.waitForTimeout(600);
+  ok('Turn on Standby now starts the silent remote, which keeps the clock',
     await playing());
+  await back();
   ok('and it is silent', await page.textContent('#noiseFabIcon') === '\uD83D\uDCAC');
 
   // The remote was borrowed, not chosen: the sound this phone prefers is
@@ -177,7 +189,11 @@ const APP = h.APP;
   await page.click('#btnSleep');
   await page.waitForTimeout(900);
   await clearCard();
-  ok('on a phone set to Standby, a wake-up starts it as before', await playing());
+  ok('on a phone set to Standby, a wake-up still does not start it',
+    !(await playing()));
+  await page.evaluate(() => document.getElementById('noiseFab').click());
+  await page.waitForTimeout(600);
+  ok('a tap on the shortcut does', await playing());
   await page.click('#btnSleep');
   await page.waitForTimeout(700);
   await clearCard();
