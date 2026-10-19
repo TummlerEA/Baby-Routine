@@ -17,22 +17,19 @@ const ok = t.ok;
   // ---- 700 MB survives the escape hatch ----
   // What is asked to be deleted, rather than what is gone afterwards: the
   // page moves on after 400 ms whether or not the deleting has finished, and
-  // on a busy machine it sometimes has not.
-  //
-  // First, and in a browser of its own: run after the rest, caches.keys()
-  // sometimes never answers, and the page moves on without deleting anything.
+  // the test browser's caches.keys() does not always answer inside that. The
+  // list is handed over at once, so what is checked is the choice alone.
   const b2 = await h.launch();
   let ctx = await b2.newContext();
   let page = await ctx.newPage();
   page.on('pageerror', e => errs.push('ERR ' + e.message));
   await page.goto(h.APP);
   await page.waitForTimeout(500);
-  await page.evaluate(() => Promise.all([caches.open('webllm/model'), caches.open('baby-tracker-1')]));
   await page.evaluate(() => {
-    const real = caches.delete.bind(caches);
+    caches.keys = () => Promise.resolve(['webllm/model', 'webllm/baby-tracker-lib', 'baby-tracker-1']);
     caches.delete = (name) => {
       sessionStorage.setItem('deleted', (sessionStorage.getItem('deleted') || '') + name + ';');
-      return real(name);
+      return Promise.resolve(true);
     };
   });
   await page.click('#appVersion');
@@ -40,7 +37,8 @@ const ok = t.ok;
   await page.waitForTimeout(300);
   const asked = (await page.evaluate(() => sessionStorage.getItem('deleted') || '')).split(';');
   ok('fetching the latest version clears the app\'s own copy', asked.indexOf('baby-tracker-1') >= 0, asked);
-  ok('but keeps the downloaded model', asked.indexOf('webllm/model') < 0, asked);
+  ok('but keeps the downloaded model and its library',
+    asked.indexOf('webllm/model') < 0 && asked.indexOf('webllm/baby-tracker-lib') < 0, asked);
   await b2.close();
 
   const b = await h.launch();
