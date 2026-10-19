@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "116";
+    var fallback = "117";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1971,7 +1971,7 @@
     rotaWeekDays: document.getElementById("rotaWeekDays"),
     screenHelper: document.getElementById("screenHelper"),
     helperOpen: document.getElementById("helperOpen"),
-    helperMenuOpen: document.getElementById("helperMenuOpen"),
+    helperTopOpen: document.getElementById("helperTopOpen"),
     helperMissesState: document.getElementById("helperMissesState"),
     helperMissesCopy: document.getElementById("helperMissesCopy"),
     helperMissesClear: document.getElementById("helperMissesClear"),
@@ -13208,16 +13208,16 @@
       ru: "Measurements → «Add note» — для всего, что не число, например сыпь. Фото в приложении не хранятся: вставьте ссылку на общий альбом. Ссылку на альбом можно сохранить в настройках." },
     { id: "noise", title: { en: "White noise", ru: "Белый шум" }, go: { click: "noiseOpen" },
       words: "white noise sound shush rain play music белый шум звук шшш дождь музык",
-      en: "White noise is behind ⋯ in the top bar. Pick a sound and press play; it keeps going with the screen off. Nothing in the app ever starts it by itself.",
-      ru: "Белый шум — в меню ⋯ вверху. Выберите звук и нажмите play; он играет и с выключенным экраном. Сам по себе он никогда не включается." },
+      en: "White noise is 🔊 in the top bar. Pick a sound and press play; it keeps going with the screen off. Nothing in the app ever starts it by itself.",
+      ru: "Белый шум — 🔊 вверху. Выберите звук и нажмите play; он играет и с выключенным экраном. Сам по себе он никогда не включается." },
     { id: "remind", title: { en: "The wake-window reminder", ru: "Напоминание о времени бодрствования" }, go: { click: "routineOpen" },
       words: "remind reminder alarm nudge standby notification wake window напомин будильник уведомлен standby",
-      en: "The reminder lives on ⏰ Daily routine. It needs Standby — silent playback that keeps the app awake — which only starts when you turn it on there.",
-      ru: "Напоминание находится в ⏰ Daily routine. Ему нужен Standby — беззвучное воспроизведение, которое не даёт приложению уснуть. Включается только вручную, там же." },
+      en: "The reminder lives on ⏰ Daily routine, behind ⋯. It needs Standby — silent playback that keeps the app awake — which only starts when you turn it on there.",
+      ru: "Напоминание находится в ⏰ Daily routine (меню ⋯). Ему нужен Standby — беззвучное воспроизведение, которое не даёт приложению уснуть. Включается только вручную, там же." },
     { id: "routine", title: { en: "Daily routine", ru: "Режим дня" }, go: { click: "routineOpen" },
       words: "*routine schedule timetable day naps *режим *распорядок расписан дня",
-      en: "⏰ in the top bar is the day by the clock: when each sleep starts and ends, and where the feeds fall. Switched on, the main screen says what comes next and how long the baby has been awake against it.",
-      ru: "⏰ вверху — режим дня по часам: когда начинается и заканчивается каждый сон и где кормления. Если включить, на главном экране будет видно, что дальше и сколько малыш уже бодрствует." },
+      en: "Daily routine, behind ⋯ in the top bar, is the day by the clock: when each sleep starts and ends, and where the feeds fall. Switched on, the main screen says what comes next and how long the baby has been awake against it.",
+      ru: "Daily routine в меню ⋯ вверху — режим дня по часам: когда начинается и заканчивается каждый сон и где кормления. Если включить, на главном экране будет видно, что дальше и сколько малыш уже бодрствует." },
     { id: "intervals", title: { en: "How often feeds are due", ru: "Как часто кормить по плану" }, go: { settings: "intervalFeed" },
       words: "*interval *intervals hours gap planned *интервал каждые часа промежуток",
       en: "Settings → Planned intervals sets how far apart feeds, nappies and sleeps are expected — three hours by default. What's next on the main screen counts from those.",
@@ -13304,8 +13304,8 @@
       ru: "Под каждым «уснул» в истории есть полоска из пяти делений: отметьте, сколько заняло укладывание — от «сам» до двух часов укачивания." },
     { id: "help", title: { en: "The full guide", ru: "Полная инструкция" }, go: { click: "infoOpen" },
       words: "*help guide manual instructions explain помощь инструкц справк руководств объясни",
-      en: "Help, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",
-      ru: "«Help» в меню ⋯ объясняет каждую часть приложения, там же раздел для новых родителей." },
+      en: "Info, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",
+      ru: "«Info» в меню ⋯ объясняет каждую часть приложения, там же раздел для новых родителей." },
     { id: "health", title: { en: "A question about the baby", ru: "Вопрос о малыше" }, bigger: true,
       words: "*normal *normally *cry *cries *crying *cried *colic *why *should *advice *enough *worry " +
         "*нормально *нормальн *плачет *плач *колик *почему *стоит *совет *достаточно *хватает",
@@ -13313,8 +13313,8 @@
       ru: "На это лучше ответит тот, кто видит малыша: акушерка, патронажная сестра или врач. Для первого мнения можно спросить большой AI — он получит цифры из журнала вместе с вопросом." },
     { id: "urgent", title: { en: "If you are worried right now", ru: "Если вы волнуетесь прямо сейчас" }, go: { click: "infoOpen" }, urgent: true,
       words: "ambulance emergency breathing blue fever floppy worried sick ill unwell 999 111 скорая экстренн дыхан дышит синеет жар вялый волнуюсь болеет заболел",
-      en: "If the baby is struggling to breathe, turning blue, floppy, or you think it's an emergency, call 999 now. For anything else you're worried about, call NHS 111 or your GP. Help → For new parents lists the signs.",
-      ru: "Если малыш с трудом дышит, синеет, вялый или вы думаете, что это срочно, — звоните 999 прямо сейчас. Если просто беспокоит — NHS 111 или ваш врач. В Help → «For new parents» перечислены признаки." }
+      en: "If the baby is struggling to breathe, turning blue, floppy, or you think it's an emergency, call 999 now. For anything else you're worried about, call NHS 111 or your GP. Info → For new parents lists the signs.",
+      ru: "Если малыш с трудом дышит, синеет, вялый или вы думаете, что это срочно, — звоните 999 прямо сейчас. Если просто беспокоит — NHS 111 или ваш врач. В Info → «For new parents» перечислены признаки." }
   ];
 
   // Words that say "tell me about the log" rather than "show me the button",
@@ -14181,7 +14181,7 @@
   }
 
   el.helperOpen.addEventListener("click", openHelper);
-  el.helperMenuOpen.addEventListener("click", openHelper);
+  el.helperTopOpen.addEventListener("click", openHelper);
   el.helperBack.addEventListener("click", showMain);
   el.helperForm.addEventListener("submit", function (ev) {
     ev.preventDefault();

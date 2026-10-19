@@ -64,10 +64,11 @@ body {
   gap: 6px;
   padding-bottom: 10px;
 }
-/* Seven 44px targets and the gaps between them are what a 360px phone has
-   room for, so the row is pulled a little past the header's padding and the
-   gaps kept tight. Narrower than that it wraps rather than shrink a button —
-   a target small enough to miss at 3am costs more than a second line. */
+/* Eight buttons, 39px wide and the full 44px tall, and the gaps between them
+   are what a 360px phone has room for, so the row is pulled a little past the
+   header's padding and the gaps kept tight. Narrower than that it wraps rather
+   than shrink a button further — a target small enough to miss at 3am costs
+   more than a second line. */
 .topbar-icons {
   display: flex;
   justify-content: flex-end;
@@ -1003,6 +1004,10 @@ body {
 }
 
 .icon-btn:active { opacity: 0.6; }
+
+/* Eight across the top: a touch narrower than elsewhere so the row still
+   holds one line on a 360px phone. Still the full height. */
+.topbar-icons .icon-btn { min-width: 39px; }
 
 .icon-btn-badged {
   position: relative;

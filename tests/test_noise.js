@@ -120,8 +120,6 @@ function rms(s, from, count) {
   // asking for a screen that is already up should not be a broken run.
   async function openNoise() {
     if (await page.isVisible('#screenNoise')) return;
-    await page.click('#moreOpen');
-    await page.waitForTimeout(150);
     await page.click('#noiseOpen');
     await page.waitForTimeout(250);
   }
@@ -172,10 +170,10 @@ function rms(s, from, count) {
     await page.isVisible('#noiseFab'));
   ok('the shortcut says it is off', !(await fab()).playing);
 
-  await page.click('#moreOpen');
-  await page.waitForTimeout(150);
-  const menu = await page.$$eval('.more-item', n => n.map(x => x.id));
-  ok('the ⋯ menu offers the noise screen first', menu[0] === 'noiseOpen', menu);
+  ok('the noise screen has its own button in the top bar',
+    await page.isVisible('#noiseOpen') && await page.evaluate(() =>
+      !!document.getElementById('noiseOpen').closest('.topbar-icons') &&
+      !document.getElementById('noiseOpen').closest('#moreMenu')));
   await page.click('#noiseOpen');
   await page.waitForTimeout(250);
 
@@ -864,8 +862,6 @@ function rms(s, from, count) {
       document.dispatchEvent(new Event('visibilitychange'));
     };
   });
-  await dim.click('#moreOpen');
-  await dim.waitForTimeout(150);
   await dim.click('#noiseOpen');
   await dim.waitForTimeout(250);
   await dim.click('#noiseTimers .nz-chip[data-value="60"]');

@@ -99,8 +99,6 @@ const APP = h.APP;
 
   // ---------- the switch, and what it says it needs ----------
 
-  await page.click('#moreOpen');
-  await page.waitForTimeout(150);
   await page.click('#noiseOpen');
   await page.waitForTimeout(250);
   ok('off to begin with', !(await page.isChecked('#cryOn')));
@@ -187,8 +185,6 @@ const APP = h.APP;
 
   // ---------- off ----------
 
-  await page.click('#moreOpen');
-  await page.waitForTimeout(150);
   await page.click('#noiseOpen');
   await page.waitForTimeout(250);
   await page.uncheck('#cryOn');
