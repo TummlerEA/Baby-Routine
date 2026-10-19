@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=112">
+<link rel="stylesheet" href="style.css?v=113">
 </head>
 <body>
 
@@ -1403,13 +1403,18 @@
       <section>
         <h2 class="section-title"><span class="section-icon">📱</span> AI on this phone (trial)</h2>
         <div class="settings-panel">
-          <p class="settings-intro">A small AI — Google's Gemma 3, the 1B size — that runs on the phone itself. It is downloaded once, about 700 MB, and after that it answers with no signal at all. <strong>Nothing about your baby leaves the phone</strong>: the summary it reads never goes anywhere.</p>
+          <p class="settings-intro">A small AI that runs on the phone itself. It is downloaded once and after that it answers with no signal at all. <strong>Nothing about your baby leaves the phone</strong>: the summary it reads never goes anywhere.</p>
           <label class="settings-check">
             <input type="checkbox" id="localAiOn">
             <span class="settings-label">Answer on this phone first</span>
           </label>
+          <label class="settings-row">
+            <span class="settings-label">Model</span>
+            <select class="settings-select" id="localAiModel"></select>
+          </label>
+          <p class="settings-hint">Gemma, from Google, writes better. SmolLM2 is a third of the size and needs about half the memory — for a phone where Gemma closes the app, which a 4 GB iPhone can. Switching removes the other one, to give its space back.</p>
           <p class="settings-hint" id="localAiStatus" aria-live="polite">—</p>
-          <button type="button" class="data-btn" id="localAiDownload" hidden>⬇️ Download it now — about 700 MB</button>
+          <button type="button" class="data-btn" id="localAiDownload" hidden>⬇️ Download it now</button>
           <button type="button" class="data-btn" id="localAiRemove" hidden>🗑 Remove it from this phone</button>
           <p class="settings-hint">It is small, so it is good at putting the numbers into words and weak at anything subtle — and it can be confidently wrong. Every number it is given is worked out by the app; it only does the talking. When it is not enough, the same screen still sends the summary to a bigger AI, and that part does leave the phone.</p>
           <p class="settings-hint">Best downloaded on Wi‑Fi. The files come from jsDelivr (the code), GitHub (the engine) and Hugging Face (the model): they see that this phone fetched a file, and nothing from the log goes to them. The code and the engine are checked against a fingerprint before anything runs. It needs a phone that can run WebGPU — an iPhone on iOS 26 or later, or a recent Android with Chrome.</p>
@@ -1505,6 +1510,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=112"></script>
+<script src="app.js?v=113"></script>
 </body>
 </html>

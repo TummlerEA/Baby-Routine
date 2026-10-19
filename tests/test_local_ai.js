@@ -270,6 +270,8 @@ const ok = t.ok;
   const loadingLine = await page.textContent('#localAiProgress');
   ok('loading into memory is not called a download',
     /Loading it into the phone's memory — 25%/.test(loadingLine) && !/Downloading/.test(loadingLine), loadingLine);
+  ok('while it loads, the phone remembers it is loading',
+    await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).pending) === true);
   ok('and says the download is done', /^Downloaded\./.test(loadingLine), loadingLine);
   await page.evaluate(() => window.__go());
   await answered(page);
@@ -336,6 +338,67 @@ const ok = t.ok;
   await page.waitForTimeout(200);
   ok('switched off with nothing whole on the phone, it says so',
     /^Off\. Nothing is downloaded/.test(await page.textContent('#localAiStatus')));
+  await ctx.close();
+
+  // ---- the page closed under it ----
+  // How running out of memory looks from inside: the app simply starts again
+  // with the load still marked as under way.
+  ({ ctx, page } = await open({ gpu: 'f16', local: { on: true, ready: false, pending: true } }));
+  await toAi(page);
+  const closed = await page.textContent('#localAiProgress');
+  ok('a load the phone cut short is named as running out of memory', /ran out of memory/.test(closed), closed);
+  ok('and points at the lighter model', /lighter model in Settings/.test(closed), closed);
+  ok('said once: the mark is cleared',
+    !(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).pending)));
+  ok('not cleared by an answer that finished',
+    !(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).ready)));
+  await ctx.close();
+
+  // ---- the lighter model ----
+  ({ ctx, page } = await open({ gpu: 'f16', local: { on: true, ready: true } }));
+  await page.evaluate(async () => {
+    const base = 'https://huggingface.co/mlc-ai/';
+    const m = await caches.open('webllm/model');
+    await m.put(base + 'gemma3-1b-it-q4f16_1-MLC/resolve/main/params_shard_0.bin', new Response('g'));
+    await m.put(base + 'SmolLM2-360M-Instruct-q4f16_1-MLC/resolve/main/params_shard_0.bin', new Response('s'));
+    const w = await caches.open('webllm/wasm');
+    await w.put('https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm', new Response('w'));
+    await (await caches.open('webllm/baby-tracker-lib')).put('https://cdn.example/lib.js', new Response('l'));
+  });
+  await toSettings(page);
+  const models = await page.$$eval('#localAiModel option', o => o.map(x => x.value + '|' + x.textContent));
+  ok('two models to choose from', models.length === 2, models);
+  ok('Gemma first and chosen', await page.inputValue('#localAiModel') === 'gemma');
+  ok('each with its size', models.every(m => /MB/.test(m)), models);
+  await page.selectOption('#localAiModel', 'smol');
+  await page.waitForTimeout(400);
+  const kept = await page.evaluate(async () => {
+    const out = [];
+    for (const name of await caches.keys()) {
+      for (const req of await (await caches.open(name)).keys()) out.push(req.url);
+    }
+    return out;
+  });
+  ok('switching removes the other model', !kept.some(u => /gemma3/.test(u)), kept);
+  ok('keeps the one switched to', kept.some(u => /SmolLM2/.test(u)), kept);
+  ok('and the library they share', kept.some(u => /lib\.js/.test(u)), kept);
+  ok('the choice is remembered',
+    await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).model) === 'smol');
+  ok('the download is offered at its own size',
+    /about 250 MB/.test(await page.textContent('#localAiDownload')));
+  await page.click('#settingsBack');
+  await page.waitForTimeout(200);
+  await toAi(page);
+  await page.click('#localAiAsk');
+  await answered(page);
+  const smol = await page.evaluate(() => window.__engine);
+  ok('and asking now uses it', smol.id === 'SmolLM2-360M-Instruct-q4f16_1-MLC', smol.id);
+  ok('pinned by its own fingerprint', /^sha384-/.test(smol.config.appConfig.model_list[0].integrity.model_lib) &&
+    /SmolLM2/.test(smol.config.appConfig.model_list[0].model_lib));
+  ok('with the same small window', smol.config.appConfig.model_list[0].overrides.context_window_size === 2048);
+  ok('and the answer arrives', /regular/.test(await page.textContent('#localAiAnswer')));
+  ok('with nothing left marked as under way',
+    !(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).pending)));
   await ctx.close();
 
   // ---- a phone that is full ----

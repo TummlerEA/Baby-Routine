@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "112";
+    var fallback = "113";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -578,30 +578,46 @@
   var LOCAL_AI_KEY = "baby-tracker-local-ai";
   var LOCAL_AI_LIB_URL = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/lib/index.js";
   var LOCAL_AI_LIB_SRI = "sha384-rfElDdXnNkSgbLTTGiKHTrsetCVAYzzLZBD96/rZdD9XYvryEyShqz3ph8j+x7HH";
-  var LOCAL_AI_MODEL = {
-    model: "https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC",
-    model_id: "gemma3-1b-it-q4f16_1-MLC",
-    model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm",
-    // Gemma 3 comes configured with a 512-token sliding window, and the
-    // library refuses a full window alongside one ("only one of them can be
-    // positive"). A sliding window would forget the start of the summary by
-    // the time the question arrives, so it is the one switched off.
-    overrides: { context_window_size: 4096, sliding_window_size: -1 },
-    integrity: { model_lib: "sha384-SiXN2Oy6qiK59NaOofdJvvOZ8M3k12l9GXkNkizNddPQyIUFMQ+dH46lFSFYTExZ" }
-  };
+  // Two models, one at a time. Gemma is the better writer; on a phone with
+  // 4 GB, an iPhone 13 mini, loading it into memory closed the page, so a
+  // lighter one is offered beside it. Both read 2,048 tokens rather than the
+  // 4,096 they could: the window is memory set aside up front, and a summary
+  // with its question fits in half of it.
+  //
+  // Gemma 3 comes configured with a 512-token sliding window, and the library
+  // refuses a full window alongside one ("only one of them can be
+  // positive"). A sliding window would forget the start of the summary by the
+  // time the question arrives, so it is the one switched off.
+  var LOCAL_AI_WINDOW = { context_window_size: 2048, sliding_window_size: -1 };
+  var LOCAL_AI_MODELS = [
+    { id: "gemma", label: "Gemma 3, 1B — Google", size: "about 700 MB", bytes: 900 * 1024 * 1024,
+      record: {
+        model: "https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC",
+        model_id: "gemma3-1b-it-q4f16_1-MLC",
+        model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm",
+        overrides: LOCAL_AI_WINDOW,
+        integrity: { model_lib: "sha384-SiXN2Oy6qiK59NaOofdJvvOZ8M3k12l9GXkNkizNddPQyIUFMQ+dH46lFSFYTExZ" }
+      } },
+    { id: "smol", label: "SmolLM2, 360M — lighter", size: "about 250 MB", bytes: 400 * 1024 * 1024,
+      record: {
+        model: "https://huggingface.co/mlc-ai/SmolLM2-360M-Instruct-q4f16_1-MLC",
+        model_id: "SmolLM2-360M-Instruct-q4f16_1-MLC",
+        model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm",
+        overrides: LOCAL_AI_WINDOW,
+        integrity: { model_lib: "sha384-orS1wyCqzySQio0yY+PZDZZAZclbgZNdjmO4FRo/7SF1jyUPqMHVwkvUo28pPsCB" }
+      } }
+  ];
+  var LOCAL_AI_DEFAULT_MODEL = "gemma";
   // Everything the library keeps sits in caches named "webllm/…", and so does
   // the checked copy of the library itself. One rule keeps all of it through an
   // update of the app — sw.js has the same one — and one rule removes it.
   var LOCAL_AI_CACHE_PREFIX = "webllm/";
   var LOCAL_AI_LIB_CACHE = "webllm/baby-tracker-lib";
-  // Asked for before the download starts, with a margin: running out of room
-  // half way through 700 MB is worse than not starting.
-  var LOCAL_AI_NEEDS_BYTES = 900 * 1024 * 1024;
-  // The model reads 4,096 tokens in all, its answer included. A summary this
+  // The model reads 2,048 tokens in all, its answer included. A summary this
   // full of numbers runs at roughly three characters a token, which leaves
-  // room for a fortnight of a quiet week and a few days of a busy one.
-  var LOCAL_AI_MAX_CHARS = 9000;
-  var LOCAL_AI_MAX_TOKENS = 450;
+  // room for a week of a quiet stretch and a few days of a busy one.
+  var LOCAL_AI_MAX_CHARS = 5000;
+  var LOCAL_AI_MAX_TOKENS = 350;
 
   // The handover screen. Six hours covers a shift that has just started,
   // twelve covers the night somebody else had, and a full day is there for
@@ -2020,6 +2036,7 @@
     localAiNote: document.getElementById("localAiNote"),
     localAiOn: document.getElementById("localAiOn"),
     localAiStatus: document.getElementById("localAiStatus"),
+    localAiModel: document.getElementById("localAiModel"),
     localAiDownload: document.getElementById("localAiDownload"),
     localAiRemove: document.getElementById("localAiRemove"),
     aiEnabled: document.getElementById("aiEnabled"),
@@ -13180,24 +13197,50 @@
   // 700 MB download is this phone's business alone.
   // `error` is what went wrong the last time, kept until something works: a
   // toast is gone before anybody can read it out to whoever is helping.
+  // `pending` is set while the model loads or answers and cleared after. Found
+  // still set when the app starts, it means the phone closed the page part of
+  // the way through — which is how running out of memory looks from inside.
   function loadLocalAi() {
+    var prefs = { on: false, ready: false, error: "", model: LOCAL_AI_DEFAULT_MODEL, pending: false };
     try {
       var parsed = JSON.parse(localStorage.getItem(LOCAL_AI_KEY) || "null");
-      return { on: !!parsed && parsed.on === true, ready: !!parsed && parsed.ready === true,
-        error: parsed && typeof parsed.error === "string" ? parsed.error.slice(0, 400) : "" };
-    } catch (e) {
-      return { on: false, ready: false, error: "" };
-    }
+      if (!parsed || typeof parsed !== "object") return prefs;
+      prefs.on = parsed.on === true;
+      prefs.ready = parsed.ready === true;
+      prefs.pending = parsed.pending === true;
+      if (typeof parsed.error === "string") prefs.error = parsed.error.slice(0, 400);
+      if (localAiModelById(parsed.model)) prefs.model = parsed.model;
+    } catch (e) { /* the defaults stand */ }
+    return prefs;
   }
 
   function saveLocalAi(prefs) {
     try {
-      var out = { on: !!prefs.on, ready: !!prefs.ready };
+      var out = { on: !!prefs.on, ready: !!prefs.ready, model: prefs.model || LOCAL_AI_DEFAULT_MODEL };
+      if (prefs.pending) out.pending = true;
       if (prefs.error) out.error = String(prefs.error).slice(0, 400);
       localStorage.setItem(LOCAL_AI_KEY, JSON.stringify(out));
     } catch (e) {
       showError("Couldn't save that setting");
     }
+  }
+
+  function localAiModelById(id) {
+    for (var i = 0; i < LOCAL_AI_MODELS.length; i++) {
+      if (LOCAL_AI_MODELS[i].id === id) return LOCAL_AI_MODELS[i];
+    }
+    return null;
+  }
+
+  function localAiModel() {
+    return localAiModelById(loadLocalAi().model) || LOCAL_AI_MODELS[0];
+  }
+
+  function localAiPending(on) {
+    var prefs = loadLocalAi();
+    if (prefs.pending === on) return;
+    prefs.pending = on;
+    saveLocalAi(prefs);
   }
 
   function localAiCache(name) {
@@ -13250,7 +13293,7 @@
   function localAiDownloaded() {
     if (localAiStandIn()) return Promise.resolve(loadLocalAi().ready);
     if (!window.caches) return Promise.resolve(false);
-    var base = LOCAL_AI_MODEL.model + "/resolve/main/";
+    var base = localAiModel().record.model + "/resolve/main/";
     var scope = LOCAL_AI_CACHE_PREFIX + "model";
     return caches.has(scope).then(function (has) {
       if (!has) return false;
@@ -13333,7 +13376,7 @@
     return localAiDownloaded().then(function (have) {
       if (have || !navigator.storage || !navigator.storage.estimate) return;
       return navigator.storage.estimate().then(function (est) {
-        if (est && est.quota && est.quota - (est.usage || 0) < LOCAL_AI_NEEDS_BYTES) {
+        if (est && est.quota && est.quota - (est.usage || 0) < localAiModel().bytes) {
           throw localAiError("room");
         }
       }, function () {});
@@ -13380,14 +13423,16 @@
       renderLocalAiProgress(null);
       if (!have) {
         localAiHoldScreen(true);
-        // Asked, not assumed: without it the browser may clear 700 MB of
-        // storage the first time the phone runs short.
+        // Asked, not assumed: without it the browser may clear hundreds of
+        // megabytes of storage the first time the phone runs short.
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
       }
       return localAiLib();
     }).then(function (lib) {
-      return lib.CreateMLCEngine(LOCAL_AI_MODEL.model_id, {
-        appConfig: { model_list: [LOCAL_AI_MODEL] },
+      var record = localAiModel().record;
+      localAiPending(true);
+      return lib.CreateMLCEngine(record.model_id, {
+        appConfig: { model_list: [record] },
         initProgressCallback: renderLocalAiProgress
       });
     }).then(function (engine) {
@@ -13397,12 +13442,14 @@
       var prefs = loadLocalAi();
       prefs.ready = true;
       prefs.error = "";
+      prefs.pending = false;
       saveLocalAi(prefs);
       return engine;
     }, function (err) {
       localAi.loading = null;
       localAiHoldScreen(false);
       var prefs = loadLocalAi();
+      prefs.pending = false;
       prefs.error = localAiFailure(err) + localAiDetail(err);
       saveLocalAi(prefs);
       throw err;
@@ -13440,7 +13487,7 @@
       return "What was downloaded didn't match its fingerprint, so none of it was run. Try again later.";
     }
     if (kind === "room" || (err && err.name === "QuotaExceededError")) {
-      return "There isn't enough free storage on this phone for it — it needs about 0.9 GB.";
+      return "There isn't enough free storage on this phone for it — it needs " + localAiModel().size + " and some room to spare.";
     }
     if (kind === "long" || /exceed context window/i.test(text)) {
       return "That is more than the phone's AI can read at once. Pick a shorter stretch above.";
@@ -13518,6 +13565,7 @@
       }
       el.localAiProgress.textContent = "Thinking…";
       renderLocalAiBusy();
+      localAiPending(true);
       return engine.chat.completions.create({
         messages: [{ role: "user", content: text }],
         stream: true,
@@ -13549,6 +13597,7 @@
         " A bigger AI below can still answer — that part leaves the phone.";
       el.localAiProgress.hidden = false;
     }).then(function () {
+      localAiPending(false);
       localAi.busy = false;
       renderLocalAiBusy();
       renderLocalAiStatus();
@@ -13567,7 +13616,7 @@
         if (token !== localAi.statusToken) return;
         el.localAiRemove.hidden = !have;
         el.localAiStatus.textContent = have
-          ? "Off. The model is still on this phone, taking about 700 MB, until you remove it."
+          ? "Off. The model is still on this phone, taking " + localAiModel().size + ", until you remove it."
           : "Off. Nothing is downloaded until you switch it on.";
       });
       return;
@@ -13580,6 +13629,7 @@
       prefs = loadLocalAi();
       var lastTry = prefs.error ? " Last try: " + prefs.error : "";
       el.localAiDownload.hidden = !support.ok || have;
+      el.localAiDownload.textContent = "⬇️ Download it now — " + localAiModel().size;
       el.localAiRemove.hidden = !have;
       el.localAiStatus.textContent = !support.ok ? support.why
         : have && prefs.ready ? "Downloaded and ready — it works with no signal at all." + lastTry
@@ -13587,7 +13637,7 @@
         : "Not downloaded yet. It downloads the first time you ask, or now with the button below." + lastTry;
       el.localAiAsk.hidden = !support.ok;
       el.localAiAsk.textContent = have ? "📱 Ask the AI on this phone"
-        : "📱 Download it (about 700 MB) and ask";
+        : "📱 Download it (" + localAiModel().size + ") and ask";
       if (localAi.busy) return;
       if (!support.ok) {
         el.localAiProgress.textContent = support.why + " A bigger AI below can still answer — that part leaves the phone.";
@@ -13601,8 +13651,18 @@
   }
 
   function renderLocalAi() {
-    var on = loadLocalAi().on;
+    var prefs = loadLocalAi();
+    var on = prefs.on;
     el.localAiOn.checked = on;
+    if (!el.localAiModel.options.length) {
+      LOCAL_AI_MODELS.forEach(function (model) {
+        var opt = document.createElement("option");
+        opt.value = model.id;
+        opt.textContent = model.label + " · " + model.size;
+        el.localAiModel.appendChild(opt);
+      });
+    }
+    el.localAiModel.value = prefs.model;
     el.localAiBlock.hidden = !on;
     el.aiCloudHeading.hidden = !on;
     el.aiIntroLocal.hidden = !on;
@@ -13655,6 +13715,38 @@
     });
   });
 
+  // One model on the phone at a time: switching removes the other one's
+  // pieces, which is the space a phone short of it needs back. What both share
+  // — the library itself — stays.
+  el.localAiModel.addEventListener("change", function () {
+    var next = localAiModelById(el.localAiModel.value);
+    var prefs = loadLocalAi();
+    if (!next || next.id === prefs.model) return;
+    if (localAi.loading || localAi.busy) {
+      el.localAiModel.value = prefs.model;
+      showToast("Wait for it to finish first");
+      return;
+    }
+    var before = localAiModel().record;
+    localAiRelease();
+    prefs.model = next.id;
+    prefs.ready = false;
+    prefs.error = "";
+    saveLocalAi(prefs);
+    var clearing = !window.caches ? Promise.resolve() : caches.keys().then(function (names) {
+      return Promise.all(names.filter(localAiCache).map(function (name) {
+        return caches.open(name).then(function (cache) {
+          return cache.keys().then(function (keys) {
+            return Promise.all(keys.filter(function (req) {
+              return req.url.indexOf(before.model_id) >= 0 || req.url === before.model_lib;
+            }).map(function (req) { return cache.delete(req); }));
+          });
+        });
+      }));
+    });
+    clearing.catch(function () {}).then(renderLocalAi);
+  });
+
   el.localAiAsk.addEventListener("click", localAiAsk);
   el.localAiStop.addEventListener("click", function () {
     if (!localAi.busy || !localAi.engine) return;
@@ -13668,6 +13760,19 @@
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") localAiRelease();
   });
+
+  // Left set by a load or an answer that never finished: the page was closed
+  // under it. Said once, and kept on the status line until something works.
+  (function () {
+    var prefs = loadLocalAi();
+    if (!prefs.pending) return;
+    prefs.pending = false;
+    prefs.error = "The app closed while the AI was loading or answering — most likely the phone ran out of memory." +
+      (prefs.model === LOCAL_AI_DEFAULT_MODEL
+        ? " Try the lighter model in Settings, which needs about half as much."
+        : "");
+    saveLocalAi(prefs);
+  })();
 
   renderLocalAi();
 
