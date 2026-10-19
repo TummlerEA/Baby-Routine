@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "120";
+    var fallback = "121";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -14193,10 +14193,10 @@
     try {
       var v = JSON.parse(localStorage.getItem(HELPER_VOICE_KEY) || "null");
       if (v && typeof v === "object") {
-        return { on: v.on === true, lang: v.lang === "ru" || v.lang === "en" ? v.lang : null };
+        return { on: v.on === true, ru: v.ru === true };
       }
     } catch (e) { /* asked afresh */ }
-    return { on: false, lang: null };
+    return { on: false, ru: false };
   }
 
   function saveHelperVoice(change) {
@@ -14205,9 +14205,13 @@
     try { localStorage.setItem(HELPER_VOICE_KEY, JSON.stringify(v)); } catch (e) { /* asked again next time */ }
   }
 
-  // English unless RU at the top of the helper has been switched on.
+  // English unless RU at the top of the helper has been switched on. Kept as
+  // "ru" rather than the "lang" of 118 and 119, which set itself from
+  // whatever was last spoken: a phone that had once been spoken to in
+  // Russian would otherwise go on listening in Russian with nobody having
+  // asked it to.
   function helperVoiceLang() {
-    return loadHelperVoice().lang === "ru" ? "ru" : "en";
+    return loadHelperVoice().ru ? "ru" : "en";
   }
 
   function renderHelperVoice() {
@@ -14357,7 +14361,7 @@
   // other language rather than finishing the sentence in the wrong one.
   el.helperRu.addEventListener("click", function () {
     var lang = helperVoiceLang() === "ru" ? "en" : "ru";
-    saveHelperVoice({ lang: lang });
+    saveHelperVoice({ ru: lang === "ru" });
     renderHelperVoice();
     if (helperRec) helperVoiceStart(lang);
   });
