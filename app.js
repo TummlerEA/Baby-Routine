@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "111";
+    var fallback = "112";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -582,7 +582,11 @@
     model: "https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC",
     model_id: "gemma3-1b-it-q4f16_1-MLC",
     model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/gemma3-1b-it-q4f16_1_cs1k-webgpu.wasm",
-    overrides: { context_window_size: 4096 },
+    // Gemma 3 comes configured with a 512-token sliding window, and the
+    // library refuses a full window alongside one ("only one of them can be
+    // positive"). A sliding window would forget the start of the summary by
+    // the time the question arrives, so it is the one switched off.
+    overrides: { context_window_size: 4096, sliding_window_size: -1 },
     integrity: { model_lib: "sha384-SiXN2Oy6qiK59NaOofdJvvOZ8M3k12l9GXkNkizNddPQyIUFMQ+dH46lFSFYTExZ" }
   };
   // Everything the library keeps sits in caches named "webllm/…", and so does
@@ -13423,7 +13427,9 @@
     var text = String((err && (err.message || err)) || "").split("\n")[0].slice(0, 160);
     var kind = err && err.localAi;
     if (!text || kind === "unsupported" || kind === "room" || kind === "long" || kind === "fingerprint") return "";
-    return localAiFailure(err).indexOf(text) >= 0 ? "" : " [" + text + "]";
+    var plain = localAiFailure(err);
+    // The catch-all already quotes them.
+    return plain.indexOf("It couldn't answer this time") === 0 || plain.indexOf(text) >= 0 ? "" : " [" + text + "]";
   }
 
   function localAiFailure(err) {
