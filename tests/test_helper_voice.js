@@ -110,7 +110,7 @@ const ok = t.ok;
   await page.waitForTimeout(100);
   r = await recs(page);
   ok('RU while listening starts again in Russian', r.length === 2 && r[0].aborted && r[1].lang === 'ru-RU', r);
-  ok('and stays on', (await pref(page)).lang === 'ru' && (await page.getAttribute('#helperRu', 'aria-pressed')) === 'true');
+  ok('and stays on', (await pref(page)).ru === true && (await page.getAttribute('#helperRu', 'aria-pressed')) === 'true');
   ok('said so on screen, in English', /in Russian/.test(await page.textContent('#helperVoiceState')));
   ok('the old one, put down, asks nothing', (await yous(page)).length === 0);
 
@@ -186,8 +186,23 @@ const ok = t.ok;
   ok('off, 🎤 asks first again', (await recs(page)).length === 7 && (await asks()) === 2);
   await page.click('#helperRu');
   await page.waitForTimeout(80);
-  ok('RU tapped while not listening turns it off and starts nothing', (await pref(page)).lang === 'en' &&
+  ok('RU tapped while not listening turns it off and starts nothing', (await pref(page)).ru === false &&
     (await page.getAttribute('#helperRu', 'aria-pressed')) === 'false' && (await recs(page)).length === 7);
+  await ctx.close();
+
+  // ---- a phone that 118 or 119 left set to Russian ----
+  ({ ctx, page } = await open(true));
+  await page.evaluate(() => localStorage.setItem('baby-tracker-helper-voice', JSON.stringify({ on: true, lang: 'ru' })));
+  await page.reload();
+  await page.waitForTimeout(300);
+  await page.click('#helperOpen');
+  ok('a language the old versions remembered by themselves does not light RU',
+    (await page.getAttribute('#helperRu', 'aria-pressed')) === 'false');
+  await page.click('#helperMic');
+  await page.waitForTimeout(80);
+  r = await recs(page);
+  ok('and it listens in English', r.length === 1 && r[0].lang === 'en-GB', r);
+  ok('still allowed, without asking again', r[0].started && (await pref(page)).on === true);
   await ctx.close();
 
   // ---- no recogniser at all ----
