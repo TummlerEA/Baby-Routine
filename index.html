@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=113">
+<link rel="stylesheet" href="style.css?v=114">
 </head>
 <body>
 
@@ -63,6 +63,10 @@
               <span class="more-icon">🛒</span>
               <span class="more-label">Shopping list</span>
               <span class="more-count" id="shopMenuCount" hidden>0</span>
+            </button>
+            <button type="button" class="more-item" id="helperMenuOpen">
+              <span class="more-icon">💬</span>
+              <span class="more-label">Helper</span>
             </button>
             <button type="button" class="more-item" id="infoOpen">
               <span class="more-icon">ℹ️</span>
@@ -384,6 +388,13 @@
         </div>
       </section>
 
+      <section class="ai-row helper-row">
+        <button class="log-toggle" id="helperOpen">
+          <span class="log-icon">💬</span>
+          <span>Helper — where things are, and what the log says</span>
+        </button>
+      </section>
+
       <section class="ai-row" id="aiRow" hidden>
         <button class="log-toggle" id="aiOpen">
           <span class="log-icon">🤖</span>
@@ -518,6 +529,10 @@
           </article>
 
           <article class="info-card">
+            <h3>Helper (💬)</h3>
+            <p>At the foot of the main screen, and behind ⋯. Ask where something is — "how do I turn on white noise", "как поделиться с партнёром" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen, in the language you asked in.</p>
+            <p>It is not an AI. Nothing is generated and nothing leaves the phone: the answers about the app are written in, and every number is one the app has already worked out. A question it cannot place — anything medical, say — it says so and offers <strong>Ask an AI</strong> instead, with your question carried across. Worry wins over everything else: mention breathing, turning blue or a fever and it gives the numbers to ring first.</p>
+
             <h3>Fixing mistakes</h3>
             <ul>
               <li><strong>Tap any entry</strong> in the history to change its type, time or details.</li>
@@ -597,7 +612,7 @@
 
           <article class="info-card">
             <h3>Your data stays yours</h3>
-            <p>There is no account, no server and no analytics. Everything you record lives in this browser's own storage, and it goes nowhere unless you send it: sync writes to a private repository you own, a share link is one you pass on yourself, and <strong>Ask an AI</strong> hands a summary to Claude, ChatGPT or Perplexity. All three are off until you switch them on, and only the last puts anything in a company's hands — you see the exact text first. The AI on this phone, if you switch it on, sends nothing at all: it only downloads its model, once. That is a deliberate trade: total privacy in exchange for you keeping your own backups.</p>
+            <p>There is no account, no server and no analytics. Everything you record lives in this browser's own storage, and it goes nowhere unless you send it: sync writes to a private repository you own, a share link is one you pass on yourself, and <strong>Ask an AI</strong> hands a summary to Claude, ChatGPT or Perplexity. All three are off until you switch them on, and only the last puts anything in a company's hands — you see the exact text first. That is a deliberate trade: total privacy in exchange for you keeping your own backups.</p>
           </article>
 
         </div>
@@ -1244,6 +1259,27 @@
     </main>
   </div>
 
+  <!-- ============ helper screen ============ -->
+  <div class="screen" id="screenHelper" hidden>
+
+    <header class="topbar topbar-settings">
+      <button class="icon-btn" id="helperBack" aria-label="Back">←</button>
+      <span class="topbar-heading">Helper</span>
+    </header>
+
+    <main class="content">
+      <section>
+        <div class="helper-log" id="helperLog" aria-live="polite"></div>
+        <div class="ai-chips helper-chips" id="helperChips"></div>
+        <form class="helper-form" id="helperForm" autocomplete="off">
+          <input type="text" id="helperInput" class="ai-question helper-input" maxlength="200" enterkeyhint="send" placeholder="Type a question…">
+          <button type="submit" class="helper-send" id="helperSend" aria-label="Send">➤</button>
+        </form>
+        <p class="data-hint">It knows this app and your log, and nothing else. It is not an AI and sends nothing anywhere: the answers are written in, and every number is the app's own. Ask in English or Russian.</p>
+      </section>
+    </main>
+  </div>
+
   <!-- ============ ask an AI screen ============ -->
   <div class="screen" id="screenAi" hidden>
 
@@ -1256,9 +1292,8 @@
 
       <section>
         <div class="data-panel">
-          <p class="settings-intro" id="aiIntroCloud">Nothing here answers you. The app writes a short summary of the log, then opens the assistant you already use — your account, your subscription. There is no key to buy and no bill attached to this app.</p>
-          <p class="settings-intro settings-intro-spaced" id="aiIntroCloudMore">Tapping a service copies the summary as well as opening it. On a phone the link often opens that company's own app, which takes the address and leaves the question behind — so if the chat comes up empty, just paste.</p>
-          <p class="settings-intro" id="aiIntroLocal" hidden>The small AI on this phone answers first, and nothing leaves the phone while it does. If its answer is not enough, the same summary can go to a bigger AI further down — and that part does leave the phone.</p>
+          <p class="settings-intro">Nothing here answers you. The app writes a short summary of the log, then opens the assistant you already use — your account, your subscription. There is no key to buy and no bill attached to this app.</p>
+          <p class="settings-intro settings-intro-spaced">Tapping a service copies the summary as well as opening it. On a phone the link often opens that company's own app, which takes the address and leaves the question behind — so if the chat comes up empty, just paste.</p>
 
           <label class="manual-field">
             <span class="manual-label">Your question</span>
@@ -1277,15 +1312,6 @@
             </select>
           </label>
 
-          <div class="local-ai" id="localAiBlock" hidden>
-            <button type="button" class="data-btn local-ai-ask" id="localAiAsk">📱 Ask the AI on this phone</button>
-            <button type="button" class="data-btn" id="localAiStop" hidden>■ Stop</button>
-            <p class="data-hint" id="localAiProgress" aria-live="polite" hidden></p>
-            <div class="local-ai-answer" id="localAiAnswer" aria-live="polite" hidden></div>
-            <p class="data-hint" id="localAiNote" hidden>Written on this phone by a small AI. It can be wrong, and it has never seen your baby.</p>
-          </div>
-
-          <h3 class="ai-subheading" id="aiCloudHeading" hidden>Or ask a bigger AI — this leaves the phone</h3>
           <p class="data-hint">This is the whole of what leaves the phone — read it before you send it:</p>
           <textarea class="share-box ai-preview" id="aiPreview" readonly rows="16"></textarea>
           <p class="data-hint" id="aiSize">—</p>
@@ -1381,7 +1407,7 @@
       <section>
         <h2 class="section-title"><span class="section-icon">🤖</span> Ask an AI</h2>
         <div class="settings-panel">
-          <p class="settings-intro">Puts a button on the main screen for questions about the log. It hands a summary to Claude, ChatGPT or Perplexity — whichever you already use — or, with the switch further down, asks a small AI that lives on this phone first.</p>
+          <p class="settings-intro">Puts a button on the main screen that hands a summary of the log to Claude, ChatGPT or Perplexity — whichever you already use. The app has no AI of its own and never will; this only saves you typing the numbers out.</p>
           <label class="settings-check">
             <input type="checkbox" id="aiEnabled">
             <span class="settings-label">Show the <strong>Ask an AI</strong> button</span>
@@ -1397,27 +1423,6 @@
           <p class="settings-hint">Off by default, and the only part of the summary that is. Everything else in it is a count of something that happened; the diary is where you wrote down how you were both coping, and that is a different thing to hand to a company. On, it carries the good-and-hard tallies, the last few entries and your notes for a specialist — which is exactly what makes a question about sleep or feeding worth asking.</p>
           <p class="settings-hint">Off, the summary says "the baby" — the answer is just as good and one less thing has left the phone. Nothing else identifying is ever included, and your sync token never is.</p>
           <p class="settings-hint">You see the exact text before anything is sent, and you can stop at copying it. This setting stays on this phone.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2 class="section-title"><span class="section-icon">📱</span> AI on this phone (trial)</h2>
-        <div class="settings-panel">
-          <p class="settings-intro">A small AI that runs on the phone itself. It is downloaded once and after that it answers with no signal at all. <strong>Nothing about your baby leaves the phone</strong>: the summary it reads never goes anywhere.</p>
-          <label class="settings-check">
-            <input type="checkbox" id="localAiOn">
-            <span class="settings-label">Answer on this phone first</span>
-          </label>
-          <label class="settings-row">
-            <span class="settings-label">Model</span>
-            <select class="settings-select" id="localAiModel"></select>
-          </label>
-          <p class="settings-hint">Gemma, from Google, writes better. SmolLM2 is a third of the size and needs about half the memory — for a phone where Gemma closes the app, which a 4 GB iPhone can. Switching removes the other one, to give its space back.</p>
-          <p class="settings-hint" id="localAiStatus" aria-live="polite">—</p>
-          <button type="button" class="data-btn" id="localAiDownload" hidden>⬇️ Download it now</button>
-          <button type="button" class="data-btn" id="localAiRemove" hidden>🗑 Remove it from this phone</button>
-          <p class="settings-hint">It is small, so it is good at putting the numbers into words and weak at anything subtle — and it can be confidently wrong. Every number it is given is worked out by the app; it only does the talking. When it is not enough, the same screen still sends the summary to a bigger AI, and that part does leave the phone.</p>
-          <p class="settings-hint">Best downloaded on Wi‑Fi. The files come from jsDelivr (the code), GitHub (the engine) and Hugging Face (the model): they see that this phone fetched a file, and nothing from the log goes to them. The code and the engine are checked against a fingerprint before anything runs. It needs a phone that can run WebGPU — an iPhone on iOS 26 or later, or a recent Android with Chrome.</p>
         </div>
       </section>
 
@@ -1510,6 +1515,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=113"></script>
+<script src="app.js?v=114"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 
 // Bumped together with index.html, version.json and the fallback in app.js.
 // A test fails if the four ever disagree.
-var VERSION = "113";
+var VERSION = "114";
 var CACHE = "baby-tracker-" + VERSION;
 
 // The page is always kept and looked up under this one name, whatever address
@@ -46,18 +46,11 @@ self.addEventListener("install", function (event) {
   );
 });
 
-// The AI on this phone keeps its 700 MB under "webllm/…". It is not part of
-// the app, no version of the app owns it, and clearing it on every update
-// would download the model again every week.
-function isLocalAi(name) {
-  return name.indexOf("webllm/") === 0;
-}
-
 self.addEventListener("activate", function (event) {
   event.waitUntil(
     caches.keys().then(function (names) {
       return Promise.all(names.map(function (name) {
-        return name === CACHE || isLocalAi(name) ? null : caches.delete(name);
+        return name === CACHE ? null : caches.delete(name);
       }));
     }).then(function () { return self.clients.claim(); })
   );
