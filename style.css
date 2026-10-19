@@ -1767,6 +1767,53 @@ body {
   min-width: 56px;
 }
 
+.helper-mic {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 20px;
+  min-width: 52px;
+}
+
+/* Listening: red, and breathing, so a microphone left on is never missed. */
+.helper-mic.listening {
+  animation: helper-listen 1.2s ease-in-out infinite;
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+@keyframes helper-listen {
+  50% { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .helper-mic.listening { animation: none; }
+}
+
+.helper-voice {
+  align-items: center;
+  color: var(--text-dim);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 15px;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.helper-voice .helper-action { margin: 0; }
+
+/* 💬 is held to speak, so it must not select text or pop the phone's own
+   menu; once held long enough it lights up, and letting go starts it. */
+#helperTopOpen {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#helperTopOpen.helper-held { box-shadow: 0 0 0 3px var(--accent-sleep); }
+
 /* Where the helper sent you, lit up for a moment. */
 .helper-spot {
   border-radius: 12px;
