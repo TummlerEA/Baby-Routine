@@ -99,8 +99,10 @@ const QUESTIONS = [
   await page.click('#helperOpen');
   await page.waitForTimeout(200);
   ok('opens its own screen', await page.isVisible('#screenHelper'));
-  ok('saying hello, and that Russian is fine', /по-русски/.test(await page.textContent('#helperLog')));
-  ok('with questions to tap', (await page.$$('#helperChips .ai-chip')).length >= 4);
+  ok('saying hello, in English only', /Ask where something is/.test(await page.textContent('#helperLog')) &&
+    !/[а-яё]/i.test(await page.textContent('#helperLog')));
+  ok('with questions to tap, in English', (await page.$$('#helperChips .ai-chip')).length >= 4 &&
+    !/[а-яё]/i.test(await page.textContent('#helperChips')));
 
   // ---- every question lands where it should ----
   const missed = [];

@@ -1802,7 +1802,29 @@ body {
   margin-top: 10px;
 }
 
-.helper-voice .helper-action { margin: 0; }
+/* The one way to have it listen in Russian: small, and out of the way of
+   everything else, lit while it is on. */
+.helper-ru {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+  margin-right: 10px;
+  min-height: 32px;
+  min-width: 44px;
+  padding: 4px 10px;
+}
+
+.helper-ru[aria-pressed="true"] {
+  border-color: var(--accent-sleep);
+  color: var(--accent-sleep);
+}
 
 /* 💬 is held to speak, so it must not select text or pop the phone's own
    menu; once held long enough it lights up, and letting go starts it. */

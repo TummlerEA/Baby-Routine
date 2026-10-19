@@ -101,15 +101,17 @@ const ok = t.ok;
   ok('allowed, it listens', r.length === 1 && r[0].started && r[0].lang === 'en-GB', r);
   ok('and remembers it was allowed', (await pref(page)).on === true);
   ok('the microphone shows it is on', await listening(page));
-  ok('in English, with Russian a tap away', /speak English/.test(await page.textContent('#helperVoiceState')) &&
-    (await page.textContent('#helperVoiceLang')) === 'По-русски');
+  ok('in English, with RU off but there at the top', /in English/.test(await page.textContent('#helperVoiceState')) &&
+    await page.isVisible('#helperRu') && (await page.getAttribute('#helperRu', 'aria-pressed')) === 'false');
+  ok('everything it says about speaking is in English',
+    !/[а-яё]/i.test(await page.textContent('#screenHelper')), await page.textContent('#screenHelper'));
 
-  await page.click('#helperVoiceLang');
+  await page.click('#helperRu');
   await page.waitForTimeout(100);
   r = await recs(page);
-  ok('switching language starts again in Russian', r.length === 2 && r[0].aborted && r[1].lang === 'ru-RU', r);
-  ok('and the language is remembered', (await pref(page)).lang === 'ru');
-  ok('said so on screen', /по-русски/.test(await page.textContent('#helperVoiceState')));
+  ok('RU while listening starts again in Russian', r.length === 2 && r[0].aborted && r[1].lang === 'ru-RU', r);
+  ok('and stays on', (await pref(page)).lang === 'ru' && (await page.getAttribute('#helperRu', 'aria-pressed')) === 'true');
+  ok('said so on screen, in English', /in Russian/.test(await page.textContent('#helperVoiceState')));
   ok('the old one, put down, asks nothing', (await yous(page)).length === 0);
 
   await rec(page, () => window.__recs[1].say('покормила левой', false));
@@ -132,7 +134,7 @@ const ok = t.ok;
   await rec(page, () => window.__recs[2].fail('not-allowed'));
   await page.waitForTimeout(80);
   a = await last(page);
-  ok('a refused microphone is explained', a.topic === 'voice' && /Микрофон не разрешён/.test(a.text), a.text);
+  ok('a refused microphone is explained', a.topic === 'voice' && /microphone isn't allowed/.test(a.text), a.text);
   ok('and the button is no longer lit', !(await listening(page)));
 
   await page.click('#helperMic');
@@ -140,7 +142,7 @@ const ok = t.ok;
   await rec(page, () => window.__recs[3].stop());
   await page.waitForTimeout(80);
   a = await last(page);
-  ok('silence says it heard nothing', /Ничего не расслышал/.test(a.text), a.text);
+  ok('silence says it heard nothing', /Didn't catch anything/.test(a.text), a.text);
 
   // ---- put down without asking ----
   const asked = (await yous(page)).length;
@@ -168,7 +170,7 @@ const ok = t.ok;
   r = await recs(page);
   ok('held again, it is listening at once', r.length === 7 && r[6].started && !r[6].ended, r);
   ok('without asking again', (await asks()) === 1);
-  ok('in the language last spoken', r[6].lang === 'ru-RU');
+  ok('in Russian while RU is on', r[6].lang === 'ru-RU');
   await page.click('#helperBack');
 
   // ---- Settings ----
@@ -182,6 +184,10 @@ const ok = t.ok;
   await page.click('#helperMic');
   await page.waitForTimeout(80);
   ok('off, 🎤 asks first again', (await recs(page)).length === 7 && (await asks()) === 2);
+  await page.click('#helperRu');
+  await page.waitForTimeout(80);
+  ok('RU tapped while not listening turns it off and starts nothing', (await pref(page)).lang === 'en' &&
+    (await page.getAttribute('#helperRu', 'aria-pressed')) === 'false' && (await recs(page)).length === 7);
   await ctx.close();
 
   // ---- no recogniser at all ----
@@ -190,7 +196,7 @@ const ok = t.ok;
   ok('with no recogniser, holding 💬 still opens the helper', await page.isVisible('#screenHelper'));
   ok('with the box ready for the keyboard\'s microphone',
     await page.evaluate(() => document.activeElement && document.activeElement.id === 'helperInput'));
-  ok('and no 🎤 that could not work', !(await page.isVisible('#helperMic')));
+  ok('and no 🎤 or RU that could not work', !(await page.isVisible('#helperMic')) && !(await page.isVisible('#helperRu')));
   await page.click('#helperBack');
   await page.click('#settingsOpen');
   await page.waitForTimeout(150);

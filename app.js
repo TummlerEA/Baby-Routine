@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "119";
+    var fallback = "120";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1990,7 +1990,7 @@
     helperMic: document.getElementById("helperMic"),
     helperVoice: document.getElementById("helperVoice"),
     helperVoiceState: document.getElementById("helperVoiceState"),
-    helperVoiceLang: document.getElementById("helperVoiceLang"),
+    helperRu: document.getElementById("helperRu"),
     helperVoiceOn: document.getElementById("helperVoiceOn"),
     helperVoiceHint: document.getElementById("helperVoiceHint"),
     aiRow: document.getElementById("aiRow"),
@@ -13342,12 +13342,9 @@
   var HELPER_STOP = "the a an to is are do does i my me of in on it for can what this that with and or be " +
     "baby babies she he her his him our we you " +
     "и в на по с у а ли мне мой моя что это не же бы малыш малыша малышу ребенок ребенка она он её его наш";
-  var HELPER_STARTERS = {
-    en: ["When was the last feed?", "How much sleep last night?", "What's next?",
-      "How do I turn on white noise?", "How do I share with my partner?"],
-    ru: ["Когда было последнее кормление?", "Сколько спал ночью?", "Что дальше?",
-      "Как включить белый шум?", "Как поделиться с партнёром?"]
-  };
+  // Always in English: Russian is understood, but not offered.
+  var HELPER_STARTERS = ["When was the last feed?", "How much sleep last night?", "What's next?",
+    "How do I turn on white noise?", "How do I share with my partner?"];
 
   var helperLang = uiLang;
   var helperIndex = null;
@@ -14035,7 +14032,7 @@
 
   function renderHelperChips() {
     el.helperChips.innerHTML = "";
-    HELPER_STARTERS[helperLang === "ru" ? "ru" : "en"].forEach(function (question) {
+    HELPER_STARTERS.forEach(function (question) {
       var chip = document.createElement("button");
       chip.type = "button";
       chip.className = "ai-chip";
@@ -14208,18 +14205,15 @@
     try { localStorage.setItem(HELPER_VOICE_KEY, JSON.stringify(v)); } catch (e) { /* asked again next time */ }
   }
 
-  // The language it was last spoken in; before the first time, the one the
-  // helper was last asked in, or Russian on a phone that lists it.
+  // English unless RU at the top of the helper has been switched on.
   function helperVoiceLang() {
-    var kept = loadHelperVoice().lang;
-    if (kept) return kept;
-    var phone = [].concat(navigator.languages || [], navigator.language || []);
-    var ru = helperLang === "ru" || phone.some(function (l) { return /^ru/i.test(l); });
-    return ru ? "ru" : "en";
+    return loadHelperVoice().lang === "ru" ? "ru" : "en";
   }
 
   function renderHelperVoice() {
     el.helperMic.hidden = !HelperRecognition;
+    el.helperRu.hidden = !HelperRecognition;
+    el.helperRu.setAttribute("aria-pressed", helperVoiceLang() === "ru" ? "true" : "false");
     el.helperVoiceOn.checked = !!HelperRecognition && loadHelperVoice().on;
     el.helperVoiceOn.disabled = !HelperRecognition;
     if (!HelperRecognition) {
@@ -14244,19 +14238,17 @@
   }
 
   function helperAskVoice() {
-    var lang = helperLang === "ru" ? "ru" : "en";
     var bubble = helperBubble("bot");
     bubble.setAttribute("data-topic", "voice");
-    helperText(bubble, "helper-title", lang === "ru" ? "🎤 Голосом" : "🎤 Speaking to it");
-    helperText(bubble, "helper-line", lang === "ru"
-      ? "Речь в текст переводит телефон, а не это приложение: на iPhone — Apple, как микрофон на клавиатуре, в Chrome — Google. Звук может уйти к ним на серверы. Сюда возвращается только текст, и ничего не записывается, пока вы не нажмёте ✓."
-      : "Speech is turned into text by the phone, not by this app: on an iPhone by Apple, as with the microphone on the keyboard; in Chrome by Google. The sound may go to their servers. Only the text comes back here, and nothing is logged until you tap ✓.");
-    var yes = helperButton(bubble, lang === "ru" ? "🎤 Включить и говорить" : "🎤 Turn on and speak", function () {
+    helperText(bubble, "helper-title", "🎤 Speaking to it");
+    helperText(bubble, "helper-line",
+      "Speech is turned into text by the phone, not by this app: on an iPhone by Apple, as with the microphone on the keyboard; in Chrome by Google. The sound may go to their servers. Only the text comes back here, and nothing is logged until you tap ✓.");
+    var yes = helperButton(bubble, "🎤 Turn on and speak", function () {
       saveHelperVoice({ on: true });
       helperVoiceStart(helperVoiceLang());
     });
     yes.classList.add("helper-action-main");
-    helperButton(bubble, lang === "ru" ? "Нет, напечатаю" : "No, I'll type", function () {
+    helperButton(bubble, "No, I'll type", function () {
       el.helperInput.focus();
     });
     helperScroll();
@@ -14272,7 +14264,7 @@
       rec.continuous = false;
       rec.maxAlternatives = 1;
     } catch (e) {
-      helperVoiceFailed("start", lang);
+      helperVoiceFailed("start");
       return;
     }
     var said = "";
@@ -14290,11 +14282,10 @@
       clearTimeout(helperRecTimer);
       helperVoiceShow(null);
       if (said.trim()) {
-        saveHelperVoice({ lang: lang });
         helperAsk(said);
       } else {
         el.helperInput.value = "";
-        helperVoiceFailed(failed || "no-speech", lang);
+        helperVoiceFailed(failed || "no-speech");
       }
     };
     helperRec = rec;
@@ -14302,7 +14293,7 @@
       rec.start();
     } catch (e) {
       helperRec = null;
-      helperVoiceFailed("start", lang);
+      helperVoiceFailed("start");
       return;
     }
     // A recogniser that never hears the end of a sentence would otherwise
@@ -14332,29 +14323,20 @@
       return;
     }
     el.helperInput.value = "";
-    el.helperInput.placeholder = lang === "ru" ? "Слушаю…" : "Listening…";
-    el.helperVoiceState.textContent = lang === "ru" ? "🎤 Слушаю — говорите по-русски" : "🎤 Listening — speak English";
-    el.helperVoiceLang.textContent = lang === "ru" ? "English" : "По-русски";
-    el.helperVoiceLang.setAttribute("data-lang", lang === "ru" ? "en" : "ru");
+    el.helperInput.placeholder = "Listening…";
+    el.helperVoiceState.textContent = lang === "ru" ? "🎤 Listening — in Russian" : "🎤 Listening — in English";
   }
 
-  function helperVoiceFailed(code, lang) {
-    var ru = lang === "ru";
+  function helperVoiceFailed(code) {
     var text;
     if (code === "not-allowed" || code === "service-not-allowed") {
-      text = ru
-        ? "Микрофон не разрешён. Разрешите его, когда телефон спросит (на iPhone: Настройки → Приложения → Safari → Микрофон). А пока можно нажать на поле и диктовать с 🎤 на клавиатуре."
-        : "The microphone isn't allowed. Allow it when the phone asks (on an iPhone: Settings → Apps → Safari → Microphone). Meanwhile, tap the box and use 🎤 on the keyboard.";
+      text = "The microphone isn't allowed. Allow it when the phone asks (on an iPhone: Settings → Apps → Safari → Microphone). Meanwhile, tap the box and use 🎤 on the keyboard.";
     } else if (code === "network") {
-      text = ru
-        ? "Распознавание речи сейчас недоступно — нет связи. Можно напечатать или продиктовать с 🎤 на клавиатуре."
-        : "Speech recognition isn't available right now — no connection. Type it, or use 🎤 on the keyboard.";
+      text = "Speech recognition isn't available right now — no connection. Type it, or use 🎤 on the keyboard.";
     } else if (code === "no-speech" || code === "aborted") {
-      text = ru ? "Ничего не расслышал — нажмите 🎤 и скажите ещё раз." : "Didn't catch anything — tap 🎤 and say it again.";
+      text = "Didn't catch anything — tap 🎤 and say it again.";
     } else {
-      text = ru
-        ? "Не получилось распознать речь. Можно напечатать или продиктовать с 🎤 на клавиатуре."
-        : "Couldn't make out what was said. Type it, or use 🎤 on the keyboard.";
+      text = "Couldn't make out what was said. Type it, or use 🎤 on the keyboard.";
     }
     var bubble = helperBubble("bot");
     bubble.setAttribute("data-topic", "voice");
@@ -14371,10 +14353,13 @@
     helperListen();
   });
 
-  el.helperVoiceLang.addEventListener("click", function () {
-    var lang = el.helperVoiceLang.getAttribute("data-lang") === "ru" ? "ru" : "en";
+  // Kept until tapped again. Tapped while it listens, it starts again in the
+  // other language rather than finishing the sentence in the wrong one.
+  el.helperRu.addEventListener("click", function () {
+    var lang = helperVoiceLang() === "ru" ? "en" : "ru";
     saveHelperVoice({ lang: lang });
-    helperVoiceStart(lang);
+    renderHelperVoice();
+    if (helperRec) helperVoiceStart(lang);
   });
 
   el.helperVoiceOn.addEventListener("change", function () {
@@ -14418,13 +14403,12 @@
 
   function openHelper() {
     if (!el.helperLog.children.length) {
-      helperLang = uiLang;
+      helperLang = "en";
       var hello = helperBubble("bot");
       helperText(hello, "helper-line",
         "Ask where something is in the app, or about the log — the last feed, yesterday's nappies, last night's sleep, what's next.");
       helperText(hello, "helper-line",
         "Or say what happened — \"fed on the left 15 min, 10 min ago\" — and it logs it once you've checked it.");
-      helperText(hello, "helper-line helper-dim", "Можно по-русски: «покормила левой 15 минут», «сколько спал вчера».");
     }
     helperShowHints();
     renderHelperChips();
