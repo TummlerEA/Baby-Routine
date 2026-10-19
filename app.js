@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "110";
+    var fallback = "111";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -6282,6 +6282,7 @@
   }
 
   function showSettings(focusName) {
+    renderLocalAi();
     showScreen("settings");
     if (focusName) el.babyName.focus();
   }
@@ -13173,18 +13174,23 @@
   // Whether it is switched on, and whether a download ever finished. Per
   // device and never exported or synced, like the rest of the AI settings: a
   // 700 MB download is this phone's business alone.
+  // `error` is what went wrong the last time, kept until something works: a
+  // toast is gone before anybody can read it out to whoever is helping.
   function loadLocalAi() {
     try {
       var parsed = JSON.parse(localStorage.getItem(LOCAL_AI_KEY) || "null");
-      return { on: !!parsed && parsed.on === true, ready: !!parsed && parsed.ready === true };
+      return { on: !!parsed && parsed.on === true, ready: !!parsed && parsed.ready === true,
+        error: parsed && typeof parsed.error === "string" ? parsed.error.slice(0, 400) : "" };
     } catch (e) {
-      return { on: false, ready: false };
+      return { on: false, ready: false, error: "" };
     }
   }
 
   function saveLocalAi(prefs) {
     try {
-      localStorage.setItem(LOCAL_AI_KEY, JSON.stringify({ on: !!prefs.on, ready: !!prefs.ready }));
+      var out = { on: !!prefs.on, ready: !!prefs.ready };
+      if (prefs.error) out.error = String(prefs.error).slice(0, 400);
+      localStorage.setItem(LOCAL_AI_KEY, JSON.stringify(out));
     } catch (e) {
       showError("Couldn't save that setting");
     }
@@ -13231,19 +13237,31 @@
     return localAi.support;
   }
 
-  // Finished once, and still there: the browser may have cleared its storage
-  // since, and a button that says "answer" must not quietly start a 700 MB
-  // download on a phone's data plan.
+  // Every piece of the model is on the phone. Asked of the files themselves,
+  // the way the library asks it — the list of pieces is kept, and so is each
+  // piece on it — and not of whether the model has ever run: a download that
+  // finished and then would not load is still downloaded, and must not be
+  // offered for another 700 MB. A download cut off half way, or storage the
+  // browser has since cleared, reads as not downloaded, which is what it is.
   function localAiDownloaded() {
-    if (!loadLocalAi().ready) return Promise.resolve(false);
-    if (localAiStandIn()) return Promise.resolve(true);
+    if (localAiStandIn()) return Promise.resolve(loadLocalAi().ready);
     if (!window.caches) return Promise.resolve(false);
-    return caches.has(LOCAL_AI_CACHE_PREFIX + "model").then(function (has) {
+    var base = LOCAL_AI_MODEL.model + "/resolve/main/";
+    var scope = LOCAL_AI_CACHE_PREFIX + "model";
+    return caches.has(scope).then(function (has) {
       if (!has) return false;
-      return caches.open(LOCAL_AI_CACHE_PREFIX + "model").then(function (cache) {
-        return cache.keys();
-      }).then(function (keys) {
-        return keys.some(function (req) { return req.url.indexOf(LOCAL_AI_MODEL.model_id) >= 0; });
+      return caches.open(scope).then(function (cache) {
+        return Promise.all([cache.match(base + "tensor-cache.json"), cache.keys()]);
+      }).then(function (got) {
+        if (!got[0]) return false;
+        var kept = {};
+        got[1].forEach(function (req) { kept[req.url] = true; });
+        return got[0].json().then(function (list) {
+          var records = (list && list.records) || [];
+          return records.length > 0 && records.every(function (rec) {
+            return kept[new URL(rec.dataPath, base).href];
+          });
+        });
       });
     }).catch(function () { return false; });
   }
@@ -13333,11 +13351,18 @@
     }, function () {});
   }
 
-  function renderLocalAiProgress(fraction) {
-    var pct = Math.max(0, Math.min(100, Math.round((fraction || 0) * 100)));
-    var line = localAi.phase === "download"
+  // Two stretches, each running 0 to 100%: fetching the pieces, then loading
+  // them into the phone's memory. Named apart, because the second one
+  // counting up from nothing looks exactly like the download starting again.
+  function renderLocalAiProgress(report) {
+    var pct = Math.max(0, Math.min(100, Math.round(((report && report.progress) || 0) * 100)));
+    var text = String((report && report.text) || "");
+    var fetching = /^Fetching/.test(text) || (!/^Loading/.test(text) && localAi.phase === "download");
+    var line = fetching
       ? "Downloading the model — " + pct + "%. Keep this screen open; what has arrived is kept if it stops."
-      : "Waking it up — " + pct + "%";
+      : /^Loading model/.test(text)
+        ? "Downloaded. Loading it into the phone's memory — " + pct + "%"
+        : "Getting it ready — " + pct + "%";
     el.localAiStatus.textContent = line;
     el.localAiProgress.textContent = line;
     el.localAiProgress.hidden = false;
@@ -13348,7 +13373,7 @@
     if (localAi.loading) return localAi.loading;
     localAi.loading = localAiDownloaded().then(function (have) {
       localAi.phase = have ? "wake" : "download";
-      renderLocalAiProgress(0);
+      renderLocalAiProgress(null);
       if (!have) {
         localAiHoldScreen(true);
         // Asked, not assumed: without it the browser may clear 700 MB of
@@ -13359,21 +13384,23 @@
     }).then(function (lib) {
       return lib.CreateMLCEngine(LOCAL_AI_MODEL.model_id, {
         appConfig: { model_list: [LOCAL_AI_MODEL] },
-        initProgressCallback: function (report) { renderLocalAiProgress(report && report.progress); }
+        initProgressCallback: renderLocalAiProgress
       });
     }).then(function (engine) {
       localAi.engine = engine;
       localAi.loading = null;
       localAiHoldScreen(false);
       var prefs = loadLocalAi();
-      if (!prefs.ready) {
-        prefs.ready = true;
-        saveLocalAi(prefs);
-      }
+      prefs.ready = true;
+      prefs.error = "";
+      saveLocalAi(prefs);
       return engine;
     }, function (err) {
       localAi.loading = null;
       localAiHoldScreen(false);
+      var prefs = loadLocalAi();
+      prefs.error = localAiFailure(err) + localAiDetail(err);
+      saveLocalAi(prefs);
       throw err;
     });
     return localAi.loading;
@@ -13390,9 +13417,18 @@
     Promise.resolve().then(function () { return engine.unload(); }).catch(function () {});
   }
 
+  // The library's own words, for whoever is helping work out what went wrong;
+  // left off where the plain explanation already carries them.
+  function localAiDetail(err) {
+    var text = String((err && (err.message || err)) || "").split("\n")[0].slice(0, 160);
+    var kind = err && err.localAi;
+    if (!text || kind === "unsupported" || kind === "room" || kind === "long" || kind === "fingerprint") return "";
+    return localAiFailure(err).indexOf(text) >= 0 ? "" : " [" + text + "]";
+  }
+
   function localAiFailure(err) {
     var kind = err && err.localAi;
-    var text = String(err && (err.message || err) || "");
+    var text = String(err && (err.message || err) || "").split("\n")[0];
     if (kind === "unsupported") return err.why;
     if (kind === "fingerprint" || /Integrity verification failed/.test(text)) {
       return "What was downloaded didn't match its fingerprint, so none of it was run. Try again later.";
@@ -13483,6 +13519,11 @@
         temperature: 0.4
       }).then(localAiDrain).then(function (answer) {
         el.localAiNote.hidden = false;
+        var prefs = loadLocalAi();
+        if (prefs.error) {
+          prefs.error = "";
+          saveLocalAi(prefs);
+        }
         if (localAi.stopped) {
           el.localAiProgress.textContent = "Stopped.";
         } else if (!localAiPlain(answer)) {
@@ -13492,7 +13533,13 @@
         }
       });
     }).catch(function (err) {
-      el.localAiProgress.textContent = localAiFailure(err) +
+      var kind = err && err.localAi;
+      if (kind !== "unsupported" && kind !== "long") {
+        var prefs = loadLocalAi();
+        prefs.error = localAiFailure(err) + localAiDetail(err);
+        saveLocalAi(prefs);
+      }
+      el.localAiProgress.textContent = localAiFailure(err) + localAiDetail(err) +
         " A bigger AI below can still answer — that part leaves the phone.";
       el.localAiProgress.hidden = false;
     }).then(function () {
@@ -13505,11 +13552,18 @@
   function renderLocalAiStatus() {
     var token = ++localAi.statusToken;
     var prefs = loadLocalAi();
-    // Not even the graphics chip is asked about until somebody wants it.
-    if (!prefs.on && !prefs.ready) {
+    // Switched off, only the files are looked at — the graphics chip is not
+    // even asked about until somebody wants it — so a model still on the
+    // phone can be removed without switching it back on first.
+    if (!prefs.on) {
       el.localAiDownload.hidden = true;
-      el.localAiRemove.hidden = true;
-      el.localAiStatus.textContent = "Off. Nothing is downloaded until you switch it on.";
+      localAiDownloaded().then(function (have) {
+        if (token !== localAi.statusToken) return;
+        el.localAiRemove.hidden = !have;
+        el.localAiStatus.textContent = have
+          ? "Off. The model is still on this phone, taking about 700 MB, until you remove it."
+          : "Off. Nothing is downloaded until you switch it on.";
+      });
       return;
     }
     Promise.all([localAiSupport(), localAiDownloaded()]).then(function (got) {
@@ -13518,16 +13572,23 @@
       var support = got[0];
       var have = got[1];
       prefs = loadLocalAi();
-      el.localAiDownload.hidden = !support.ok || have || !prefs.on;
+      var lastTry = prefs.error ? " Last try: " + prefs.error : "";
+      el.localAiDownload.hidden = !support.ok || have;
       el.localAiRemove.hidden = !have;
       el.localAiStatus.textContent = !support.ok ? support.why
-        : have ? "Downloaded and ready — it works with no signal at all."
-        : "Not downloaded yet. It downloads the first time you ask, or now with the button below.";
+        : have && prefs.ready ? "Downloaded and ready — it works with no signal at all." + lastTry
+        : have ? "Downloaded. It hasn't run on this phone yet." + lastTry
+        : "Not downloaded yet. It downloads the first time you ask, or now with the button below." + lastTry;
       el.localAiAsk.hidden = !support.ok;
-      el.localAiAsk.textContent = have ? "📱 Answer on this phone"
-        : "📱 Download it (about 700 MB) and answer on this phone";
-      if (!support.ok && !localAi.busy) {
+      el.localAiAsk.textContent = have ? "📱 Ask the AI on this phone"
+        : "📱 Download it (about 700 MB) and ask";
+      if (localAi.busy) return;
+      if (!support.ok) {
         el.localAiProgress.textContent = support.why + " A bigger AI below can still answer — that part leaves the phone.";
+        el.localAiProgress.hidden = false;
+      } else if (prefs.error && el.localAiAnswer.hidden) {
+        el.localAiProgress.textContent = "Last try didn't work: " + prefs.error +
+          " A bigger AI below can still answer — that part leaves the phone.";
         el.localAiProgress.hidden = false;
       }
     });
