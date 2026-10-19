@@ -288,7 +288,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "115";
+    var fallback = "116";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -549,6 +549,14 @@
   // baulk at, and a fortnight of entries still fits inside it.
   var AI_URL_LIMIT = 4000;
   var AI_KEY = "baby-tracker-ai";
+  // What the helper could not place, for whoever looks after the app. Per
+  // device, never synced, exported or shared.
+  var HELPER_MISSES_KEY = "baby-tracker-helper-misses";
+  var HELPER_MISSES_MAX = 50;
+  // When this phone last saved a JSON backup. Per device too: it is about
+  // this phone's copy, and a backup made on another phone says nothing of it.
+  var BACKUP_AT_KEY = "baby-tracker-backup-at";
+  var BACKUP_NUDGE_AFTER = 30 * MS_DAY;
   var AI_DEFAULT_DAYS = 3;
   var AI_MAX_QUESTION = 500;
   var AI_MAX_FREEFORM = 8;
@@ -1964,6 +1972,9 @@
     screenHelper: document.getElementById("screenHelper"),
     helperOpen: document.getElementById("helperOpen"),
     helperMenuOpen: document.getElementById("helperMenuOpen"),
+    helperMissesState: document.getElementById("helperMissesState"),
+    helperMissesCopy: document.getElementById("helperMissesCopy"),
+    helperMissesClear: document.getElementById("helperMissesClear"),
     helperBack: document.getElementById("helperBack"),
     helperLog: document.getElementById("helperLog"),
     helperChips: document.getElementById("helperChips"),
@@ -5628,6 +5639,7 @@
       events: sortedByTimeDesc(events)   // tombstones included on purpose
     }, null, 2);
     if (downloadFile(exportBaseName() + ".json", payload, "application/json;charset=utf-8")) {
+      try { localStorage.setItem(BACKUP_AT_KEY, new Date().toISOString()); } catch (e) { /* only a reminder */ }
       showToast("Backup saved");
     }
   });
@@ -6246,6 +6258,7 @@
   }
 
   function showSettings(focusName) {
+    renderHelperMisses();
     showScreen("settings");
     if (focusName) el.babyName.focus();
   }
@@ -13849,7 +13862,7 @@
     return "";
   }
 
-  function helperOfferLog(entries, lang) {
+  function helperOfferLog(entries, lang, said) {
     var ru = lang === "ru";
     var bubble = helperBubble("bot");
     bubble.setAttribute("data-topic", "log");
@@ -13883,6 +13896,7 @@
     });
     write.classList.add("helper-action-main");
     helperButton(row, ru ? "Не то" : "Not that", function () {
+      helperMissed(said);
       row.innerHTML = "";
       helperText(row, "helper-line helper-dim", ru
         ? "Хорошо, ничего не записано. Можно сказать иначе или нажать кнопку на главном экране."
@@ -13914,7 +13928,7 @@
     helperLang = lang;
     var logged = helperParseLog(question);
     if (logged) {
-      helperOfferLog(logged, lang);
+      helperOfferLog(logged, lang, question);
       return;
     }
     var ranked = helperRank(question);
@@ -13938,6 +13952,7 @@
 
     var bubble = helperBubble("bot");
     if (!best) {
+      helperMissed(question);
       bubble.setAttribute("data-topic", "none");
       helperText(bubble, "helper-line", lang === "ru"
         ? "Тут я не помогу: я знаю только кнопки этого приложения и то, что записано в журнале. На такой вопрос лучше ответит большой AI."
@@ -14015,6 +14030,141 @@
     });
   }
 
+  // ---- what is worth knowing, unasked ----
+
+  // Said when the helper opens, at most a few lines, each only when it is
+  // true now: a feed the plan says is due, no dirty nappy for two days, sleep
+  // entries with no pair, no backup on this phone for a month. Nothing here
+  // is alarming on its own and none of it is put as if it were.
+  function helperDays(ms, ru) {
+    var days = Math.floor(ms / MS_DAY);
+    return ru ? days + " " + pluralRu(days, "день", "дня", "дней") : days + (days === 1 ? " day" : " days");
+  }
+
+  function helperHints(lang) {
+    var ru = lang === "ru";
+    var now = Date.now();
+    var hints = [];
+    var live = liveEvents();
+    if (!live.length) return hints;
+
+    var feeds = sortedByTimeDesc(live.filter(function (e) { return e.type === "feed"; }));
+    var forecast = computeForecast("feed");
+    if (feeds.length && forecast.hasData && now - +forecast.nextTime > 5 * MS_MIN) {
+      var ago = now - +new Date(feeds[0].time);
+      hints.push({ id: "feed", text: ru
+        ? "Последнее кормление было " + durationRu(ago) + " назад — по плану уже пора."
+        : "The last feed was " + formatDuration(ago) + " ago — by the plan, one is due.",
+        go: { main: "actions" } });
+    }
+
+    var nappies = live.filter(function (e) { return e.type === "diaper"; });
+    var oldest = nappies.reduce(function (min, e) { return Math.min(min, +new Date(e.time)); }, now);
+    if (now - oldest >= 2 * MS_DAY) {
+      var dirty = sortedByTimeDesc(nappies.filter(function (e) {
+        var kind = nappyOf(e);
+        return kind === "dirty" || kind === "both";
+      }))[0];
+      var since = dirty ? now - +new Date(dirty.time) : now - oldest;
+      if (since >= 2 * MS_DAY) {
+        hints.push({ id: "dirty", text: ru
+          ? "Грязного подгузника не было " + helperDays(since, true) + "."
+          : "No dirty nappy for " + helperDays(since, false) + "." });
+      }
+    }
+
+    var unpaired = unpairedSleeps().length;
+    if (unpaired) {
+      hints.push({ id: "unpaired", text: ru
+        ? unpaired + " " + pluralRu(unpaired, "запись", "записи", "записей") + " сна без пары — они не входят в итоги."
+        : unpaired + (unpaired === 1 ? " sleep entry has" : " sleep entries have") + " no pair, so the totals leave them out.",
+        go: { main: "fixUps" } });
+    }
+
+    // With sync on, another copy already lives in the repository.
+    var first = live.reduce(function (min, e) { return Math.min(min, +new Date(e.time)); }, now);
+    if (!loadSyncConfig() && now - first > 14 * MS_DAY) {
+      var at = null;
+      try { at = Date.parse(localStorage.getItem(BACKUP_AT_KEY) || ""); } catch (e) { /* none */ }
+      if (!isFinite(at) || now - at > BACKUP_NUDGE_AFTER) {
+        hints.push({ id: "backup", text: isFinite(at)
+          ? (ru ? "Резервную копию на этом телефоне делали " + helperDays(now - at, true) + " назад."
+            : "This phone's last backup was " + helperDays(now - at, false) + " ago.")
+          : (ru ? "На этом телефоне ещё не делали резервную копию." : "This phone hasn't saved a backup yet."),
+          go: { settings: "exportJson" } });
+      }
+    }
+    return hints.slice(0, 3);
+  }
+
+  function helperShowHints() {
+    var lang = helperLang === "ru" ? "ru" : "en";
+    var hints = helperHints(lang);
+    if (!hints.length) return;
+    var key = lang + ":" + hints.map(function (h) { return h.id + "=" + h.text; }).join("|");
+    // Not said twice in a row: reopening the screen a minute later should
+    // not stack the same lines up.
+    var last = el.helperLog.lastElementChild;
+    if (last && last.getAttribute("data-hints") === key) return;
+    var bubble = helperBubble("bot");
+    bubble.setAttribute("data-topic", "hints");
+    bubble.setAttribute("data-hints", key);
+    helperText(bubble, "helper-title", lang === "ru" ? "Стоит заметить" : "Worth knowing");
+    hints.forEach(function (hint) {
+      var line = helperText(bubble, "helper-line helper-hint", "• " + hint.text);
+      line.setAttribute("data-hint", hint.id);
+      if (hint.go) helperButton(bubble, lang === "ru" ? "Открыть →" : "Show me →", function () { helperGo(hint.go); });
+    });
+  }
+
+  // ---- what it could not place ----
+
+  function loadHelperMisses() {
+    try {
+      var list = JSON.parse(localStorage.getItem(HELPER_MISSES_KEY) || "[]");
+      return Array.isArray(list) ? list.filter(function (m) {
+        return m && typeof m.q === "string" && typeof m.at === "string";
+      }) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function helperMissed(question) {
+    var q = cleanText(question, 200);
+    if (!q) return;
+    var list = loadHelperMisses().filter(function (m) { return m.q.toLowerCase() !== q.toLowerCase(); });
+    list.unshift({ q: q, at: new Date().toISOString() });
+    try {
+      localStorage.setItem(HELPER_MISSES_KEY, JSON.stringify(list.slice(0, HELPER_MISSES_MAX)));
+    } catch (e) { /* a lost note of a miss is no loss */ }
+  }
+
+  function renderHelperMisses() {
+    var n = loadHelperMisses().length;
+    el.helperMissesState.textContent = n
+      ? n + (n === 1 ? " question it didn't understand." : " questions it didn't understand.")
+      : "Nothing it didn't understand yet.";
+    el.helperMissesCopy.hidden = !n;
+    el.helperMissesClear.hidden = !n;
+  }
+
+  el.helperMissesCopy.addEventListener("click", function () {
+    var text = "Questions the Baby Tracker helper didn't understand:\n\n" + loadHelperMisses().map(function (m) {
+      var at = new Date(m.at);
+      return formatDateShort(at) + " " + formatClockTime(at) + " — " + m.q;
+    }).join("\n");
+    copyText(text).then(function (ok) {
+      showToast(ok ? "Copied — paste it into a message" : "Couldn't copy it");
+    });
+  });
+
+  el.helperMissesClear.addEventListener("click", function () {
+    try { localStorage.removeItem(HELPER_MISSES_KEY); } catch (e) { /* nothing kept */ }
+    renderHelperMisses();
+    showToast("Cleared");
+  });
+
   function openHelper() {
     if (!el.helperLog.children.length) {
       helperLang = uiLang;
@@ -14025,6 +14175,7 @@
         "Or say what happened — \"fed on the left 15 min, 10 min ago\" — and it logs it once you've checked it.");
       helperText(hello, "helper-line helper-dim", "Можно по-русски: «покормила левой 15 минут», «сколько спал вчера».");
     }
+    helperShowHints();
     renderHelperChips();
     showScreen("helper");
   }

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=115">
+<link rel="stylesheet" href="style.css?v=116">
 </head>
 <body>
 
@@ -532,6 +532,7 @@
             <h3>Helper (💬)</h3>
             <p>At the foot of the main screen, and behind ⋯. Ask where something is — "how do I turn on white noise", "как поделиться с партнёром" — and it explains, with a button that takes you there and lights it up. Ask about the log — the last feed, today's nappies, how much sleep, what's next — and it answers with the same sentences as the handover screen, in the language you asked in. Name a stretch — today, yesterday, last night, the week — and it answers for that, set against the same stretch on the seven days before ("by this time of day it's usually about 6"); "а вчера?" or "and nappies?" on their own carry the rest over from the answer before.</p>
             <p>Say what happened instead of asking — "fed on the left 15 min, 10 min ago", "поменяла подгузник, покакал", "уснул в 14:30", "проснулся, поменяла подгузник и покормила" — and it reads it back and waits. One tap logs exactly what the buttons would, with an undo right there; "Not that" logs nothing. Several said together are spaced five minutes apart, ending at the time said. A sleep said out of turn — a second "asleep" in a row, a wake-up with no sleep — is logged if you say so, but not without a word about it.</p>
+            <p>Opened, it says what is worth knowing right now, unasked and three lines at most: a feed the plan says is due, no dirty nappy for two days, sleep entries with no pair, or no backup on this phone for a month. Questions it could not place are kept on this phone; ⚙️ Settings → Helper copies them, so they can be sent to whoever looks after the app, and clears them.</p>
             <p>It is not an AI. Nothing is generated and nothing leaves the phone: the answers about the app are written in, and every number is one the app has already worked out. A question it cannot place — anything medical, say — it says so and offers <strong>Ask an AI</strong> instead, with your question carried across. Worry wins over everything else: mention breathing, turning blue or a fever and it gives the numbers to ring first.</p>
 
             <h3>Fixing mistakes</h3>
@@ -1406,6 +1407,17 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">💬</span> Helper</h2>
+        <div class="settings-panel">
+          <p class="settings-intro">Questions the helper could not place, and sentences it read wrongly when you tapped <strong>Not that</strong>, are kept on this phone so they can be sent to whoever looks after the app — that is how it learns new words.</p>
+          <p class="settings-hint" id="helperMissesState">—</p>
+          <button type="button" class="data-btn" id="helperMissesCopy" hidden>📋 Copy the list</button>
+          <button type="button" class="data-btn" id="helperMissesClear" hidden>🗑 Clear the list</button>
+          <p class="settings-hint">Only ever copied by you. It stays on this phone and is never synced, backed up or shared — the questions are in your own words, and some will be about your baby.</p>
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">🤖</span> Ask an AI</h2>
         <div class="settings-panel">
           <p class="settings-intro">Puts a button on the main screen that hands a summary of the log to Claude, ChatGPT or Perplexity — whichever you already use. The app has no AI of its own and never will; this only saves you typing the numbers out.</p>
@@ -1516,6 +1528,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=115"></script>
+<script src="app.js?v=116"></script>
 </body>
 </html>
