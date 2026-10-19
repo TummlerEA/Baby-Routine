@@ -1690,11 +1690,15 @@ body {
   margin-top: 4px;
 }
 
+/* Filled, because it is the one that sends: the question is asked here. */
 .local-ai-ask {
+  background: var(--accent-diaper);
   border-color: var(--accent-diaper);
-  color: var(--accent-diaper);
-  font-weight: 600;
+  color: var(--bg);
+  font-weight: 700;
 }
+
+.local-ai-ask:disabled { opacity: 0.55; }
 
 .local-ai-answer {
   background: var(--bg-elevated-2);

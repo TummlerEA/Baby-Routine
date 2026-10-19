@@ -60,14 +60,35 @@ const ok = t.ok;
       } else {
         Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
       }
+      if (o.noStandIn) {
+        localStorage.setItem('baby-tracker-ai', JSON.stringify({ on: true }));
+        if (o.local) localStorage.setItem('baby-tracker-local-ai', JSON.stringify(o.local));
+        return;
+      }
       window.__localAiStandIn = {
         CreateMLCEngine(id, config) {
           window.__engine.created++;
           window.__engine.id = id;
           window.__engine.config = config;
           if (o.fail) return Promise.reject(new TypeError(o.fail));
+          // The way the real one fails: everything fetched, then the load
+          // into memory gives out part of the way through.
+          if (o.failAfterLoad && !(o.failOnce && window.__engine.created > 1)) {
+            config.initProgressCallback({ progress: 1, text: 'Fetching param cache[2/2]: 700MB fetched.' });
+            config.initProgressCallback({ progress: 0.4, text: 'Loading model from cache[1/2]: 280MB loaded.' });
+            return Promise.reject(new Error(o.failAfterLoad + '\nat somewhere deep'));
+          }
+          if (o.hold) {
+            config.initProgressCallback({ progress: 1, text: 'Fetching param cache[2/2]: 700MB fetched.' });
+            window.__step = () => config.initProgressCallback({ progress: 0.25,
+              text: 'Loading model from cache[1/2]: 175MB loaded.' });
+            return new Promise(resolve => { window.__go = () => resolve(window.__made()); });
+          }
           config.initProgressCallback({ progress: 0.5, text: 'half' });
-          return Promise.resolve({
+          return Promise.resolve(window.__made());
+        }
+      };
+      window.__made = () => ({
             chat: { completions: { create(req) {
               window.__engine.asked.push(req);
               const pieces = ['**Feeds** look', ' regular.\n\n* Nappies', ' are fine.'];
@@ -82,9 +103,7 @@ const ok = t.ok;
             } } },
             interruptGenerate() { window.__engine.interrupted++; },
             unload() { window.__engine.unloaded++; return Promise.resolve(); }
-          });
-        }
-      };
+      });
       localStorage.setItem('baby-tracker-ai', JSON.stringify({ on: !o.aiOff }));
       if (o.local) localStorage.setItem('baby-tracker-local-ai', JSON.stringify(o.local));
       // A sync token in storage, to prove it never reaches the model either.
@@ -175,7 +194,7 @@ const ok = t.ok;
   ok('the download is remembered as finished',
     await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).ready) === true);
   ok('so the button no longer warns of one',
-    (await page.textContent('#localAiAsk')).trim() === '📱 Answer on this phone');
+    (await page.textContent('#localAiAsk')).trim() === '📱 Ask the AI on this phone');
 
   await page.click('#aiBack');
   await page.waitForTimeout(200);
@@ -231,6 +250,86 @@ const ok = t.ok;
   ok('and the button works again', !(await page.isDisabled('#localAiAsk')));
   ok('nothing is marked downloaded',
     !(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).ready)));
+  await ctx.close();
+
+  // ---- the two stretches are named apart ----
+  ({ ctx, page } = await open({ gpu: 'f16', local: { on: true }, hold: true }));
+  await toAi(page);
+  await page.click('#localAiAsk');
+  await page.waitForFunction(() => typeof window.__step === 'function');
+  await page.waitForTimeout(100);
+  const fetched = await page.textContent('#localAiProgress');
+  ok('while fetching, it says downloading', /^Downloading the model — 100%/.test(fetched), fetched);
+  await page.evaluate(() => window.__step());
+  await page.waitForTimeout(100);
+  const loadingLine = await page.textContent('#localAiProgress');
+  ok('loading into memory is not called a download',
+    /Loading it into the phone's memory — 25%/.test(loadingLine) && !/Downloading/.test(loadingLine), loadingLine);
+  ok('and says the download is done', /^Downloaded\./.test(loadingLine), loadingLine);
+  await page.evaluate(() => window.__go());
+  await answered(page);
+  ok('then it answers', /regular/.test(await page.textContent('#localAiAnswer')));
+  await ctx.close();
+
+  // ---- a load that gives out after the download ----
+  ({ ctx, page } = await open({ gpu: 'f16', local: { on: true }, failAfterLoad: 'GPUDevice was lost', failOnce: true }));
+  await toAi(page);
+  await page.click('#localAiAsk');
+  await answered(page);
+  const lost = await page.textContent('#localAiProgress');
+  ok('a load that fails says so, in the library\'s own words', /GPUDevice was lost/.test(lost), lost);
+  ok('just the first line of them', !/somewhere deep/.test(lost), lost);
+  ok('and it is kept, not just shown',
+    /GPUDevice was lost/.test(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).error)));
+  await page.click('#aiBack');
+  await toSettings(page);
+  ok('settings show the last try', /Last try: .*GPUDevice was lost/.test(await page.textContent('#localAiStatus')));
+  await page.click('#settingsBack');
+  await page.waitForTimeout(200);
+  await toAi(page);
+  ok('so does the AI screen, opened again',
+    /Last try didn't work: .*GPUDevice was lost/.test(await page.textContent('#localAiProgress')));
+  await page.click('#localAiAsk');
+  await answered(page);
+  ok('a try that works answers', /regular/.test(await page.textContent('#localAiAnswer')));
+  ok('and forgets the failure',
+    !(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).error)));
+  ok('with nothing left on the line', !(await page.isVisible('#localAiProgress')));
+  await ctx.close();
+
+  // ---- downloaded means the files are there ----
+  // The real check, with no stand-in: the list of pieces and every piece on it.
+  ({ ctx, page } = await open({ gpu: 'f16', local: { on: true }, noStandIn: true }));
+  const base = 'https://huggingface.co/mlc-ai/gemma3-1b-it-q4f16_1-MLC/resolve/main/';
+  await page.evaluate(async (base) => {
+    const c = await caches.open('webllm/model');
+    await c.put(base + 'tensor-cache.json', new Response(JSON.stringify({ records: [
+      { dataPath: 'params_shard_0.bin' }, { dataPath: 'params_shard_1.bin' }] })));
+    await c.put(base + 'params_shard_0.bin', new Response('x'));
+    await c.put(base + 'params_shard_1.bin', new Response('y'));
+  }, base);
+  await toSettings(page);
+  const filed = await page.textContent('#localAiStatus');
+  ok('every piece there reads as downloaded, though it has never run',
+    /^Downloaded\. It hasn't run on this phone yet/.test(filed), filed);
+  ok('so no second download is offered', !(await page.isVisible('#localAiDownload')));
+  ok('and it can be removed', await page.isVisible('#localAiRemove'));
+  await page.click('#settingsBack');
+  await page.waitForTimeout(200);
+  await toAi(page);
+  ok('the AI screen asks rather than downloads',
+    (await page.textContent('#localAiAsk')).trim() === '📱 Ask the AI on this phone');
+  await page.click('#aiBack');
+  await page.evaluate(async (base) => {
+    await (await caches.open('webllm/model')).delete(base + 'params_shard_1.bin');
+  }, base);
+  await toSettings(page);
+  ok('a piece missing reads as not downloaded',
+    /^Not downloaded yet/.test(await page.textContent('#localAiStatus')));
+  await page.uncheck('#localAiOn');
+  await page.waitForTimeout(200);
+  ok('switched off with nothing whole on the phone, it says so',
+    /^Off\. Nothing is downloaded/.test(await page.textContent('#localAiStatus')));
   await ctx.close();
 
   // ---- a phone that is full ----
