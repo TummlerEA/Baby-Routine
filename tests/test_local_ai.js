@@ -178,6 +178,11 @@ const ok = t.ok;
   ok('for Gemma 3 1B', eng.id === 'gemma3-1b-it-q4f16_1-MLC', eng.id);
   ok('with the engine pinned by its fingerprint',
     /^sha384-/.test(eng.config.appConfig.model_list[0].integrity.model_lib));
+  // The library refuses both a full window and Gemma's own sliding one, and
+  // only says so once all 700 MB are in memory.
+  const over = eng.config.appConfig.model_list[0].overrides;
+  ok('with a full window and the sliding one off, never both',
+    over.context_window_size > 0 && over.sliding_window_size === -1, over);
   ok('asked once, as a single message from the user',
     eng.asked.length === 1 && eng.asked[0].messages.length === 1 &&
     eng.asked[0].messages[0].role === 'user', eng.asked);
@@ -279,6 +284,7 @@ const ok = t.ok;
   const lost = await page.textContent('#localAiProgress');
   ok('a load that fails says so, in the library\'s own words', /GPUDevice was lost/.test(lost), lost);
   ok('just the first line of them', !/somewhere deep/.test(lost), lost);
+  ok('and only once', lost.split('GPUDevice was lost').length === 2, lost);
   ok('and it is kept, not just shown',
     /GPUDevice was lost/.test(await page.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-local-ai')).error)));
   await page.click('#aiBack');
