@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=124">
+<link rel="stylesheet" href="style.css?v=125">
 </head>
 <body>
 
@@ -478,6 +478,7 @@
             <h3>Statistics (📊)</h3>
             <p>Three small charts — feeds, nappies and sleep, one bar per day — over the last <strong>7, 14 or 30 days</strong>. Drawn from the same log as everything else, so there is nothing extra to keep in step. A dashed line marks the average across the whole chart, so a bar reads against it rather than in isolation, and on the 7 and 14-day views each bar also carries its own number. Past that a bar is small enough that a number on it would just crowd — the dashed line still shows the shape. A line under each chart gives the exact daily average and the total for the range.</p>
             <p>Above them, <strong>Nights</strong> — the longest unbroken stretch and how many times you were up, one bar per night. This is the only part of the app that measures a night rather than a day, and the difference matters: a night starts in the evening and ends the next morning, so midnight falls in the middle of it and a calendar day cuts it in half. Where exactly to cut is set under ⚙️ Settings, beside the planned intervals — cluster feeding until nine is one family's evening and another's night, so the app does not guess. A night still in progress is left out rather than drawn as a short bar.</p>
+            <p><strong>🎯 How close the guesses are</strong> checks the app against her. Every time it names — ready to sleep, waking, the next feed — is kept and compared with what you log next: how far off it typically is, how often within a quarter of an hour, and which way it leans. Nothing to tap; a miss of more than three hours is left out as an entry that was most likely never made.</p>
             <p>Below them, <strong>measurements over time</strong> — weight, length, head circumference, temperature, and anything you have named yourself — one chart each, as soon as there are two readings of it to join up. These keep their own timeline and the buttons at the top do not apply to them: readings are weeks apart rather than daily, so each one sits where it actually falls on the calendar and a month with no weighing shows as a month-wide gap. The value scale runs from the lowest reading to the highest rather than from zero, because a baby going from 3.2 to 5.2 kg is the whole story and against a zero line it would be a flat line near the top; both ends are labelled, and the unit is in the heading. Tap and hold a dot to see its date and reading.</p>
             <p>At the very top, <strong>Feed → wake splits</strong>: one row per wake-up with how long the baby had gone without food by then, split into time awake after the feed and time asleep. It has its own buttons for the range and for day or night, and a bubble chart by age in weeks, so you can watch the stretches grow. A row marked ⚠ had far longer than usual between the feed and falling asleep — most likely a feed nobody logged. Tap it to add that feed; until then it is left out of the figures. Tap the heading to fold the section away.</p>
             <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
@@ -1200,6 +1201,12 @@
         </div>
       </section>
 
+      <section id="guessSection" class="sp-section" hidden>
+        <p class="sp-title guess-title">🎯 How close the guesses are</p>
+        <p class="data-hint sp-note">Each time the app names a time — when she'll be ready to sleep, when she'll wake, when she'll want a feed — it keeps the first guess it made and checks it against what you log. Nothing to tap: what happened is the answer. A guess that missed by more than three hours is left out as most likely an entry that was never made. The last 14 days, kept on this phone only.</p>
+        <div class="sp-tiles" id="guessTiles"></div>
+      </section>
+
       <section>
         <p class="section-title stats-measure-head">Day by day</p>
         <div class="ho-chips" id="statsPeriodChips"></div>
@@ -1538,6 +1545,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=124"></script>
+<script src="app.js?v=125"></script>
 </body>
 </html>

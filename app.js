@@ -312,7 +312,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "124";
+    var fallback = "125";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -588,6 +588,17 @@
   // this phone's copy, and a backup made on another phone says nothing of it.
   var BACKUP_AT_KEY = "baby-tracker-backup-at";
   var BACKUP_NUDGE_AFTER = 30 * MS_DAY;
+  // Every time the app has named — next sleep, wake-up, feed — kept so it can
+  // be checked against what was logged. Per device, never synced, exported or
+  // shared: it is the app marking its own homework, not part of the log.
+  var GUESS_KEY = "baby-tracker-guesses";
+  var GUESS_KEEP_MS = 60 * MS_DAY;
+  var GUESS_MAX = 1500;
+  var GUESS_SHOW_MS = 14 * MS_DAY;
+  var GUESS_CLOSE_MS = 15 * MS_MIN;
+  // A miss bigger than this is far likelier an entry never made than a guess
+  // that bad, and one such entry would swamp a fortnight of honest figures.
+  var GUESS_WILD_MS = 3 * MS_HOUR;
   var AI_DEFAULT_DAYS = 3;
   var AI_MAX_QUESTION = 500;
   var AI_MAX_FREEFORM = 8;
@@ -2182,6 +2193,8 @@
     statsFeedSummary: document.getElementById("statsFeedSummary"),
     splitsSection: document.getElementById("splitsSection"),
     splitsToggle: document.getElementById("splitsToggle"),
+    guessSection: document.getElementById("guessSection"),
+    guessTiles: document.getElementById("guessTiles"),
     splitsBody: document.getElementById("splitsBody"),
     splitsRangeChips: document.getElementById("splitsRangeChips"),
     splitsPartChips: document.getElementById("splitsPartChips"),
@@ -2712,6 +2725,155 @@
       observedMs: observedIntervalMs(kind),
       nextTime: new Date(baseTime.getTime() + plannedMin * MS_MIN)
     };
+  }
+
+  // ---------- how close the guesses are ----------
+
+  // The app names three times: when she will be ready to sleep, when she
+  // will wake, and when she will want a feed. Each is kept the first time it
+  // is worked out after whatever it counts from — the wake-up, the falling
+  // asleep, the last feed — and checked later against what was logged.
+  // Nobody is asked whether it was right: the next entry says so, to the
+  // minute, which is a better answer than any button.
+  //
+  // A wake-up guess is kept even when the screen does not show one (no
+  // routine on): it is still worth knowing how good it would have been, and
+  // a time nobody saw cannot have been acted on.
+
+  function loadGuesses() {
+    try {
+      var list = JSON.parse(localStorage.getItem(GUESS_KEY) || "[]");
+      if (!Array.isArray(list)) return [];
+      return list.filter(function (g) {
+        return g && (g.k === "sleep" || g.k === "wake" || g.k === "feed") && typeof g.a === "string" &&
+          isFinite(g.p) && isFinite(g.m);
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function currentGuesses(now) {
+    var out = [];
+    var analysis = analyzeSleep();
+    var rs = routine.on ? routineStatus(now) : null;
+    if (analysis.active) {
+      var start = new Date(analysis.active.time);
+      if (rs && rs.wakeDue) {
+        out.push({ k: "wake", a: analysis.active.id, p: +rs.wakeDue, by: rs.wakeFrom || "routine", s: 1 });
+      } else if (!isNightClock(start.getHours() * 60 + start.getMinutes())) {
+        var nap = usualNapMs(analysis, start);
+        if (nap) out.push({ k: "wake", a: analysis.active.id, p: +start + nap.ms, by: "baby", s: 0 });
+      }
+    } else if (analysis.awakeActive) {
+      if (rs && rs.dueAt) {
+        out.push({ k: "sleep", a: analysis.awakeActive.id, p: +rs.dueAt,
+          by: rs.anchored ? "routine" : (rs.windowFrom || "routine"), s: 1 });
+      } else if (!rs) {
+        var f = computeForecast("sleep");
+        if (f.hasData) out.push({ k: "sleep", a: analysis.awakeActive.id, p: +f.nextTime, by: "interval", s: 1 });
+      }
+    }
+    var feeds = sortedByTimeDesc(eventsOfKind("feed"));
+    if (feeds.length) {
+      var feed = computeForecast("feed");
+      out.push({ k: "feed", a: feeds[0].id, p: +feed.nextTime, by: feed.isCustom ? "one-off" : "interval", s: 1 });
+    }
+    return out;
+  }
+
+  // Only the first guess for each starting point: the one made before
+  // anything could be known, not the one tidied up as the day went on.
+  function recordGuesses(now) {
+    var fresh = currentGuesses(now);
+    if (!fresh.length) return;
+    var list = loadGuesses();
+    var added = false;
+    fresh.forEach(function (g) {
+      var known = list.some(function (x) { return x.k === g.k && x.a === g.a; });
+      if (known) return;
+      g.m = +now;
+      list.push(g);
+      added = true;
+    });
+    if (!added) return;
+    list = list.filter(function (g) { return g.m >= +now - GUESS_KEEP_MS; }).slice(-GUESS_MAX);
+    try { localStorage.setItem(GUESS_KEY, JSON.stringify(list)); } catch (e) { /* checked another time */ }
+  }
+
+  // The first entry of a type after a moment, from a list sorted earliest
+  // first.
+  function firstTimeAfter(times, after) {
+    var lo = 0, hi = times.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (times[mid] <= after) lo = mid + 1; else hi = mid;
+    }
+    return lo < times.length ? times[lo] : null;
+  }
+
+  // Each kind's misses over the last fortnight, in milliseconds: positive
+  // when she was later than guessed. A guess still waiting on its answer,
+  // one counted from an entry since deleted, one made after the thing had
+  // already happened (an entry logged late) and one that missed by hours are
+  // all left out.
+  function guessMisses(now) {
+    var byId = {};
+    var times = { sleep_start: [], sleep_end: [], feed: [] };
+    liveEvents().forEach(function (e) {
+      byId[e.id] = e;
+      if (times[e.type]) times[e.type].push(+new Date(e.time));
+    });
+    Object.keys(times).forEach(function (k) { times[k].sort(function (a, b) { return a - b; }); });
+    var out = { sleep: [], wake: [], feed: [] };
+    loadGuesses().forEach(function (g) {
+      if (g.m < +now - GUESS_SHOW_MS) return;
+      var from = byId[g.a];
+      if (!from) return;
+      var type = g.k === "sleep" ? "sleep_start" : g.k === "wake" ? "sleep_end" : "feed";
+      var at = firstTimeAfter(times[type], +new Date(from.time));
+      if (at === null || at < g.m) return;
+      var miss = at - g.p;
+      if (Math.abs(miss) > GUESS_WILD_MS) return;
+      out[g.k].push(miss);
+    });
+    return out;
+  }
+
+  function medianOf(values) {
+    var sorted = values.slice().sort(function (a, b) { return a - b; });
+    var half = sorted.length / 2;
+    return sorted.length % 2 ? sorted[Math.floor(half)] : (sorted[half - 1] + sorted[half]) / 2;
+  }
+
+  function renderGuesses() {
+    var misses = guessMisses(new Date());
+    var kinds = [
+      { k: "sleep", label: "Falling asleep" },
+      { k: "wake", label: "Waking up" },
+      { k: "feed", label: "Next feed" }
+    ];
+    el.guessTiles.innerHTML = kinds.map(function (kind, i) {
+      var list = misses[kind.k];
+      var value = "—", subs = [];
+      if (list.length < 3) {
+        subs.push(list.length ? list.length + " checked so far — 3 needed" : "nothing checked yet");
+      } else {
+        var off = Math.round(medianOf(list.map(Math.abs)) / MS_MIN) * MS_MIN;
+        var lean = Math.round(medianOf(list) / MS_MIN) * MS_MIN;
+        var close = list.filter(function (m) { return Math.abs(m) <= GUESS_CLOSE_MS; }).length;
+        value = "±" + formatDuration(off);
+        subs.push(Math.round(close / list.length * 100) + "% within 15m");
+        subs.push(Math.abs(lean) < 5 * MS_MIN ? "no lean either way"
+          : "she runs " + formatDuration(Math.abs(lean)) + (lean > 0 ? " later" : " earlier"));
+        subs.push(list.length + " checked");
+      }
+      return '<div class="sp-tile' + (i === kinds.length - 1 ? " sp-tile-wide" : "") + '" data-guess="' + kind.k + '">' +
+        '<span class="sp-tile-label">' + kind.label + '</span>' +
+        '<span class="sp-tile-value">' + escapeHtml(value) + '</span>' +
+        subs.map(function (t) { return '<span class="sp-tile-sub">' + escapeHtml(t) + '</span>'; }).join("") +
+        '</div>';
+    }).join("");
   }
 
   // A sleep step's name in the same words the day strip uses, so the same nap
@@ -4055,12 +4217,15 @@
       el.statsEmpty.hidden = false;
       el.statsCharts.hidden = true;
       el.splitsSection.hidden = true;
+      el.guessSection.hidden = true;
       return;
     }
     el.statsEmpty.hidden = true;
     el.statsCharts.hidden = false;
     el.splitsSection.hidden = false;
+    el.guessSection.hidden = false;
     renderSplits();
+    renderGuesses();
 
     var rows = statsRange(statsPeriod);
     var n = rows.length;
@@ -14815,6 +14980,7 @@
     renderCryBanner();
     renderRoutineNow();
     renderRoutineStrip();
+    recordGuesses(new Date());
     // Only while it is being looked at: it reads the whole log, and nobody is
     // served by rebuilding it behind a screen nobody is on.
     if (!el.screenHandover.hidden) renderHandover();
