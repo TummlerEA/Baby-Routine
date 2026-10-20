@@ -2216,6 +2216,8 @@ body {
 .sp-chev { color: var(--text-dim); font-size: 18px; transition: transform 0.15s; }
 .sp-head[aria-expanded="false"] .sp-chev { transform: rotate(-90deg); }
 .sp-note { margin: 0 0 12px; }
+.guess-title { margin: 12px 0 8px; }
+.sp-tile-wide { grid-column: 1 / -1; }
 .sp-part { margin-top: 8px; }
 .sp-tiles {
   display: grid;
