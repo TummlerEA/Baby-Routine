@@ -188,6 +188,26 @@
   // that started three quarters of an hour late, narrower than the gap
   // between one sleep in the suggested routine and the next.
   var ROUTINE_MATCH_MS = 90 * 60 * 1000;
+  // How long a baby of each age is usually happy awake between daytime
+  // sleeps, in minutes: the range, and the middle of it for when there is
+  // nothing of her own to go on. The common shape of published guidance, the
+  // same as the tables above. Used when the routine's own gap before the next
+  // sleep is nowhere near it — a hand-made routine with a five-hour gap, or a
+  // day that has gained a nap the table never had — so that the next sleep
+  // is timed from when she actually woke, not from the table's next hour.
+  var WAKE_WINDOWS = [
+    { fromDays: 0, min: 35, max: 60, typical: 45, label: "under 4 weeks" },
+    { fromDays: 28, min: 45, max: 75, typical: 60, label: "4 to 6 weeks" },
+    { fromDays: 42, min: 60, max: 90, typical: 75, label: "6 to 12 weeks" },
+    { fromDays: 84, min: 75, max: 120, typical: 90, label: "3 to 4 months" },
+    { fromDays: 122, min: 105, max: 165, typical: 135, label: "4 to 7 months" },
+    { fromDays: 213, min: 150, max: 225, typical: 180, label: "7 to 11 months" },
+    { fromDays: 335, min: 180, max: 270, typical: 210, label: "11 to 15 months" },
+    { fromDays: 456, min: 240, max: 360, typical: 300, label: "15 months and up" }
+  ];
+  // Her own usual awake stretch needs this many daytime ones in the last week
+  // before it is trusted over the middle of the range for her age.
+  var WAKE_OWN_MIN = 5;
   // How much of the day the strip on the main screen shows: two steps just
   // gone and two still to come.
   //
@@ -288,7 +308,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "122";
+    var fallback = "123";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1265,6 +1285,68 @@
     return gap === null ? null : gap * MS_MIN;
   }
 
+  function wakeWindowBand(now) {
+    var days = ageDaysAt(now);
+    if (days === null) return null;
+    var pick = WAKE_WINDOWS[0];
+    WAKE_WINDOWS.forEach(function (band) {
+      if (days >= band.fromDays) pick = band;
+    });
+    return pick;
+  }
+
+  // The middle of this baby's own daytime awake stretches over the last
+  // week: from a daytime wake-up to the next time she went down. Stretches
+  // under twenty minutes are a resettle, over six hours a sleep nobody
+  // logged; neither says anything about how long she lasts.
+  function usualAwakeMs(analysis, now) {
+    var since = +now - 7 * MS_DAY;
+    var spans = [];
+    analysis.awakeSessions.forEach(function (s) {
+      if (s.startMs < since || s.endMs > +now) return;
+      var at = new Date(s.startMs);
+      if (isNightClock(at.getHours() * 60 + at.getMinutes())) return;
+      var len = s.endMs - s.startMs;
+      if (len >= 20 * MS_MIN && len <= 6 * MS_HOUR) spans.push(len);
+    });
+    if (spans.length < WAKE_OWN_MIN) return null;
+    spans.sort(function (a, b) { return a - b; });
+    var half = spans.length / 2;
+    var mid = spans.length % 2 ? spans[Math.floor(half)] : (spans[half - 1] + spans[half]) / 2;
+    return Math.round(mid / (5 * MS_MIN)) * 5 * MS_MIN;
+  }
+
+  // How long she should be awake before the next sleep, and where that came
+  // from. The routine's own gap when it is a sensible one for her age — it
+  // is the household's plan, and the evening stretch before the night is
+  // allowed to run half as long again. Otherwise her own usual stretch, kept
+  // inside the range for her age, or the middle of that range. At night, and
+  // with no age to go on, the routine is all there is.
+  function wakeWindowFor(now, analysis, planMs, nextSleep, awakeSince) {
+    var plan = planMs === null ? null : { ms: planMs, from: "routine" };
+    var band = wakeWindowBand(now);
+    if (!band || !awakeSince) return plan;
+    var woke = awakeSince.getHours() * 60 + awakeSince.getMinutes();
+    if (isNightClock(woke)) return plan;
+    var bedtime = nextSleep && isNightClock(clockMinutes(nextSleep.slot.time));
+    var max = (bedtime ? band.max * 1.5 : band.max) * MS_MIN;
+    if (planMs !== null && planMs >= band.min * MS_MIN && planMs <= max) return plan;
+    var own = usualAwakeMs(analysis, now);
+    if (own !== null) {
+      return { ms: Math.min(band.max * MS_MIN, Math.max(band.min * MS_MIN, own)), from: "baby" };
+    }
+    return { ms: band.typical * MS_MIN, from: "age", band: band };
+  }
+
+  // The words for where the awake stretch came from, for the lines that
+  // name it.
+  function wakeWindowWords(status) {
+    var length = formatDuration(status.windowMs);
+    if (status.windowFrom === "baby") return "her usual " + length + " awake";
+    if (status.windowFrom === "age") return "the " + length + " awake usual at " + status.windowBand.label;
+    return "the " + length + " this routine allows";
+  }
+
   // The night that is either running now or, in the middle of the day, the
   // one that has just finished — the same window the Nights charts use.
   function currentNightRange(now) {
@@ -1333,6 +1415,10 @@
     status.planned = nextSleep ? nextSleep.at : null;
     if (analysis.awakeActive) {
       status.awakeSince = new Date(analysis.awakeActive.time);
+      var fit = wakeWindowFor(now, analysis, status.windowMs, nextSleep, status.awakeSince);
+      status.windowMs = fit ? fit.ms : null;
+      status.windowFrom = fit ? fit.from : null;
+      status.windowBand = fit ? fit.band : null;
       if (status.windowMs !== null) {
         status.dueAt = new Date(+status.awakeSince + status.windowMs);
         // Kept as it was before the table is allowed to pull it about. The
@@ -1349,11 +1435,15 @@
     if (status.dueAt && status.planned) {
       status.driftMs = status.dueAt - status.planned;
       status.anchored = Math.abs(status.driftMs) <= ROUTINE_HOLD_MS;
+      // Due long before the table's next sleep, this is not that sleep come
+      // early but one the table does not have — a nap after a short one, a
+      // day that started at five. The table's sleep is still ahead of it.
+      status.extra = status.driftMs < -ROUTINE_MATCH_MS;
       if (status.anchored) status.dueAt = status.planned;
       // Off the table, the way back onto it is the wake-up the plan had in
       // mind for this sleep — worth naming, since it is a single decision
       // that puts the rest of the day straight.
-      else if (nextSleep && nextSleep.until) status.recoverBy = nextSleep.until;
+      else if (!status.extra && nextSleep && nextSleep.until) status.recoverBy = nextSleep.until;
     }
     // With no wake-up logged there is no stretch to measure, so the plan is
     // all there is to go on.
@@ -2596,7 +2686,11 @@
     // When it is not, the hour it wanted is the one thing this card would
     // otherwise hide, and the banner above is already naming it.
     var note = "by the daily routine";
-    if (!status.anchored && status.planned) {
+    if (!status.anchored && status.planned && status.awakeSince && status.windowMs) {
+      note = "after " + escapeHtml(wakeWindowWords(status)) +
+        (status.extra ? " · the routine's next sleep is " : " · the routine had ") +
+        escapeHtml(formatClockTime(status.planned));
+    } else if (!status.anchored && status.planned) {
       note += ' · its own table says ' + escapeHtml(formatClockTime(status.planned));
     }
     return '<div class="f-type">' + label + ' · expected ' + escapeHtml(formatWhen(status.dueAt)) + '</div>' +
@@ -2745,8 +2839,7 @@
           (status.awakeSince ? " · awake " + formatDuration(now - status.awakeSince) : "");
       } else {
         sub = "awake " + formatDuration(now - status.awakeSince) +
-          (status.windowMs ? " — " + formatDuration(status.lateBy) + " past the " +
-            formatDuration(status.windowMs) + " this routine allows" : "");
+          (status.windowMs ? " — " + formatDuration(status.lateBy) + " past " + wakeWindowWords(status) : "");
         // The way back on: this is exactly the moment it is worth naming.
         if (status.recoverBy) {
           sub += " · up by " + formatClockTime(status.recoverBy) + " and the day is back on it";
@@ -2766,10 +2859,10 @@
       // time, what the routine had wanted, and the one wake-up that puts the
       // rest of the day back on it.
       icon = "🌙";
-      line = "Put her down at " + formatClockTime(status.dueAt) + " · in " +
+      line = (status.extra ? "Nap at " : "Put her down at ") + formatClockTime(status.dueAt) + " · in " +
         formatDuration(status.dueAt - now);
-      sub = "awake " + formatDuration(now - status.awakeSince) +
-        " · the routine had " + formatClockTime(status.planned);
+      sub = "awake " + formatDuration(now - status.awakeSince) + " · after " + wakeWindowWords(status) +
+        (status.extra ? " · the routine's next sleep is " : " · the routine had ") + formatClockTime(status.planned);
       if (status.recoverBy) {
         sub += " · up by " + formatClockTime(status.recoverBy) + " and the day is back on it";
       }
@@ -2777,7 +2870,13 @@
 
     var tally = status.tally;
     var parts = [];
-    if (status.nextFeed) parts.push("🍼 " + formatClockTime(status.nextFeed.at));
+    // The feed in hand, the same one the list under What's next marks: a feed
+    // whose hour has only just gone is still the next one, not the one after.
+    var feedDue = routineDay(now).filter(function (r) {
+      return r.kind === "feed" && !r.doneAt && !(r.at <= now && now - r.at > ROUTINE_MATCH_MS);
+    })[0];
+    var feedAt = feedDue ? feedDue.at : (status.nextFeed ? status.nextFeed.at : null);
+    if (feedAt) parts.push("🍼 " + (feedAt <= now ? "due now" : formatClockTime(feedAt)));
     parts.push("naps " + tally.dayDone + " of " + tally.dayTarget);
     parts.push("nights " + tally.nightDone + " of " + tally.nightTarget);
 
@@ -2796,6 +2895,14 @@
   // main screen turning into a timetable — the whole of it is one tap away.
   function routineStripRows(now) {
     var rows = routineDay(now);
+    // A nap the table does not have, but her awake time says is next: shown
+    // in its place in the day rather than left for the main line alone to
+    // mention, so the list under "What's next" is what is actually next.
+    var status = routineStatus(now);
+    if (status.extra && !status.sleeping && status.dueAt) {
+      rows.push({ at: status.dueAt, kind: "sleep", extra: true, doneAt: null, sleptMs: null });
+      rows.sort(function (a, b) { return a.at - b.at; });
+    }
     var at = 0;
     while (at < rows.length && rows[at].at <= now) at++;
     var from = Math.max(0, at - ROUTINE_STRIP_BACK);
@@ -2835,7 +2942,7 @@
       // A step whose hour has just passed has not been missed — it is the one
       // being done. It only reads as missed once it is too late to count.
       var overdue = !r.doneAt && r.at <= now;
-      var missed = overdue && (now - r.at) > ROUTINE_MATCH_MS;
+      var missed = overdue && !r.extra && (now - r.at) > ROUTINE_MATCH_MS;
       var current = !r.doneAt && !missed && !claimed;
       if (current) claimed = true;
       var mark = r.doneAt ? "✅" : (overdue ? (missed ? "—" : "▶") : "○");
@@ -2848,16 +2955,18 @@
         if (Math.abs(off) >= ROUTINE_LATE_MS) {
           detail += " · " + formatDuration(Math.abs(off)) + (off > 0 ? " late" : " early");
         }
+      } else if (r.extra) {
+        detail = (r.at > now ? "in " + formatDuration(r.at - now) : "due now") + " · extra";
       } else if (r.at > now) {
         detail = "in " + formatDuration(r.at - now);
       } else {
         detail = missed ? "not logged" : "due now";
       }
       return '<div class="routine-step' + (current ? " next" : "") +
-          (missed ? " missed" : "") + '">' +
+          (missed ? " missed" : "") + (r.extra ? " extra" : "") + '">' +
         '<span class="rst-mark">' + mark + '</span>' +
         '<span class="rst-time">' + formatClockTime(r.at) + '</span>' +
-        '<span class="rst-what">' + (r.kind === "sleep"
+        '<span class="rst-what">' + (r.extra ? "Nap" : r.kind === "sleep"
           ? (isNightClock(clockMinutes(r.slot.time)) ? "Night sleep" : "Nap") : "Feed") + '</span>' +
         '<span class="rst-detail">' + escapeHtml(detail) + '</span>' +
         '</div>';

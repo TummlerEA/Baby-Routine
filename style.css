@@ -2935,6 +2935,10 @@ body {
 
 .routine-step.missed .rst-time { text-decoration: line-through; }
 
+/* A nap the table does not have, put in by how long she has been awake. */
+.routine-step.extra .rst-what,
+.routine-step.extra .rst-detail { color: var(--accent-sleep); }
+
 .routine-step .rst-mark {
   width: 18px;
   flex-shrink: 0;
