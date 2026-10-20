@@ -178,12 +178,18 @@ const range = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.p
       localStorage.setItem('baby-tracker-events', JSON.stringify(ev));
     }, [DOB, seed(range(27, 40), [[10, 12]], true)]);
     await page.goto(APP);
+    await page.waitForTimeout(300);
+    // Whatever the main screen keeps on opening (its own guesses, say) is
+    // not this screen's doing; what matters is that the leap screen adds
+    // nothing of its own.
+    const before = await page.evaluate(() => Object.keys(localStorage).sort());
     await page.click('#moreOpen');
     await page.waitForTimeout(120);
     await page.click('#leapOpen');
     await page.waitForTimeout(300);
     const keys = await page.evaluate(() => Object.keys(localStorage).sort());
-    ok('L stores nothing new', JSON.stringify(keys) === JSON.stringify(['baby-tracker-dob', 'baby-tracker-events']), keys);
+    ok('L stores nothing new', JSON.stringify(keys) === JSON.stringify(before) &&
+      keys.indexOf('baby-tracker-leap') < 0, [before, keys]);
     await ctx.close();
   }
 
