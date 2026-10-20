@@ -208,6 +208,10 @@
   // Her own usual awake stretch needs this many daytime ones in the last week
   // before it is trusted over the middle of the range for her age.
   var WAKE_OWN_MIN = 5;
+  // Her usual nap length needs this many daytime naps in the last week, and
+  // "at this time of day" means one that began within this much either side.
+  var NAP_OWN_MIN = 3;
+  var NAP_NEAR_MS = 90 * 60 * 1000;
   // How much of the day the strip on the main screen shows: two steps just
   // gone and two still to come.
   //
@@ -308,7 +312,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "123";
+    var fallback = "124";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1316,6 +1320,34 @@
     return Math.round(mid / (5 * MS_MIN)) * 5 * MS_MIN;
   }
 
+  // How long her daytime naps usually run: the middle of last week's naps
+  // that began near this time of day — an afternoon nap is often a shorter
+  // one than the morning's — or of all last week's daytime naps when there
+  // are too few of those. Under ten minutes is a doze in the pram, over four
+  // hours a wake-up nobody logged; neither is a nap length.
+  function usualNapMs(analysis, startedAt) {
+    var since = +startedAt - 7 * MS_DAY;
+    var clock = startedAt.getHours() * 60 + startedAt.getMinutes();
+    var near = [], all = [];
+    analysis.sessions.forEach(function (s) {
+      if (s.startMs < since || s.endMs > +startedAt) return;
+      var at = new Date(s.startMs);
+      var mins = at.getHours() * 60 + at.getMinutes();
+      if (isNightClock(mins)) return;
+      var len = s.endMs - s.startMs;
+      if (len < 10 * MS_MIN || len > 4 * MS_HOUR) return;
+      all.push(len);
+      var apart = Math.abs(mins - clock);
+      if (Math.min(apart, 1440 - apart) * MS_MIN <= NAP_NEAR_MS) near.push(len);
+    });
+    var pick = near.length >= NAP_OWN_MIN ? near : all.length >= NAP_OWN_MIN ? all : null;
+    if (!pick) return null;
+    pick.sort(function (a, b) { return a - b; });
+    var half = pick.length / 2;
+    var mid = pick.length % 2 ? pick[Math.floor(half)] : (pick[half - 1] + pick[half]) / 2;
+    return { ms: Math.round(mid / (5 * MS_MIN)) * 5 * MS_MIN, nearby: pick === near };
+  }
+
   // How long she should be awake before the next sleep, and where that came
   // from. The routine's own gap when it is a sensible one for her age — it
   // is the household's plan, and the evening stretch before the night is
@@ -1403,12 +1435,32 @@
       tally: routineTally(analysis, now)
     };
     if (sleeping) {
-      // Asleep: the useful figure is when the routine has her up again, taken
-      // from the sleep slot she was actually put down for.
+      // Asleep in the day: the useful figure is when she is likely to wake,
+      // which is how long her naps at this time of day usually run. The
+      // table's wake-up hour would have a nap that began late cut to minutes.
       var startedAt = new Date(analysis.active.time);
       status.asleepSince = startedAt;
+      var nap = isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes())
+        ? null : usualNapMs(analysis, startedAt);
+      if (nap) {
+        status.wakeDue = new Date(+startedAt + nap.ms);
+        status.wakeFrom = "baby";
+        status.napMs = nap.ms;
+        status.napNearby = nap.nearby;
+        return status;
+      }
+      // Otherwise the sleep slot she was actually put down for. At night its
+      // hour stands; a nap begun late in its slot runs the slot's length
+      // rather than being woken a few minutes in.
       var began = lastOccurrence(list, startedAt, "sleep");
-      if (began && began.until && began.until > startedAt) status.wakeDue = began.until;
+      if (began && began.until && began.until > startedAt) {
+        status.wakeDue = began.until;
+        status.wakeFrom = "routine";
+        var length = began.until - began.at;
+        if (!isNightClock(clockMinutes(began.slot.time)) && began.until - startedAt < length / 2) {
+          status.wakeDue = new Date(+startedAt + length);
+        }
+      }
       return status;
     }
     status.windowMs = routineWakeWindowMs(nextSleep);
@@ -2669,12 +2721,19 @@
     return isNightClock(clockMinutes(occurrence.slot.time)) ? "Night sleep" : "Nap";
   }
 
+  function napWords(status) {
+    return (status.napNearby ? "her naps at this time of day run about " : "her daytime naps run about ") +
+      formatDuration(status.napMs);
+  }
+
   function routineForecastBody(status, now) {
     var label = routineSleepLabel(status.nextSleep);
     if (status.sleeping) {
       return '<div class="f-type">Sleep</div>' +
         '<div class="f-time">asleep right now</div>' +
-        '<div class="f-note">' + (status.wakeDue
+        '<div class="f-note">' + (status.wakeFrom === "baby"
+          ? 'likely up about ' + escapeHtml(formatClockTime(status.wakeDue)) + ' · ' + escapeHtml(napWords(status))
+          : status.wakeDue
           ? 'the routine has her up at ' + escapeHtml(formatClockTime(status.wakeDue))
           : 'by the daily routine') + '</div>';
     }
@@ -2813,14 +2872,20 @@
       // this line replaced the separate sleep banner rather than sitting
       // under it saying half the same thing.
       var slept = now - status.asleepSince;
-      line = "Asleep for " + formatDuration(slept) +
-        (status.wakeDue ? " · the routine has her up at " + formatClockTime(status.wakeDue) : "");
+      line = "Asleep for " + formatDuration(slept) + (!status.wakeDue ? ""
+        : status.wakeFrom === "baby" ? " · likely up about " + formatClockTime(status.wakeDue)
+        : " · the routine has her up at " + formatClockTime(status.wakeDue));
       if (slept > SUSPICIOUS_SLEEP) {
         // Past half a day the likeliest reading is that the wake-up was never
         // logged, and if that is so then "past the planned wake-up" would be
         // blaming the baby for a gap in the record. Say the likelier thing.
         sub = "You may have forgotten to log the wake-up";
         warn = true;
+      } else if (status.wakeFrom === "baby") {
+        // Her own usual, not a plan: running past it is a good long nap,
+        // not something to put right.
+        sub = (now > status.wakeDue ? "longer than usual by " + formatDuration(now - status.wakeDue)
+          : "in " + formatDuration(status.wakeDue - now)) + " · " + napWords(status);
       } else if (status.wakeDue && now > status.wakeDue) {
         sub = formatDuration(now - status.wakeDue) + " past the planned wake-up";
       } else if (status.wakeDue) {
@@ -2942,7 +3007,12 @@
       // A step whose hour has just passed has not been missed — it is the one
       // being done. It only reads as missed once it is too late to count.
       var overdue = !r.doneAt && r.at <= now;
-      var missed = overdue && !r.extra && (now - r.at) > ROUTINE_MATCH_MS;
+      // Passed over: a later step of the same kind has already happened, so
+      // this one is not still to do, however recently its hour went.
+      var skipped = overdue && !r.extra && rows.some(function (o) {
+        return o.kind === r.kind && o.doneAt && o.at > r.at;
+      });
+      var missed = overdue && !r.extra && (skipped || (now - r.at) > ROUTINE_MATCH_MS);
       var current = !r.doneAt && !missed && !claimed;
       if (current) claimed = true;
       var mark = r.doneAt ? "✅" : (overdue ? (missed ? "—" : "▶") : "○");
@@ -2960,7 +3030,7 @@
       } else if (r.at > now) {
         detail = "in " + formatDuration(r.at - now);
       } else {
-        detail = missed ? "not logged" : "due now";
+        detail = skipped ? "skipped" : missed ? "not logged" : "due now";
       }
       return '<div class="routine-step' + (current ? " next" : "") +
           (missed ? " missed" : "") + (r.extra ? " extra" : "") + '">' +
