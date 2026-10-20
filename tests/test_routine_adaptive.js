@@ -57,7 +57,7 @@ const ROUTINE = { on: true, slots: [
           for (let i = 0; i < 3; i++) {
             const down = new Date(+woke + o.history * 60e3);
             add('sleep_start', down);
-            woke = new Date(+down + 60 * 60e3);
+            woke = new Date(+down + ((o.naps && o.naps[i]) || 60) * 60e3);
             add('sleep_end', woke);
           }
           add('sleep_start', clock(day, '20:30'));
@@ -65,6 +65,7 @@ const ROUTINE = { on: true, slots: [
       }
       add('sleep_end', clock(0, o.morning || '06:30'));
       if (o.today) { add('sleep_start', clock(0, o.today[0])); add('sleep_end', clock(0, o.today[1])); }
+      if (o.asleep) add('sleep_start', clock(0, o.asleep));
       localStorage.setItem('baby-tracker-events', JSON.stringify(ev));
       localStorage.setItem('baby-tracker-routine', JSON.stringify(routine));
       if (o.dobDays !== undefined) {
@@ -72,7 +73,7 @@ const ROUTINE = { on: true, slots: [
         localStorage.setItem('baby-tracker-dob', dob.getFullYear() + '-' +
           String(dob.getMonth() + 1).padStart(2, '0') + '-' + String(dob.getDate()).padStart(2, '0'));
       }
-    }, [opts, ROUTINE]);
+    }, [opts, opts.routine || ROUTINE]);
     const page = await ctx.newPage();
     page.on('pageerror', e => errs.push('ERR ' + e.message));
     await page.goto(h.APP);
@@ -132,6 +133,44 @@ const ROUTINE = { on: true, slots: [
   r = await read();
   ok('without a date of birth, the routine\'s own gap as before', /19:20/.test(r.line) && !/Nap at/.test(r.line) &&
     /this routine allows|the routine had/.test(r.sub), [r.line, r.sub]);
+  await ctx.close();
+
+  // ---- asleep: when she is likely to wake ----
+  const at = (hm) => { const d = new Date(FIXED); const [a, c] = hm.split(':').map(Number); d.setHours(a, c, 0, 0); return d; };
+  ({ ctx, read } = await open({ dobDays: 62, history: 80, naps: [90, 90, 50], asleep: '15:10', at: at('15:14') }));
+  r = await read();
+  ok('down at 15:10, her afternoon naps run 50m: likely up about 16:00', /Asleep for 4m · likely up about 16:00/.test(r.line),
+    r.line);
+  ok('from the naps at this time of day, not the longer morning ones',
+    /in 46m · her naps at this time of day run about 50m/.test(r.sub), r.sub);
+  ok('What\'s next says the same', /likely up about 16:00/.test(r.forecast), r.forecast);
+  await ctx.close();
+
+  ({ ctx, read } = await open({ dobDays: 62, history: 80, naps: [90, 90, 50], asleep: '15:10', at: at('16:10') }));
+  r = await read();
+  ok('a nap past her usual is a long one, not something to put right',
+    /longer than usual by 10m/.test(r.sub) && !/past the planned/.test(r.sub), r.sub);
+  await ctx.close();
+
+  ({ ctx, read } = await open({ asleep: '12:55', at: at('13:00') }));
+  r = await read();
+  ok('with nothing of her own, a nap begun late in its slot runs the slot\'s length — not woken at 13:00',
+    /the routine has her up at 13:55/.test(r.line), r.line);
+  await ctx.close();
+
+  ({ ctx, read } = await open({ dobDays: 62, history: 80, asleep: '21:05', at: at('21:10') }));
+  r = await read();
+  ok('at night the routine\'s hour stands', /the routine has her up at 06:00/.test(r.line), r.line);
+  await ctx.close();
+
+  // ---- a step passed over is not still due ----
+  const late = { on: true, slots: ROUTINE.slots.filter(s => s.time !== '21:00').concat(
+    [{ time: '19:45', until: '06:00', kind: 'sleep' }]) };
+  ({ ctx, read } = await open({ routine: late, asleep: '18:58', at: at('19:02') }));
+  r = await read();
+  const six2 = r.strip.find(x => /18:00/.test(x));
+  ok('asleep at 18:58, taken as the 19:45 sleep: the 18:00 nap is skipped, not due now',
+    six2 && /skipped/.test(six2) && !/due now/.test(six2), r.strip);
   await ctx.close();
 
   ok('no page errors', errs.length === 0, errs);
