@@ -312,7 +312,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "125";
+    var fallback = "126";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2114,6 +2114,8 @@
     routineStripNote: document.getElementById("routineStripNote"),
     routineStripList: document.getElementById("routineStripList"),
     routineStripMore: document.getElementById("routineStripMore"),
+    routineStripToggle: document.getElementById("routineStripToggle"),
+    routineStripBody: document.getElementById("routineStripBody"),
     routineIcon: document.getElementById("routineIcon"),
     routineLine: document.getElementById("routineLine"),
     routineSub: document.getElementById("routineSub"),
@@ -3145,7 +3147,15 @@
     return last.doneAt - last.at;
   }
 
+  // Folded away under the forecast cards until asked for: a routine that no
+  // longer fits the day reads as an instruction when it sits open mid-screen.
+  // Opened, it stays open until the app is next loaded.
+  var routineStripOpen = false;
+
   function renderRoutineStrip() {
+    el.routineStripToggle.setAttribute("aria-expanded", routineStripOpen ? "true" : "false");
+    el.routineStripBody.hidden = !routineStripOpen;
+    el.routineStrip.classList.toggle("open", routineStripOpen);
     if (!routine.on) {
       el.routineStrip.hidden = true;
       return;
@@ -5577,6 +5587,10 @@
   el.routineOpenBtn.addEventListener("click", openRoutine);
   el.routineNow.addEventListener("click", openRoutine);
   el.routineStripMore.addEventListener("click", openRoutine);
+  el.routineStripToggle.addEventListener("click", function () {
+    routineStripOpen = !routineStripOpen;
+    renderRoutineStrip();
+  });
   el.routineBack.addEventListener("click", function () { showScreen("main"); });
 
   el.routineEnabled.addEventListener("change", function () {

@@ -153,6 +153,26 @@ const APP = h.APP;
   ok('the routine strip appears when the routine is on', strip.shown === true, strip);
   ok('and shows four steps, not six', strip.rows === 4, strip);
 
+  // Folded under the forecast cards until asked for, not open mid-screen.
+  const fold = await page.evaluate(() => {
+    const s = document.getElementById('routineStrip');
+    const f = document.getElementById('forecastList');
+    return { below: !!(f.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING),
+      folded: document.getElementById('routineStripBody').hidden,
+      aria: document.getElementById('routineStripToggle').getAttribute('aria-expanded'),
+      note: document.getElementById('routineStripNote').textContent };
+  });
+  ok('the routine sits below the forecast cards', fold.below, fold);
+  ok('folded, with how the day is going still on its head', fold.folded && fold.aria === 'false' &&
+    /on plan|running/.test(fold.note), fold);
+  ok('folded, its steps are out of sight', !(await page.isVisible('#routineStripList .routine-step')));
+  await page.click('#routineStripToggle');
+  ok('tapped, it opens', await page.isVisible('#routineStripList .routine-step') &&
+    (await page.getAttribute('#routineStripToggle', 'aria-expanded')) === 'true' &&
+    await page.isVisible('#routineStripMore'));
+  await page.click('#routineStripToggle');
+  ok('and tapped again, it folds', !(await page.isVisible('#routineStripList .routine-step')));
+
   await page.click('#logToggle');
   await page.waitForTimeout(400);
   const rows = await page.evaluate(() => document.querySelectorAll('#logList > *').length);
