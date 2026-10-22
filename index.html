@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=126">
+<link rel="stylesheet" href="style.css?v=127">
 </head>
 <body>
 
@@ -88,6 +88,13 @@
         </span>
         <button class="update-btn" id="updateReload">Update</button>
         <button class="update-close" id="updateDismiss" aria-label="Not now">✕</button>
+      </section>
+
+      <section class="plan-soon" id="clockBanner" hidden>
+        <button class="plan-soon-btn" id="clockBannerBtn">
+          <span class="plan-soon-icon">🕐</span>
+          <span class="plan-soon-text" id="clockBannerText">—</span>
+        </button>
       </section>
 
       <button type="button" id="cryBanner" class="banner banner-cry" hidden>
@@ -518,6 +525,7 @@
             <p>It arrives switched off and filled in, with three sleeps overnight and four naps through the day. Turn it on and the main screen gains a line saying what comes next and how long your baby has actually been awake against it. While she is asleep that same line replaces the separate <strong>Asleep for</strong> banner rather than sitting under it: it opens with how long she has been down — the one figure here nobody can work out in their head at 3am — and goes on to when the routine has her up again. Switch the routine off and the original banner comes straight back, unchanged. Feeds and nappies under 📈 What's next keep working from the intervals exactly as before — the sleep card is the one that changes hands.</p>
             <p>A sleep carries both of its ends, and the gap between one ending and the next beginning is the stretch awake the app holds the day to — taken from your own routine rather than asked for as another setting, which is why the evening stretch is allowed to run longer than the ones between daytime naps.</p>
             <p>That gap is used only while it is a sensible one for her age (with the date of birth set under ⚙️ Settings). A routine with five hours between two naps, or a day that has gained a nap the routine never had, would otherwise have a two-month-old who woke at 14:20 told to wait for the 18:00 nap. So past a daytime wake-up the app times the next sleep from how long she usually lasts instead: her own usual awake stretch over the last week, kept inside the range for her age, or the middle of that range while there is not yet a week to go on. It says which — "after her usual 1h 20m awake" — and when that lands long before the routine's next sleep it is shown as an extra nap, in its place in the day under <strong>📈 What's next</strong>, with the routine's own sleep still after it. At night the routine is followed as it is.</p>
+            <p><strong>Travelling.</strong> Every entry is kept to the second, so "how long since the last feed" survives any flight. What does not is everything read off a clock face: the day a feed falls on, the routine's hours, the night. Under ⚙️ Settings → <strong>🕐 Clock</strong> the app can be kept on home time while the baby still is, then switched to the new zone once she has settled in, and back to the phone's time at home. While the app's clock and the phone's differ, a line at the top of the main screen shows both, so a feed logged at "2pm" goes in at the 2pm you meant. The setting stays on that phone.</p>
             <p>That day-by-the-table list — <strong>⏰ Today's routine</strong>, with what is done, what was skipped and what is still to come — sits folded at the bottom of <strong>📈 What's next</strong>, under the feed, nappy and sleep cards. Tap it to open it; it stays open until the app is next loaded. It is there to look at and tune the routine against, not to steer by: the cards above are the forecast.</p>
             <p>Asleep in the day, it says when she is likely to wake rather than when the table would have her up: the middle of last week's naps that began within an hour and a half of this one — "likely up about 19:50 · her naps at this time of day run about 50m" — or of all her daytime naps when there are too few of those. A nap running past that is a long one, not a late one. With no naps of her own to go on, a nap begun late in its slot runs the slot's length instead of being woken minutes in, and at night the table's hour stands. In the day's list a step that was passed over — a later one of the same kind already done — reads "skipped", not "due now".</p>
             <p>Which of the two it quotes is the whole of how it works. Within half an hour either way, the table wins: it says "Sleep at 12:00 by the routine", because hearing the same handful of hours day after day is how a household learns them, and a quarter of an hour is not a difference a baby notices. Further off than that, the stretch awake wins and the honest time is named instead — a nap the routine wants at noon cannot be taken by a baby who woke at ten to, and quoting noon anyway would only teach that the app is wrong. When it does that it says what the routine had wanted, and names the one wake-up that puts the rest of the day back on it: "up by 14:00 and the day is back on it".</p>
@@ -1423,6 +1431,17 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">🕐</span> Clock</h2>
+        <div class="settings-panel">
+          <label class="settings-row clock-row">
+            <span class="settings-label">Times in</span>
+            <select class="settings-select" id="clockZone"></select>
+          </label>
+          <p class="settings-hint" id="clockHint">Travelling? Keep the app on home time while the baby is still on it, so her days, the routine and the night stay comparable with the weeks before — flying west, the phone's own clock would make the travel day thirty-odd hours long and put bedtime in the middle of her afternoon. Once she has settled into the new zone, switch to that one, and back to the phone's time at home. Nothing logged changes: every entry is kept to the second whichever clock shows it, and the whole history is redrawn in the chosen one. This setting stays on this phone.</p>
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">💬</span> Helper</h2>
         <div class="settings-panel">
           <p class="settings-intro">Questions the helper could not place, and sentences it read wrongly when you tapped <strong>Not that</strong>, are kept on this phone so they can be sent to whoever looks after the app — that is how it learns new words.</p>
@@ -1549,6 +1568,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=126"></script>
+<script src="app.js?v=127"></script>
 </body>
 </html>

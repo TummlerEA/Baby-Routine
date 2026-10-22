@@ -176,13 +176,15 @@ A cry file is never turned into an entry and never claimed by the first phone to
 
 ## Time and time zones
 
-Every entry is stored as a UTC instant and rendered through the browser's own local methods, so the zone the app works in is whatever the phone is set to — there is nothing to configure and nothing to keep in step. Move the phone to another country and the same instant is simply read on the new clock, which is what you want: the log follows you.
+Every entry is stored as a UTC instant, so how long since the last feed survives any journey. By default it is rendered through the browser's own local methods, so the zone the app works in is whatever the phone is set to — move the phone to another country and the same instant is simply read on the new clock.
 
 Two phones in different zones therefore group days differently, and both are right. Each parent sees their own day.
 
 Settings prints the zone it is using and its current offset, so a log that looks an hour out can be traced to the phone that is an hour out, and the AI summary carries it too rather than leaving an assistant to guess which clock the times are on.
 
-There is deliberately no in-app zone override. `<input type="datetime-local">`, `type="date"` and `type="time"` are rendered and parsed by the browser in the phone's zone and cannot be told to use another, so an override would make the entry form and the log disagree about what "9pm" meant — a worse problem than the one it solved.
+**Travelling: 🕐 Clock under ⚙️ Settings.** What does not survive a long flight is everything read off a clock face — which day a feed falls on, the routine's hours, where the night starts, "her naps at this time of day". Eight hours west, the phone's clock makes the travel day thirty-two hours long and puts the routine's bedtime in the middle of her afternoon; on the way home a day goes missing. So the app can be held to a zone of its own: home, while the baby is still on home time, then the new zone once she has settled into it, then the phone's time again at home. While the two differ, a line at the top of the main screen says both ("Showing London time, 22:00 · on this phone it is 14:00") and opens the setting. Chosen at home before leaving, it changes nothing until the phone's clock moves. Nothing logged changes — the whole history is simply redrawn in the chosen zone — and the setting (`baby-tracker-clock`) stays on the phone: never synced, backed up or shared, since the other phone may well have stayed at home.
+
+It works by shadowing `Date` inside `app.js` with one whose local fields (hours, day, weekday, and the instant a bare `2026-11-06T09:30` stands for) are read in the chosen zone through `Intl.DateTimeFormat`, with the zone's offset looked up once per quarter hour. Only when the chosen zone is not the phone's own; otherwise the browser's `Date` is used untouched. The entry form agrees with it because the app reads and writes `<input type="datetime-local">`, `type="date"` and `type="time"` only as zone-free text (never `valueAsDate` or `valueAsNumber`), parsed by that same `Date`.
 
 ## How data is stored
 
@@ -219,7 +221,7 @@ The flip side of a browser-only log is that there is only ever one copy: clearin
 
 ## Using it outside the UK
 
-Time, dates and units need nothing: the zone comes from the phone, and weights are metric with pounds and ounces alongside.
+Time, dates and units need nothing: the zone comes from the phone (or 🕐 Clock while travelling), and weights are metric with pounds and ounces alongside.
 
 The guidance does need care, because it follows NHS advice and some of it is British. Wherever the app names an emergency number it now names the country too — **999** in the UK, **112** across Europe including Switzerland — and tells anyone elsewhere to look their own up before they need it, not during. NHS 111 is labelled as the UK line. The prompt sent to an assistant names roles rather than a national number, since it has no way of knowing where the parent is.
 
