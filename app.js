@@ -3,6 +3,121 @@
 (function () {
   "use strict";
 
+  // ---------- the clock the app keeps ----------
+  //
+  // Everything is stored in UTC, so how long since the last feed survives any
+  // journey. What does not is everything read off a clock face: which day a
+  // feed falls on, the routine's hours, where the night starts. Flown eight
+  // hours west, the phone's clock would make the travelling day thirty-two
+  // hours long, put the routine's bedtime in the middle of her afternoon,
+  // and on the way home lose a day altogether. So the app can be held to a
+  // zone of its own — home, until she has settled into the new one — and
+  // every Date below is made in it. Kept on this phone only: the other phone
+  // may well have stayed at home.
+  var CLOCK_KEY = "baby-tracker-clock";
+  var PhoneDate = window.Date;
+  var phoneZone = clockZoneName(null);
+  // The zone asked for, and the zone in force: the same, except that a zone
+  // the phone is already in needs no keeping to. Set at home before leaving,
+  // it changes nothing until the phone's clock moves.
+  var clockChosen = loadClockZone();
+  var clockZone = clockChosen !== phoneZone ? clockChosen : "";
+  // Shadows the browser's own for the rest of this file, and only when the
+  // chosen zone is not the phone's own, so a phone at home runs on exactly
+  // the Date it always did.
+  var Date = clockZone ? zonedDate(PhoneDate, clockZone) : PhoneDate;
+
+  function clockZoneName(zone) {
+    try {
+      return new Intl.DateTimeFormat("en-GB", zone ? { timeZone: zone } : {}).resolvedOptions().timeZone || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function loadClockZone() {
+    var saved = "";
+    try { saved = localStorage.getItem(CLOCK_KEY) || ""; } catch (e) { /* phone time */ }
+    return saved ? clockZoneName(saved) : "";
+  }
+
+  // A Date whose local fields — the hours, the day, the weekday, and the
+  // time a bare "2026-10-22T14:30" stands for — are read in the given zone
+  // rather than the phone's. The instant itself, and so every duration, is
+  // untouched.
+  function zonedDate(N, zone) {
+    var fmt = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hourCycle: "h23",
+      year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric" });
+    var QUARTER = 15 * 60 * 1000;
+    var LOCAL_TEXT = /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/;
+    var offsets = {};
+    // Taken from a real instance rather than N.prototype: a stand-in Date
+    // (a test's fake clock, say) may hand back plain Dates of its own.
+    var proto = Object.getPrototypeOf(new N(0));
+
+    // How far the zone's clock is ahead of UTC at this instant. Clocks only
+    // ever change on a quarter hour, so one lookup serves the whole quarter.
+    function offsetAt(ms) {
+      if (ms !== ms) return 0;
+      var key = Math.floor(ms / QUARTER);
+      if (offsets[key] !== undefined) return offsets[key];
+      var at = key * QUARTER;
+      var p = {};
+      fmt.formatToParts(new N(at)).forEach(function (x) { p[x.type] = x.value; });
+      var wall = N.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+      offsets[key] = wall - at;
+      return offsets[key];
+    }
+
+    function toWall(ms) { return ms + offsetAt(ms); }
+
+    // The instant a wall-clock time stands for. Twice round, because the
+    // offset to take off is the one at the answer, not at the question.
+    function fromWall(wall) {
+      var ms = wall - offsetAt(wall);
+      var again = wall - offsetAt(ms);
+      return toWall(again) === wall ? again : ms;
+    }
+
+    function Zoned(y, mo, d, h, mi, s, ms) {
+      var n = arguments.length;
+      if (!(this instanceof Zoned)) return new N().toString();
+      var at;
+      if (n === 0) at = N.now();
+      else if (n === 1) at = typeof y === "string" && LOCAL_TEXT.test(y) ? fromWall(N.parse(y + "Z")) : +new N(y);
+      else at = fromWall(N.UTC(y, mo, n > 2 ? d : 1, h || 0, mi || 0, s || 0, ms || 0));
+      var made = new N(at);
+      Object.setPrototypeOf(made, Zoned.prototype);
+      return made;
+    }
+    Zoned.prototype = Object.create(proto, { constructor: { value: Zoned, writable: true, configurable: true } });
+    Zoned.now = N.now;
+    Zoned.UTC = N.UTC;
+    Zoned.parse = function (text) {
+      return typeof text === "string" && LOCAL_TEXT.test(text) ? fromWall(N.parse(text + "Z")) : N.parse(text);
+    };
+
+    function wallOf(date) { return new N(toWall(proto.getTime.call(date))); }
+
+    ["FullYear", "Month", "Date", "Day", "Hours", "Minutes", "Seconds", "Milliseconds"].forEach(function (f) {
+      var get = proto["getUTC" + f];
+      Zoned.prototype["get" + f] = function () { return get.call(wallOf(this)); };
+      if (f === "Day") return;
+      var set = proto["setUTC" + f];
+      Zoned.prototype["set" + f] = function () {
+        var wall = wallOf(this);
+        set.apply(wall, arguments);
+        return proto.setTime.call(this, fromWall(wall.getTime()));
+      };
+    });
+    Zoned.prototype.getTimezoneOffset = function () {
+      var at = proto.getTime.call(this);
+      return at !== at ? NaN : -offsetAt(at) / 60000;
+    };
+    return Zoned;
+  }
+
   var EVENTS_KEY = "baby-tracker-events";
   var NAME_KEY = "baby-tracker-name";
   var INTERVALS_KEY = "baby-tracker-intervals";
@@ -312,7 +427,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "126";
+    var fallback = "127";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2182,6 +2297,11 @@
     updateDismiss: document.getElementById("updateDismiss"),
     settingsVersion: document.getElementById("settingsVersion"),
     settingsZone: document.getElementById("settingsZone"),
+    clockZone: document.getElementById("clockZone"),
+    clockHint: document.getElementById("clockHint"),
+    clockBanner: document.getElementById("clockBanner"),
+    clockBannerBtn: document.getElementById("clockBannerBtn"),
+    clockBannerText: document.getElementById("clockBannerText"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction"),
@@ -6641,6 +6761,22 @@
   }
 
   el.settingsOpenBtn.addEventListener("click", function () { showSettings(false); });
+  el.clockBannerBtn.addEventListener("click", function () {
+    showSettings(false);
+    el.clockZone.scrollIntoView({ block: "center" });
+  });
+  // Every Date in the app is made by the clock chosen at load, so a new one
+  // takes a fresh start; nothing is lost, everything is already saved.
+  el.clockZone.addEventListener("change", function () {
+    try {
+      if (el.clockZone.value) localStorage.setItem(CLOCK_KEY, el.clockZone.value);
+      else localStorage.removeItem(CLOCK_KEY);
+    } catch (e) {
+      el.clockZone.value = clockChosen;
+      return;
+    }
+    location.reload();
+  });
   el.settingsBack.addEventListener("click", showMain);
   el.infoOpenBtn.addEventListener("click", function () { showScreen("info"); });
   el.infoBack.addEventListener("click", showMain);
@@ -7601,15 +7737,11 @@
   // makes that checkable: a log an hour out is a phone an hour out, and this
   // is where you find that.
   function localZoneName() {
-    try {
-      var zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (zone) return zone;
-    } catch (e) { /* older browsers simply have no name to give */ }
-    return "";
+    return clockZone || phoneZone;
   }
 
-  function localZoneOffset() {
-    var mins = -new Date().getTimezoneOffset();
+  function localZoneOffset(date) {
+    var mins = -(date || new Date()).getTimezoneOffset();
     var sign = mins < 0 ? "-" : "+";
     var abs = Math.abs(mins);
     return "UTC" + sign + pad2(Math.floor(abs / 60)) + ":" + pad2(abs % 60);
@@ -7621,8 +7753,66 @@
   }
 
   function renderZone() {
-    el.settingsZone.textContent = "Times shown in " + describeZone() +
-      ", taken from this phone. Change it in the phone's own settings.";
+    el.settingsZone.textContent = clockZone
+      ? "Times shown in " + describeZone() + ", set under 🕐 Clock above. This phone is on " +
+        (phoneZone ? phoneZone + " (" + localZoneOffset(new PhoneDate()) + ")" : localZoneOffset(new PhoneDate())) + "."
+      : "Times shown in " + describeZone() + ", taken from this phone. Change it in the phone's own settings.";
+    renderClockZone();
+  }
+
+  // The zones worth having at the top: the phone's own, the one in use, and
+  // the ones a household leaving London is likeliest to want. Every other
+  // zone the browser knows follows them.
+  var CLOCK_COMMON = ["Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles",
+    "Pacific/Honolulu", "Asia/Dubai", "Asia/Tokyo", "Australia/Sydney"];
+
+  function clockZoneLabel(zone) {
+    var off = "";
+    try { off = localZoneOffset(new (zonedDate(PhoneDate, zone))()); } catch (e) { /* no offset to give */ }
+    return zone.split("/").pop().replace(/_/g, " ") + (off ? " · " + off : "");
+  }
+
+  var CLOCK_HINT = el.clockHint.textContent;
+
+  function renderClockZone() {
+    var top = [];
+    [clockChosen, phoneZone].concat(CLOCK_COMMON).forEach(function (z) {
+      if (z && top.indexOf(z) < 0 && clockZoneName(z)) top.push(z);
+    });
+    var all = [];
+    try { all = Intl.supportedValuesOf("timeZone"); } catch (e) { /* the short list will do */ }
+    var html = '<option value="">This phone' + (phoneZone ? " — " + escapeHtml(phoneZone.split("/").pop().replace(/_/g, " ")) : "") + '</option>' +
+      '<optgroup label="Keep to">' + top.map(function (z) {
+        return '<option value="' + escapeHtml(z) + '">' + escapeHtml(clockZoneLabel(z)) + '</option>';
+      }).join("") + '</optgroup>';
+    var rest = all.filter(function (z) { return top.indexOf(z) < 0; });
+    if (rest.length) {
+      html += '<optgroup label="Every zone">' + rest.map(function (z) {
+        return '<option value="' + escapeHtml(z) + '">' + escapeHtml(z.replace(/_/g, " ")) + '</option>';
+      }).join("") + '</optgroup>';
+    }
+    el.clockZone.innerHTML = html;
+    el.clockZone.value = clockChosen;
+    el.clockHint.textContent = clockChosen && !clockZone
+      ? "Kept to " + clockChosen.replace(/_/g, " ") + " — the zone this phone is in now, so nothing changes " +
+        "until its clock moves. From then on the app stays on " + clockChosen.replace(/_/g, " ") +
+        " time and says so at the top of the main screen."
+      : CLOCK_HINT;
+  }
+
+  // Only while the app's clock and the phone's disagree, and saying both, so
+  // nobody logs a feed at what they think is 2pm and finds it at 10pm.
+  function renderClockBanner() {
+    if (!clockZone) {
+      el.clockBanner.hidden = true;
+      return;
+    }
+    var now = new Date();
+    var here = new PhoneDate(+now);
+    el.clockBannerText.textContent = "Showing " + clockZone.split("/").pop().replace(/_/g, " ") +
+      " time, " + formatClockTime(now) + " · on this phone it is " +
+      pad2(here.getHours()) + ":" + pad2(here.getMinutes());
+    el.clockBanner.hidden = false;
   }
 
   function renderDobEcho() {
@@ -14978,6 +15168,7 @@
   function renderAll(opts) {
     var withLog = !opts || opts.log !== false;
     renderClock();
+    renderClockBanner();
     renderName();
     renderSleepBanner();
     renderSleepButton();

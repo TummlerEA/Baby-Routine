@@ -948,6 +948,10 @@ body {
   color: var(--text);
 }
 
+/* A zone's name is the long part, so it gets the room. */
+.clock-row .settings-label { flex: 0 0 auto; white-space: nowrap; }
+.clock-row .settings-select { flex: 1; min-width: 0; }
+
 .settings-select {
   background: var(--bg-elevated-2);
   border: 1px solid var(--border);
