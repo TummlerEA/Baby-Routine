@@ -327,6 +327,9 @@
   // "at this time of day" means one that began within this much either side.
   var NAP_OWN_MIN = 3;
   var NAP_NEAR_MS = 90 * 60 * 1000;
+  // With no naps of her own to measure, how little of a night's sleep has to
+  // be left for one begun then to count as the morning's first nap.
+  var NIGHT_TAIL_MS = 60 * 60 * 1000;
   // How much of the day the strip on the main screen shows: two steps just
   // gone and two still to come.
   //
@@ -427,7 +430,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "127";
+    var fallback = "128";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -441,6 +444,15 @@
 
   var MS_HOUR = 60 * MS_MIN;
   var MS_DAY = 24 * MS_HOUR;
+
+  // The same clock time n calendar days on. Not n * MS_DAY: the day the
+  // clocks go back is 25 hours long and the day they go forward 23, so a
+  // midnight plus 24 hours lands at 23:00 the same day on one of them and at
+  // 01:00 the day after next on the other.
+  function daysOn(date, n) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n,
+      date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds());
+  }
 
   // How long a tombstone has to convince every device that an entry is gone.
   // Long enough that a phone left alone for weeks still learns about it,
@@ -1372,8 +1384,7 @@
     var out = [];
     routine.slots.forEach(function (slot) {
       for (var d = -1; d <= 1; d++) {
-        var at = new Date(midnight.getTime() + d * MS_DAY);
-        at.setHours(0, 0, 0, 0);
+        var at = daysOn(midnight, d);
         at.setMinutes(clockMinutes(slot.time));
         var item = { at: at, kind: slot.kind, slot: slot };
         if (slot.until) {
@@ -1510,8 +1521,12 @@
   function currentNightRange(now) {
     var evening = new Date(now);
     evening.setHours(nightWindow.start, 0, 0, 0);
-    if (now < evening) evening = new Date(evening.getTime() - MS_DAY);
-    return { from: +evening, to: +evening + nightLengthHours(nightWindow) * MS_HOUR };
+    if (now < evening) evening = daysOn(evening, -1);
+    // Ended by the clock, not by counting hours from the start, so the night
+    // the clocks change on still ends at the hour it was set to.
+    var morning = daysOn(evening, nightWindow.end > nightWindow.start ? 0 : 1);
+    morning.setHours(nightWindow.end, 0, 0, 0);
+    return { from: +evening, to: +morning };
   }
 
   // What the day has actually managed against what the routine asks for.
@@ -1529,7 +1544,7 @@
       var at = new Date(startMs);
       if (isNightClock(at.getHours() * 60 + at.getMinutes())) {
         if (startMs >= night.from && startMs < night.to) nightDone++;
-      } else if (startMs >= +dayFrom && startMs < +dayFrom + MS_DAY) {
+      } else if (startMs >= +dayFrom && startMs < +daysOn(dayFrom, 1)) {
         dayDone++;
       }
     });
@@ -1566,20 +1581,34 @@
       // table's wake-up hour would have a nap that began late cut to minutes.
       var startedAt = new Date(analysis.active.time);
       status.asleepSince = startedAt;
-      var nap = isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes())
-        ? null : usualNapMs(analysis, startedAt);
-      if (nap) {
+      var nap = usualNapMs(analysis, startedAt);
+      var began = lastOccurrence(list, startedAt, "sleep");
+      var inSlot = !!(began && began.until && began.until > startedAt);
+      // Down with less of the night's sleep left than one of her naps: that
+      // is the morning's first nap, not more of the night. Held to the night's
+      // end, a baby who went down at 07:15 was due up at 07:30.
+      var tail = inSlot && isNightClock(clockMinutes(began.slot.time)) &&
+        began.until - startedAt < (nap ? nap.ms : NIGHT_TAIL_MS);
+      if (nap && (tail || !isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes()))) {
         status.wakeDue = new Date(+startedAt + nap.ms);
         status.wakeFrom = "baby";
         status.napMs = nap.ms;
         status.napNearby = nap.nearby;
         return status;
       }
+      if (tail) {
+        // No naps of her own yet: as long as the routine's next one.
+        var after = nextOccurrence(list, startedAt, "sleep");
+        if (after && after.until && !isNightClock(clockMinutes(after.slot.time))) {
+          status.wakeDue = new Date(+startedAt + (after.until - after.at));
+          status.wakeFrom = "routine";
+        }
+        return status;
+      }
       // Otherwise the sleep slot she was actually put down for. At night its
       // hour stands; a nap begun late in its slot runs the slot's length
       // rather than being woken a few minutes in.
-      var began = lastOccurrence(list, startedAt, "sleep");
-      if (began && began.until && began.until > startedAt) {
+      if (inSlot) {
         status.wakeDue = began.until;
         status.wakeFrom = "routine";
         var length = began.until - began.at;
@@ -2451,8 +2480,8 @@
     var key = dayKeyOf(date);
     var time = formatClockTime(date);
     if (key === dayKeyOf(now)) return time;
-    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "tomorrow " + time;
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "yesterday " + time;
+    if (key === dayKeyOf(daysOn(now, 1))) return "tomorrow " + time;
+    if (key === dayKeyOf(daysOn(now, -1))) return "yesterday " + time;
     return date.getDate() + " " + MONTHS[date.getMonth()] + " " + time;
   }
 
@@ -2460,7 +2489,7 @@
     var now = new Date();
     var key = dayKeyOf(date);
     if (key === dayKeyOf(now)) return "Today";
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "Yesterday";
+    if (key === dayKeyOf(daysOn(now, -1))) return "Yesterday";
     return formatDateHeader(date);
   }
 
@@ -3667,7 +3696,7 @@
     });
     var dayStart = new Date(group.date);
     dayStart.setHours(0, 0, 0, 0);
-    var sleepMs = sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, Date.now());
+    var sleepMs = sleepMsInRange(analysis, +dayStart, +daysOn(dayStart, 1), Date.now());
     // Wet-nappy counts are what a health visitor asks about, so surface them
     // once there is anything to show.
     var nappies = "🧷 " + diapers;
@@ -3710,8 +3739,8 @@
         date: dayStart,
         feeds: counts.feeds,
         diapers: counts.diapers,
-        sleepMs: sleepMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now),
-        awakeMs: awakeMsInRange(analysis, +dayStart, +dayStart + MS_DAY, now)
+        sleepMs: sleepMsInRange(analysis, +dayStart, +daysOn(dayStart, 1), now),
+        awakeMs: awakeMsInRange(analysis, +dayStart, +daysOn(dayStart, 1), now)
       });
     }
     return out;
@@ -4246,7 +4275,9 @@
       evening.setHours(nightWindow.start, 0, 0, 0);
       evening.setDate(evening.getDate() - back);
       var from = +evening;
-      var to = from + lengthMs;
+      var morning = daysOn(evening, nightWindow.end > nightWindow.start ? 0 : 1);
+      morning.setHours(nightWindow.end, 0, 0, 0);
+      var to = +morning;
       // A night counts once it is over. The exception is the morning itself:
       // at ten to eight, of an eleven-hour night ending at eight, ten and a
       // half hours have happened and the baby is up — and this screen is being
@@ -7981,8 +8012,8 @@
     var midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     if (start < +midnight) return "past";
-    if (start < +midnight + MS_DAY) return "today";
-    if (start < +midnight + 7 * MS_DAY) return "week";
+    if (start < +daysOn(midnight, 1)) return "today";
+    if (start < +daysOn(midnight, 7)) return "week";
     return "later";
   }
 
@@ -7992,7 +8023,7 @@
   function nextPlanSoon() {
     var nowMidnight = new Date();
     nowMidnight.setHours(0, 0, 0, 0);
-    var cutoff = +nowMidnight + 2 * MS_DAY;
+    var cutoff = +daysOn(nowMidnight, 2);
     var found = null;
     sortedPlans().forEach(function (plan) {
       var start = planStart(plan);
@@ -8261,7 +8292,7 @@
       // No time given means the whole day, which is what a date-only VEVENT
       // is for — better than inventing 9am and reminding them at the wrong
       // moment.
-      var next = new Date(planStart(plan) + MS_DAY);
+      var next = daysOn(new Date(planStart(plan)), 1);
       lines.push("DTSTART;VALUE=DATE:" + icsDate(plan.date));
       lines.push("DTEND;VALUE=DATE:" + icsDate(
         next.getFullYear() + "-" + pad2(next.getMonth() + 1) + "-" + pad2(next.getDate())));
@@ -9203,8 +9234,8 @@
     var now = new Date();
     var key = dayKeyOf(date);
     if (key === dayKeyOf(now)) return "today";
-    if (key === dayKeyOf(new Date(now.getTime() - MS_DAY))) return "yesterday";
-    if (key === dayKeyOf(new Date(now.getTime() + MS_DAY))) return "tomorrow";
+    if (key === dayKeyOf(daysOn(now, -1))) return "yesterday";
+    if (key === dayKeyOf(daysOn(now, 1))) return "tomorrow";
     return "";
   }
 
@@ -13141,7 +13172,7 @@
   // Counts for one calendar day, in the same shape the day headings already
   // use, so the summary agrees with what the parent can see in the log.
   function aiDayStats(dayStart, analysis) {
-    var dayEnd = dayStart + MS_DAY;
+    var dayEnd = +daysOn(new Date(dayStart), 1);
     var out = { feeds: 0, fedMs: 0, fedCount: 0, fedMl: 0, mlCount: 0, bySource: {},
       nappies: 0, wet: 0, dirty: 0, sleepMs: 0 };
     liveEvents().forEach(function (e) {
@@ -13270,7 +13301,7 @@
     var now = Date.now();
     var midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    var endOfDay = +midnight + MS_DAY;
+    var endOfDay = +daysOn(midnight, 1);
 
     // A plan left far behind — nothing logged since yesterday — would otherwise
     // print times in the past. Stepped forward by arithmetic rather than by a
@@ -13313,7 +13344,7 @@
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var elapsedMs = +now - +today;
-    var since = +today - (days - 1) * MS_DAY;
+    var since = +daysOn(today, -(days - 1));
 
     // The mistake this exists to prevent: an assistant reads "6 feeds" against
     // a 24-hour guide and tells a frightened parent their newborn is
@@ -13337,7 +13368,7 @@
     var shown = 0;
     var todayStats = { feeds: 0, nappies: 0 };
     for (var i = 0; i < days; i++) {
-      var dayStart = +today - i * MS_DAY;
+      var dayStart = +daysOn(today, -i);
       var stats = aiDayStats(dayStart, analysis);
       if (!stats.feeds && !stats.nappies && !stats.sleepMs) continue;
       shown++;
@@ -14012,8 +14043,8 @@
     var midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     if (key === "today") return { key: key, fromMs: +midnight, toMs: now, endsNow: true };
-    if (key === "yesterday") return { key: key, fromMs: +midnight - MS_DAY, toMs: +midnight, endsNow: false };
-    if (key === "week") return { key: key, fromMs: +midnight - 6 * MS_DAY, toMs: now, endsNow: true };
+    if (key === "yesterday") return { key: key, fromMs: +daysOn(midnight, -1), toMs: +midnight, endsNow: false };
+    if (key === "week") return { key: key, fromMs: +daysOn(midnight, -6), toMs: now, endsNow: true };
     if (key === "night") {
       // The night under way, or the one just gone: where it starts and ends
       // is the household's own, set beside the planned intervals.
@@ -14054,8 +14085,8 @@
     var total = 0;
     var days = 0;
     for (var d = 1; d <= 7; d++) {
-      var fromMs = w.fromMs - d * MS_DAY;
-      var toMs = w.toMs - d * MS_DAY;
+      var fromMs = +daysOn(new Date(w.fromMs), -d);
+      var toMs = +daysOn(new Date(w.toMs), -d);
       var used = live.some(function (e) {
         var t = +new Date(e.time);
         return t >= fromMs && t < toMs;
@@ -14318,7 +14349,7 @@
         var day = new Date(now);
         day.setHours(hh, mm, 0, 0);
         // A clock time still to come today is last night's, not tonight's.
-        if (+day > now + 2 * MS_MIN) day = new Date(+day - MS_DAY);
+        if (+day > now + 2 * MS_MIN) day = daysOn(day, -1);
         at = day;
       }
     }
