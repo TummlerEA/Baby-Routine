@@ -21,8 +21,10 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
     const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, timezoneId: zone });
     await ctx.clock.setFixedTime(NOW);
     await ctx.addInitScript((clock) => {
-      if (sessionStorage.getItem('seeded')) return;
-      sessionStorage.setItem('seeded', '1');
+      // Marked in localStorage, which a reload always keeps: seeding twice
+      // would put back the clock the test has just changed.
+      if (localStorage.getItem('test-seeded')) return;
+      localStorage.setItem('test-seeded', '1');
       const at = (iso) => ({ type: 'feed', time: iso, updatedAt: iso });
       localStorage.setItem('baby-tracker-events', JSON.stringify([
         Object.assign(at('2026-11-05T21:00:00.000Z'), { id: 'a' }),
