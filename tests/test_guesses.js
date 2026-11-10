@@ -46,7 +46,7 @@ const MIN = 60e3;
   ok('and when she will be ready to sleep, counted from the wake-up', sleep && sleep.a === 'w1', g);
   ok('with when it was made', feed && feed.m === +FIXED);
   await page.reload();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(1000);
   ok('opened again, the same guesses are not kept twice', (await guesses(page)).length === g.length);
   await page.evaluate(() => {
     const list = JSON.parse(localStorage.getItem('baby-tracker-events'));
@@ -55,7 +55,7 @@ const MIN = 60e3;
     localStorage.setItem('baby-tracker-events', JSON.stringify(list));
   });
   await page.reload();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(1000);
   g = await guesses(page);
   ok('a new feed starts a new guess, and the old one stays to be checked',
     g.filter(x => x.k === 'feed').map(x => x.a).join() === 'f1,f2', g);

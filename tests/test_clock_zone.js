@@ -21,8 +21,10 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
     const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, timezoneId: zone });
     await ctx.clock.setFixedTime(NOW);
     await ctx.addInitScript((clock) => {
-      if (sessionStorage.getItem('seeded')) return;
-      sessionStorage.setItem('seeded', '1');
+      // Marked in localStorage, which a reload always keeps: seeding twice
+      // would put back the clock the test has just changed.
+      if (localStorage.getItem('test-seeded')) return;
+      localStorage.setItem('test-seeded', '1');
       const at = (iso) => ({ type: 'feed', time: iso, updatedAt: iso });
       localStorage.setItem('baby-tracker-events', JSON.stringify([
         Object.assign(at('2026-11-05T21:00:00.000Z'), { id: 'a' }),
@@ -89,7 +91,11 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
     await page.textContent('#settingsZone'));
 
   // Back to the phone's time.
-  await Promise.all([page.waitForNavigation(), page.selectOption('#clockZone', '')]);
+  // Choosing reloads the page; wait for the reloaded one, not just any
+  // navigation event, which a busy machine can report before it is done.
+  await Promise.all([page.waitForEvent('load'), page.selectOption('#clockZone', '')]);
+  await page.waitForFunction(() => localStorage.getItem('baby-tracker-clock') === null &&
+    document.getElementById('clockBanner').hidden);
   await page.waitForTimeout(400);
   ok('back on the phone\'s time, nothing is kept', (await page.evaluate(() =>
     localStorage.getItem('baby-tracker-clock'))) === null);
@@ -100,7 +106,8 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
 
   // Over to Honolulu by choosing it.
   await page.click('#settingsOpen');
-  await Promise.all([page.waitForNavigation(), page.selectOption('#clockZone', 'Pacific/Honolulu')]);
+  await Promise.all([page.waitForEvent('load'), page.selectOption('#clockZone', 'Pacific/Honolulu')]);
+  await page.waitForFunction(() => !document.getElementById('clockBanner').hidden);
   await page.waitForTimeout(400);
   ok('any zone can be chosen', /Honolulu time, 00:00/.test(await page.textContent('#clockBannerText')),
     await page.textContent('#clockBannerText'));

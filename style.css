@@ -2654,12 +2654,12 @@ body {
   align-items: center;
   display: flex;
   flex: 1;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
 }
 
-.rota-hours-select,
-.rota-start-select {
+.rota-start-select,
+.rota-end-select {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -2671,8 +2671,18 @@ body {
   padding: 8px;
 }
 
-.rota-hours-select { min-width: 56px; }
-.rota-start-select { min-width: 84px; }
+.rota-start-select,
+.rota-end-select { min-width: 76px; }
+.rota-dash { color: var(--text-dim); }
+/* A working day's hours sit under its name, so from and until fit beside
+   them on one line at phone width. */
+.rota-toggle[data-state="on"] {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0;
+  justify-content: center;
+}
+.rota-toggle[data-state="on"] .rota-day-state { color: var(--text-dim); font-size: 13px; }
 
 /* ---------- the daily routine ---------- */
 
