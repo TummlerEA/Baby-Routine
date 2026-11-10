@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=128">
+<link rel="stylesheet" href="style.css?v=129">
 </head>
 <body>
 
@@ -479,7 +479,7 @@
           <article class="info-card">
             <h3>Carer rota (🤗)</h3>
             <p>One week on screen at a time, with arrows either side of the date range to move to another. <strong>Tap a day</strong> to step it forward: nothing set → <strong>Off</strong> → working, and a third tap clears it back to nothing set. Marking a day off is always one tap away, from wherever it currently stands.</p>
-            <p>Once a day is working, two dropdowns appear — hours and a start time — pre-set to 6 hours and 9:00 rather than left blank, since changing a sensible default is quicker than typing one in from nothing. The start time moves in half-hour steps, not one minute at a time.</p>
+            <p>Once a day is working, two dropdowns appear — <strong>from</strong> and <strong>until</strong> — pre-set to 9:00–15:00 rather than left blank, since changing a sensible default is quicker than typing one in from nothing. Both move in half-hour steps, not one minute at a time. The hours are worked out from the two, shown beside the day and added to the week's total. Moving the start keeps the end where it was when it still comes after it; an end past midnight is marked +1.</p>
             <p>Every shift is its own date: how long a day runs and when it starts can differ from one week to the next, and there is no repeating pattern behind any of it to fight with when the real week does not match last week's. The total for the week on screen sits next to the date range.</p>
             <p>A start time buys a quiet line on the main screen while that shift is on — <strong>Carer here until</strong> the time it ends. A shift with no start time has nothing to count down to, so it stays quiet. Nothing here clocks anyone in or out, and there is no separate record of who actually turned up when — it is settled between the carer and the other parent, not by this app, and this just keeps the shape of it in one place, synced like everything else.</p>
           </article>
@@ -824,7 +824,7 @@
           </div>
           <div class="rota-week-days" id="rotaWeekDays"></div>
         </div>
-        <p class="data-hint">Tap a day: once for <strong>Off</strong>, again to set hours and a start time, again to clear it back to nothing set. Hours and start time default to 6 and 9:00 — change either from its own dropdown, in half-hour steps rather than scrolling a minute at a time.</p>
+        <p class="data-hint">Tap a day: once for <strong>Off</strong>, again to set when the carer comes and goes, again to clear it back to nothing set. A working day runs from 9:00 until 15:00 to begin with — change either time from its dropdown, in half-hour steps, and the hours work themselves out.</p>
       </section>
 
       <section>
@@ -1568,6 +1568,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=128"></script>
+<script src="app.js?v=129"></script>
 </body>
 </html>

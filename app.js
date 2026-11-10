@@ -430,7 +430,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "128";
+    var fallback = "129";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -858,8 +858,11 @@
   // week's entries and correct one; the whole ledger is in the backup.
   var MILK_LOG_ROWS = 30;
 
-  var ROTA_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   var ROTA_DEFAULT_HOURS = 6;
+  // How far past the start the "until" dropdown reaches. A day's care, with
+  // room for a late evening; a shift still running at the next morning is
+  // not one this list needs to offer.
+  var ROTA_MAX_HOURS = 16;
   var ROTA_DEFAULT_START = "09:00";
   // Half-hour steps, not one-minute — a native time input scrolls a minute
   // at a time, which is a lot of scrolling for a number that is never more
@@ -8683,15 +8686,26 @@
     return rotaShiftFor(dayKeyOf(new Date()));
   }
 
+  function rotaClockMinutes(text) {
+    return Number(text.slice(0, 2)) * 60 + Number(text.slice(3, 5));
+  }
+
+  // "4h", "4h 30m" — a shift is kept in half-hours.
+  function rotaHoursLabel(hours) {
+    var mins = Math.round(hours * 60);
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return m ? h + "h " + m + "m" : h + "h";
+  }
+
   // Calendar-local minutes since midnight, not epoch arithmetic — adding
   // hours straight across a clock change is how the immunisation dates once
   // came out a day early, and a shift window would drift the same way.
   function rotaShiftRange(shift, atDate) {
     if (!shift || !shift.hours || !shift.start) return null;
-    var mins = Number(shift.start.slice(0, 2)) * 60 + Number(shift.start.slice(3, 5));
-    var base = new Date(atDate.getFullYear(), atDate.getMonth(), atDate.getDate());
-    var from = new Date(base.getTime() + mins * MS_MIN);
-    var to = new Date(from.getTime() + shift.hours * MS_HOUR);
+    var mins = rotaClockMinutes(shift.start);
+    var y = atDate.getFullYear(), m = atDate.getMonth(), d = atDate.getDate();
+    var from = new Date(y, m, d, 0, mins);
+    var to = new Date(y, m, d, 0, mins + Math.round(shift.hours * 60));
     return { from: from, to: to };
   }
 
@@ -8756,6 +8770,22 @@
     });
   }
 
+  // The end of a shift, as minutes after the start day's midnight: 18:00
+  // is 1080, and 01:00 the next morning is 1500.
+  function buildRotaEndOptions(select, startMins) {
+    select.innerHTML = "";
+    for (var at = startMins + 30; at <= startMins + ROTA_MAX_HOURS * 60; at += 30) {
+      var opt = document.createElement("option");
+      opt.value = String(at);
+      opt.textContent = pad2(Math.floor(at / 60) % 24) + ":" + pad2(at % 60) + (at >= 24 * 60 ? " +1" : "");
+      select.appendChild(opt);
+    }
+  }
+
+  // From and until, both in half-hour steps; the hours are what lies
+  // between them, worked out rather than picked. What is kept is still the
+  // start and the hours, so a shift reads the same on a phone that has not
+  // updated yet.
   function rotaDayRow(date) {
     var key = dayKeyOf(date);
     var shift = rotaShiftFor(key);
@@ -8768,29 +8798,35 @@
         '<span class="rota-day-state">' + (state === "off" ? "Off" : state === "unset" ? "—" : "") + '</span>' +
       '</button>' +
       '<div class="rota-detail"' + (state === "on" ? "" : " hidden") + '>' +
-        '<select class="rota-hours-select" aria-label="Hours"></select>' +
-        '<select class="rota-start-select" aria-label="Start time"></select>' +
+        '<select class="rota-start-select" aria-label="From"></select>' +
+        '<span class="rota-dash" aria-hidden="true">–</span>' +
+        '<select class="rota-end-select" aria-label="Until"></select>' +
       '</div>';
 
     var toggle = row.querySelector(".rota-toggle");
-    var hoursSelect = row.querySelector(".rota-hours-select");
+    var stateText = row.querySelector(".rota-day-state");
     var startSelect = row.querySelector(".rota-start-select");
+    var endSelect = row.querySelector(".rota-end-select");
 
-    ROTA_HOURS.forEach(function (h) {
-      var opt = document.createElement("option");
-      opt.value = String(h);
-      opt.textContent = h + "h";
-      hoursSelect.appendChild(opt);
-    });
+    var hours = (shift && shift.hours) || ROTA_DEFAULT_HOURS;
     buildRotaTimeOptions(startSelect);
-    hoursSelect.value = String((shift && shift.hours) || ROTA_DEFAULT_HOURS);
     startSelect.value = (shift && shift.start) || ROTA_DEFAULT_START;
+    if (!startSelect.value) startSelect.value = ROTA_DEFAULT_START;
+    var startMins = rotaClockMinutes(startSelect.value);
+    var endMins = startMins + Math.min(Math.round(hours * 2) * 30, ROTA_MAX_HOURS * 60);
+    buildRotaEndOptions(endSelect, startMins);
+    endSelect.value = String(endMins);
+    if (state === "on") stateText.textContent = rotaHoursLabel((endMins - startMins) / 60);
 
     var saveWorking = function () {
-      return saveRotaDay(key, {
-        hours: Number(hoursSelect.value) || ROTA_DEFAULT_HOURS,
-        start: startSelect.value || ROTA_DEFAULT_START
-      });
+      var from = rotaClockMinutes(startSelect.value || ROTA_DEFAULT_START);
+      var until = Number(endSelect.value) || from + ROTA_DEFAULT_HOURS * 60;
+      return saveRotaDay(key, { hours: (until - from) / 60, start: startSelect.value || ROTA_DEFAULT_START });
+    };
+    var saved = function () {
+      if (!saveWorking()) return;
+      renderRotaWeek();
+      renderRotaBanner();
     };
 
     toggle.addEventListener("click", function () {
@@ -8801,8 +8837,18 @@
       renderRotaWeek();
       renderRotaBanner();
     });
-    hoursSelect.addEventListener("change", function () { if (saveWorking()) renderRotaBanner(); });
-    startSelect.addEventListener("change", function () { if (saveWorking()) renderRotaBanner(); });
+    // A new start keeps the end where it was while that still follows it,
+    // and otherwise keeps the length.
+    startSelect.addEventListener("change", function () {
+      var oldStart = startMins, oldEnd = Number(endSelect.value);
+      startMins = rotaClockMinutes(startSelect.value);
+      var end = oldEnd > startMins && oldEnd <= startMins + ROTA_MAX_HOURS * 60
+        ? oldEnd : startMins + (oldEnd - oldStart);
+      buildRotaEndOptions(endSelect, startMins);
+      endSelect.value = String(end);
+      saved();
+    });
+    endSelect.addEventListener("change", saved);
 
     return row;
   }
@@ -8817,7 +8863,8 @@
       if (shift && !shift.off) total += shift.hours;
       el.rotaWeekDays.appendChild(rotaDayRow(d));
     });
-    el.rotaWeekTotal.textContent = total ? (total + (total === 1 ? " hour" : " hours")) : "—";
+    el.rotaWeekTotal.textContent = !total ? "—"
+      : total % 1 ? rotaHoursLabel(total) : (total + (total === 1 ? " hour" : " hours"));
   }
 
   el.rotaWeekPrev.addEventListener("click", function () {
@@ -13830,8 +13877,8 @@
       ru: "🤝 вверху словами рассказывает то, что спросит тот, кто принимает малыша: последнее кормление, подгузники, сон, что дальше. Можно читать по-английски или по-русски." },
     { id: "rota", title: { en: "Carer rota", ru: "График няни" }, go: { click: "rotaOpen" },
       words: "*rota *shifts hours working week carer nanny *график *смены часы работает неделя няни няня",
-      en: "🤗 in the top bar is a week of shifts. Tap a day to step it: off, working, then clear. A working day gets its hours and a start time.",
-      ru: "🤗 вверху — неделя смен. Нажмите на день: выходной, рабочий, сброс. Для рабочего дня указываются часы и время начала." },
+      en: "🤗 in the top bar is a week of shifts. Tap a day to step it: off, working, then clear. A working day gets a from and an until time, in half-hour steps, and its hours are worked out.",
+      ru: "🤗 вверху — неделя смен. Нажмите на день: выходной, рабочий, сброс. Для рабочего дня указывается время «с» и «до» с шагом 30 минут, часы считаются сами." },
     { id: "plan", title: { en: "Appointments", ru: "Визиты и прививки" }, go: { click: "planOpen" },
       words: "appointment appointments gp midwife health visitor jab jabs vaccine vaccination doctor weigh визит приём прием врач педиатр прививк вакцин патронаж",
       en: "📅 in the top bar is the diary of what's coming up — midwife, health visitor, GP, jabs. The main screen shows a quiet line when one falls today or tomorrow.",
