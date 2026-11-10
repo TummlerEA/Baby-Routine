@@ -89,7 +89,11 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
     await page.textContent('#settingsZone'));
 
   // Back to the phone's time.
-  await Promise.all([page.waitForNavigation(), page.selectOption('#clockZone', '')]);
+  // Choosing reloads the page; wait for the reloaded one, not just any
+  // navigation event, which a busy machine can report before it is done.
+  await Promise.all([page.waitForEvent('load'), page.selectOption('#clockZone', '')]);
+  await page.waitForFunction(() => localStorage.getItem('baby-tracker-clock') === null &&
+    document.getElementById('clockBanner').hidden);
   await page.waitForTimeout(400);
   ok('back on the phone\'s time, nothing is kept', (await page.evaluate(() =>
     localStorage.getItem('baby-tracker-clock'))) === null);
@@ -100,7 +104,8 @@ const NOW = new Date(Date.UTC(2026, 10, 6, 10, 0));
 
   // Over to Honolulu by choosing it.
   await page.click('#settingsOpen');
-  await Promise.all([page.waitForNavigation(), page.selectOption('#clockZone', 'Pacific/Honolulu')]);
+  await Promise.all([page.waitForEvent('load'), page.selectOption('#clockZone', 'Pacific/Honolulu')]);
+  await page.waitForFunction(() => !document.getElementById('clockBanner').hidden);
   await page.waitForTimeout(400);
   ok('any zone can be chosen', /Honolulu time, 00:00/.test(await page.textContent('#clockBannerText')),
     await page.textContent('#clockBannerText'));
