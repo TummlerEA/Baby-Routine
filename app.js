@@ -430,7 +430,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "129";
+    var fallback = "130";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2348,6 +2348,12 @@
     splitsSection: document.getElementById("splitsSection"),
     splitsToggle: document.getElementById("splitsToggle"),
     guessSection: document.getElementById("guessSection"),
+    patternSection: document.getElementById("patternSection"),
+    patternToggle: document.getElementById("patternToggle"),
+    patternBody: document.getElementById("patternBody"),
+    patternChart: document.getElementById("patternChart"),
+    patternSummary: document.getElementById("patternSummary"),
+    patternDay: document.getElementById("patternDay"),
     guessTiles: document.getElementById("guessTiles"),
     splitsBody: document.getElementById("splitsBody"),
     splitsRangeChips: document.getElementById("splitsRangeChips"),
@@ -3757,6 +3763,215 @@
     return h ? h + "h" + (m ? pad2(m) : "") : m + "m";
   }
 
+  // ---------- sleep pattern ----------
+
+  // Every day since the first sleep was logged, one thin row each, midnight
+  // to midnight across: asleep, awake, and a hard settle. Seen together the
+  // rows show what no single day does — the night drawing together and the
+  // naps finding their hours. Nothing records crying as such, so a settle
+  // rated about half an hour or longer stands in for it: that long, awake,
+  // just before she went down. Anything quicker is not counted as crying.
+  var PATTERN_OPEN_KEY = "baby-tracker-pattern-open";
+  var PATTERN_CRY_MIN = [0, 0, 0, 30, 60, 120];
+  var PATTERN_MAX_DAYS = 366;
+  var patternPicked = null;
+
+  function loadPatternOpen() {
+    try { return localStorage.getItem(PATTERN_OPEN_KEY) === "1"; } catch (e) { return false; }
+  }
+
+  function savePatternOpen(open) {
+    try { localStorage.setItem(PATTERN_OPEN_KEY, open ? "1" : "0"); } catch (e) { /* only a convenience */ }
+  }
+
+  // The stretches to draw, oldest first: { from, to, k } with k one of
+  // sleep, awake or cry. A sleep still going, or a wake-up with nothing
+  // after it, runs to now. Time in none of them is time nothing says
+  // anything about, and is drawn as no data.
+  function patternSpans(analysis, nowMs) {
+    var out = [];
+    analysis.awakeSessions.forEach(function (a) { out.push({ from: a.startMs, to: a.endMs, k: "awake" }); });
+    if (analysis.awakeActive) {
+      var w = +new Date(analysis.awakeActive.time);
+      if (nowMs > w) out.push({ from: w, to: nowMs, k: "awake" });
+    }
+    analysis.sessions.forEach(function (x) { out.push({ from: x.startMs, to: x.endMs, k: "sleep" }); });
+    if (analysis.active) {
+      var a = +new Date(analysis.active.time);
+      if (nowMs > a) out.push({ from: a, to: nowMs, k: "sleep" });
+    }
+    var ends = analysis.sessions.map(function (x) { return x.endMs; }).sort(function (p, q) { return p - q; });
+    liveEvents().forEach(function (e) {
+      if (e.type !== "sleep_start") return;
+      var mins = PATTERN_CRY_MIN[settleOf(e) || 0];
+      if (!mins) return;
+      var at = +new Date(e.time);
+      // Never back into the sleep before it.
+      var floor = -Infinity;
+      for (var i = ends.length - 1; i >= 0; i--) { if (ends[i] <= at) { floor = ends[i]; break; } }
+      var from = Math.max(at - mins * MS_MIN, floor);
+      if (at > from) out.push({ from: from, to: at, k: "cry" });
+    });
+    return out;
+  }
+
+  // One entry per day from the first with a sleep to today, each with its
+  // own midnights — found on the calendar, so the day the clocks change is
+  // drawn 23 or 25 hours wide in the same row width rather than spilling.
+  function patternDays(spans, nowMs) {
+    var first = Infinity;
+    spans.forEach(function (x) { if (x.k === "sleep" && x.from < first) first = x.from; });
+    if (first === Infinity) return [];
+    var today = new Date(nowMs);
+    today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var start = new Date(first);
+    start = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    var oldest = daysOn(today, -(PATTERN_MAX_DAYS - 1));
+    if (start < oldest) start = oldest;
+    var days = [];
+    for (var d = start; d <= today; d = daysOn(d, 1)) {
+      var to = daysOn(d, 1);
+      var row = { date: d, from: +d, to: +to, spans: [], sleep: 0, awake: 0, cry: 0 };
+      spans.forEach(function (x) {
+        var a = Math.max(x.from, row.from), b = Math.min(x.to, row.to);
+        if (b > a) row.spans.push({ from: a, to: b, k: x.k });
+      });
+      days.push(row);
+    }
+    // Totals: crying is time awake, so it comes out of awake rather than
+    // being counted twice.
+    days.forEach(function (row) {
+      row.spans.forEach(function (x) { row[x.k] += x.to - x.from; });
+      row.awake = Math.max(0, row.awake - row.cry);
+    });
+    return days;
+  }
+
+  // The label at the start of a stretch of rows: weeks while there are few
+  // enough rows for a label every seven, months after that; her age when a
+  // birth date is set, the calendar when not.
+  function patternLabel(row, i, weekly) {
+    var age = ageDaysAt(row.from);
+    if (weekly) {
+      if (age === 0) return "Birth";
+      if (age !== null && age > 0) return age % 7 === 0 ? "Wk " + (age / 7) : "";
+      return i % 7 === 0 ? row.date.getDate() + " " + MONTHS[row.date.getMonth()].slice(0, 3) : "";
+    }
+    if (age === 0) return "Birth";
+    if (age !== null && age > 0) {
+      var month = Math.floor(age / 30.44);
+      return Math.floor((age - 1) / 30.44) !== month ? "Mo " + month : "";
+    }
+    return row.date.getDate() === 1 || i === 0 ? MONTHS[row.date.getMonth()].slice(0, 3) : "";
+  }
+
+  function patternSvg(days) {
+    var WIDTH = 320, LEFT = 38, RIGHT = 4, TOP = 14, AXIS = 14;
+    var plotW = WIDTH - LEFT - RIGHT;
+    var rowH = Math.max(3, Math.min(12, Math.floor(420 / days.length)));
+    var gap = rowH >= 6 ? 1 : 0;
+    var height = TOP + days.length * rowH + AXIS;
+    var weekly = days.length <= 70;
+    var r1 = function (n) { return Math.round(n * 10) / 10; };
+    var out = ['<svg class="ho-svg pattern-svg" id="patternSvg" viewBox="0 0 ' + WIDTH + ' ' + height +
+      '" shape-rendering="crispEdges" role="img" aria-label="Sleep pattern, one row per day for ' +
+      days.length + ' days">'];
+    [0, 6, 12, 18, 24].forEach(function (h) {
+      var x = r1(LEFT + plotW * h / 24);
+      out.push('<text class="ho-tick" x="' + x + '" y="10" text-anchor="' +
+        (h === 0 ? "start" : h === 24 ? "end" : "middle") + '">' + pad2(h) + ':00</text>');
+    });
+    days.forEach(function (row, i) {
+      var y = TOP + i * rowH;
+      var span = row.to - row.from;
+      out.push('<rect class="pt-none" x="' + LEFT + '" y="' + y + '" width="' + plotW + '" height="' + (rowH - gap) + '"/>');
+      ["awake", "sleep", "cry"].forEach(function (k) {
+        row.spans.forEach(function (x) {
+          if (x.k !== k) return;
+          // Both ends rounded the same way, so a sleep and the waking that
+          // follows it meet exactly instead of leaving a hairline between.
+          var x0 = r1(LEFT + plotW * (x.from - row.from) / span);
+          var x1 = r1(LEFT + plotW * (x.to - row.from) / span);
+          var w = Math.max(0.6, r1(x1 - x0));
+          out.push('<rect class="pt-' + k + '" x="' + x0 + '" y="' + y + '" width="' + w + '" height="' + (rowH - gap) + '"/>');
+        });
+      });
+      var label = patternLabel(row, i, weekly);
+      if (label) {
+        out.push('<text class="ho-tick" x="' + (LEFT - 4) + '" y="' + (y + Math.min(rowH, 8)) + '" text-anchor="end">' + escapeHtml(label) + '</text>');
+        out.push('<line class="pt-mark" x1="' + LEFT + '" y1="' + y + '" x2="' + (LEFT + plotW) + '" y2="' + y + '"/>');
+      }
+      if (patternPicked === dayKeyOf(row.date)) {
+        out.push('<rect class="pt-picked" x="' + (LEFT - 0.5) + '" y="' + (y - 0.5) + '" width="' + (plotW + 1) + '" height="' + rowH + '"/>');
+      }
+    });
+    [6, 12, 18].forEach(function (h) {
+      var x = r1(LEFT + plotW * h / 24);
+      out.push('<line class="pt-grid" x1="' + x + '" y1="' + TOP + '" x2="' + x + '" y2="' + (TOP + days.length * rowH) + '"/>');
+    });
+    out.push('</svg>');
+    return { html: out.join(""), top: TOP, rowH: rowH, height: height };
+  }
+
+  // Share of the logged time she spent asleep — logged, not of 24 hours, so
+  // a day half written down does not read as a day half slept.
+  function patternShare(rows) {
+    var sleep = 0, known = 0;
+    rows.forEach(function (r) { sleep += r.sleep; known += r.sleep + r.awake + r.cry; });
+    return known >= MS_HOUR * 12 * rows.length / 2 && known ? Math.round(sleep / known * 100) : null;
+  }
+
+  function patternDayLine(row) {
+    var parts = [formatDateShort(row.date) + ":",
+      "asleep " + formatDuration(row.sleep), "· awake " + formatDuration(row.awake)];
+    if (row.cry) parts.push("· hard settling " + formatDuration(row.cry));
+    return parts.join(" ");
+  }
+
+  var patternLayout = null;
+
+  function renderPattern() {
+    var open = loadPatternOpen();
+    el.patternToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    el.patternBody.hidden = !open;
+    if (!open) return;
+    var now = Date.now();
+    var days = patternDays(patternSpans(analyzeSleep(), now), now);
+    if (!days.length) {
+      patternLayout = null;
+      el.patternChart.innerHTML = '<p class="data-hint">Needs a sleep logged, with its wake-up.</p>';
+      el.patternSummary.textContent = "";
+      el.patternDay.textContent = "";
+      return;
+    }
+    var drawn = patternSvg(days);
+    patternLayout = { days: days, top: drawn.top, rowH: drawn.rowH, height: drawn.height };
+    el.patternChart.innerHTML = drawn.html;
+    var first = patternShare(days.slice(0, 7));
+    var last = patternShare(days.slice(-8, -1));
+    el.patternSummary.textContent = days.length >= 14 && first !== null && last !== null
+      ? "Asleep " + first + "% of the logged time in the first week, " + last + "% in the last seven full days."
+      : days.length + (days.length === 1 ? " day" : " days") + " so far — the shape shows after a few weeks.";
+    var picked = days.filter(function (r) { return dayKeyOf(r.date) === patternPicked; })[0];
+    el.patternDay.textContent = picked ? patternDayLine(picked) : "Tap a row to see that day.";
+  }
+
+  el.patternToggle.addEventListener("click", function () {
+    savePatternOpen(!loadPatternOpen());
+    renderPattern();
+  });
+  el.patternChart.addEventListener("click", function (ev) {
+    var svg = el.patternChart.querySelector("svg");
+    if (!svg || !patternLayout) return;
+    var box = svg.getBoundingClientRect();
+    var y = (ev.clientY - box.top) * patternLayout.height / box.height;
+    var i = Math.floor((y - patternLayout.top) / patternLayout.rowH);
+    var row = patternLayout.days[Math.max(0, Math.min(patternLayout.days.length - 1, i))];
+    var key = dayKeyOf(row.date);
+    patternPicked = patternPicked === key ? null : key;
+    renderPattern();
+  });
+
   // ---------- feed → wake splits ----------
 
   // One row per wake-up, the way a run is read kilometre by kilometre: how
@@ -4382,14 +4597,17 @@
       el.statsCharts.hidden = true;
       el.splitsSection.hidden = true;
       el.guessSection.hidden = true;
+      el.patternSection.hidden = true;
       return;
     }
     el.statsEmpty.hidden = true;
     el.statsCharts.hidden = false;
     el.splitsSection.hidden = false;
     el.guessSection.hidden = false;
+    el.patternSection.hidden = false;
     renderSplits();
     renderGuesses();
+    renderPattern();
 
     var rows = statsRange(statsPeriod);
     var n = rows.length;
@@ -13868,9 +14086,9 @@
       en: "Settings, beside the planned intervals, sets where the night starts and ends. The Nights chart and the routine's day-or-night split both follow it.",
       ru: "В настройках рядом с интервалами задаётся, когда начинается и заканчивается ночь. По ней считаются ночи в статистике и режим дня." },
     { id: "stats", title: { en: "Statistics", ru: "Статистика" }, go: { click: "statsOpen" },
-      words: "*statistics *stats *chart *charts *graph average trend *статистик *график средн динамик",
-      en: "📊 in the top bar: feeds, nappies, sleep and time awake per day over 7, 14 or 30 days, the nights, the feed-to-wake splits, and charts of every measurement.",
-      ru: "📊 вверху: кормления, подгузники, сон и бодрствование по дням за 7, 14 или 30 дней, ночи, промежутки «кормление → пробуждение» и графики всех измерений." },
+      words: "*statistics *stats *chart *charts *graph average trend *pattern *статистик *график средн динамик карта сна",
+      en: "📊 in the top bar: feeds, nappies, sleep and time awake per day over 7, 14 or 30 days, the nights, the feed-to-wake splits, a sleep pattern of every day since the first sleep, and charts of every measurement.",
+      ru: "📊 вверху: кормления, подгузники, сон и бодрствование по дням за 7, 14 или 30 дней, ночи, промежутки «кормление → пробуждение», карта сна за все дни и графики всех измерений." },
     { id: "handover", title: { en: "Handing over to someone", ru: "Передать малыша другому" }, go: { click: "handoverOpen" },
       words: "*handover hand over nanny grandma grandparent carer babysitter *передать передача няня бабушк дедушк",
       en: "🤝 in the top bar says, in sentences, what whoever takes over will ask: the last feed, the nappies, the sleep, what's due next. It reads in English or Russian.",

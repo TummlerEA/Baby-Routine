@@ -2220,6 +2220,27 @@ body {
 .sp-chev { color: var(--text-dim); font-size: 18px; transition: transform 0.15s; }
 .sp-head[aria-expanded="false"] .sp-chev { transform: rotate(-90deg); }
 .sp-note { margin: 0 0 12px; }
+
+/* The sleep pattern: one row per day, midnight to midnight. */
+.pattern-legend {
+  color: var(--text-dim);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px 14px;
+  margin-bottom: 8px;
+}
+.pattern-legend span { align-items: center; display: inline-flex; gap: 6px; }
+.pt-key { border-radius: 3px; display: inline-block; height: 10px; width: 14px; }
+.pt-key.pt-sleep, .pattern-svg .pt-sleep { background: var(--accent-sleep); fill: var(--accent-sleep); }
+.pt-key.pt-awake, .pattern-svg .pt-awake { background: var(--accent-awake); fill: var(--accent-awake); }
+.pt-key.pt-cry, .pattern-svg .pt-cry { background: var(--danger); fill: var(--danger); }
+.pt-key.pt-none, .pattern-svg .pt-none { background: var(--bg-elevated-2); fill: var(--bg-elevated-2); }
+.pattern-svg .pt-grid { stroke: var(--bg); stroke-opacity: 0.45; stroke-width: 0.6; }
+.pattern-svg .pt-mark { stroke: var(--bg); stroke-width: 0.8; }
+.pattern-svg .pt-picked { fill: none; stroke: var(--text); stroke-width: 1; }
+.pattern-chart { cursor: pointer; }
+.pattern-day { margin: 8px 0 2px; min-height: 1.4em; }
 .guess-title { margin: 12px 0 8px; }
 .sp-tile-wide { grid-column: 1 / -1; }
 .sp-part { margin-top: 8px; }

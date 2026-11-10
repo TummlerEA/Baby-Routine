@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=129">
+<link rel="stylesheet" href="style.css?v=130">
 </head>
 <body>
 
@@ -491,6 +491,7 @@
             <p><strong>🎯 How close the guesses are</strong> checks the app against her. Every time it names — ready to sleep, waking, the next feed — is kept and compared with what you log next: how far off it typically is, how often within a quarter of an hour, and which way it leans. Nothing to tap; a miss of more than three hours is left out as an entry that was most likely never made.</p>
             <p>Below them, <strong>measurements over time</strong> — weight, length, head circumference, temperature, and anything you have named yourself — one chart each, as soon as there are two readings of it to join up. These keep their own timeline and the buttons at the top do not apply to them: readings are weeks apart rather than daily, so each one sits where it actually falls on the calendar and a month with no weighing shows as a month-wide gap. The value scale runs from the lowest reading to the highest rather than from zero, because a baby going from 3.2 to 5.2 kg is the whole story and against a zero line it would be a flat line near the top; both ends are labelled, and the unit is in the heading. Tap and hold a dot to see its date and reading.</p>
             <p>At the very top, <strong>Feed → wake splits</strong>: one row per wake-up with how long the baby had gone without food by then, split into time awake after the feed and time asleep. It has its own buttons for the range and for day or night, and a bubble chart by age in weeks, so you can watch the stretches grow. A row marked ⚠ had far longer than usual between the feed and falling asleep — most likely a feed nobody logged. Tap it to add that feed; until then it is left out of the figures. Tap the heading to fold the section away.</p>
+            <p><strong>🌗 Sleep pattern</strong>, folded until you open it: every day since the first sleep was logged, one thin row each from midnight to midnight — asleep, awake, and not logged. Read down the rows and the change that is easy to miss one night at a time shows: the night drawing together, the naps settling into their hours. Nothing in the app records crying, so a settle rated <strong>about half an hour or longer</strong> stands in for it — that long, drawn in red just before she went down; anything quicker is not counted. Tap a row for that day's totals. Labels down the side are her age in weeks, then months, when a birth date is set, and dates when not.</p>
             <p>Nothing is sent anywhere to draw these — they are worked out on the phone from what is already logged.</p>
           </article>
 
@@ -1219,6 +1220,25 @@
         <div class="sp-tiles" id="guessTiles"></div>
       </section>
 
+      <section id="patternSection" class="sp-section" hidden>
+        <button type="button" class="sp-head" id="patternToggle" aria-expanded="false" aria-controls="patternBody">
+          <span class="sp-title">🌗 Sleep pattern</span>
+          <span class="sp-chev" aria-hidden="true">▾</span>
+        </button>
+        <div id="patternBody" hidden>
+          <p class="data-hint sp-note">Every day since the first sleep, one row each, midnight to midnight. Read down the rows to see the night drawing together and the naps finding their hours. A settle rated about half an hour or longer is drawn as that long spent crying before she went down; anything quicker is not.</p>
+          <div class="pattern-legend" aria-hidden="true">
+            <span><i class="pt-key pt-sleep"></i>Asleep</span>
+            <span><i class="pt-key pt-awake"></i>Awake</span>
+            <span><i class="pt-key pt-cry"></i>Hard settling</span>
+            <span><i class="pt-key pt-none"></i>Not logged</span>
+          </div>
+          <div id="patternChart" class="pattern-chart"></div>
+          <p class="data-hint pattern-day" id="patternDay"></p>
+          <p class="data-hint" id="patternSummary"></p>
+        </div>
+      </section>
+
       <section>
         <p class="section-title stats-measure-head">Day by day</p>
         <div class="ho-chips" id="statsPeriodChips"></div>
@@ -1568,6 +1588,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=129"></script>
+<script src="app.js?v=130"></script>
 </body>
 </html>
