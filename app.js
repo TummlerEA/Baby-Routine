@@ -863,7 +863,7 @@
   // room for a late evening; a shift still running at the next morning is
   // not one this list needs to offer.
   var ROTA_MAX_HOURS = 16;
-  var ROTA_DEFAULT_START = "09:00";
+  var ROTA_DEFAULT_START = "12:00";
   // Half-hour steps, not one-minute — a native time input scrolls a minute
   // at a time, which is a lot of scrolling for a number that is never more
   // precise than "roughly half nine" in practice.
