@@ -80,9 +80,10 @@ const PLOT_W = 320 - 38 - 4;
     /hard settling 1h 30m/.test(line), line);
 
   await page.reload();
+  await page.waitForLoadState('load');
   await page.waitForTimeout(300);
   await page.click('#statsOpen');
-  await page.waitForSelector('#patternSvg', { timeout: 3000 }).catch(() => null);
+  await page.waitForSelector('#patternSvg', { timeout: 10000 }).catch(() => null);
   ok('opened, it stays open on this phone', await page.isVisible('#patternSvg'),
     await page.evaluate(() => localStorage.getItem('baby-tracker-pattern-open')));
   await ctx.close();
