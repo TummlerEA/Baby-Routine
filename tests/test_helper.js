@@ -21,7 +21,7 @@ const QUESTIONS = [
   ["What's next?", 'next'], ['Что дальше?', 'next'],
   ['how is today going', 'today'], ['сводка за день', 'today'],
   ['how old is the baby', 'age'], ['сколько недель малышу', 'age'], ['какой вес', 'weight'],
-  ['How do I turn on white noise?', 'noise'], ['Как включить белый шум?', 'noise'], ['где шум', 'noise'],
+  ['How do I turn on white noise?', 'noise'], ['Как включить белый шум?', 'noise'], ['где шум', 'noise'], ['How do I add a lullaby?', 'music'], ['Как поставить колыбельную?', 'music'],
   ['How do I share with my partner?', 'share'], ['Как поделиться с партнёром?', 'share'],
   ['как отправить мужу записи', 'share'],
   ['how do I log a feed', 'log-feed'], ['как записать кормление', 'log-feed'],
