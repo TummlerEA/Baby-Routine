@@ -430,7 +430,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "130";
+    var fallback = "131";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2147,6 +2147,12 @@
     noisePlayNote: document.getElementById("noisePlayNote"),
     noiseSounds: document.getElementById("noiseSounds"),
     noiseLevels: document.getElementById("noiseLevels"),
+    noiseLevelLabel: document.getElementById("noiseLevelLabel"),
+    noiseMusicVolume: document.getElementById("noiseMusicVolume"),
+    musicList: document.getElementById("musicList"),
+    musicAdd: document.getElementById("musicAdd"),
+    musicFile: document.getElementById("musicFile"),
+    musicError: document.getElementById("musicError"),
     noiseTimers: document.getElementById("noiseTimers"),
     noisePrev: document.getElementById("noisePrev"),
     noiseNext: document.getElementById("noiseNext"),
@@ -12505,6 +12511,137 @@
     return new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
   })();
 
+  // ---------- your own music ----------
+
+  // A song is a file the parent already has, added from the phone. The app
+  // carries no music of its own: the tune of a lullaby may be centuries out
+  // of copyright, but every recording of it belongs to somebody, and the
+  // only one this app can be sure of is the one its user chose.
+  //
+  // The list — names, lengths, sizes — is small and lives in localStorage,
+  // so it is there the moment the app opens. The sound itself is megabytes
+  // and goes in IndexedDB. Neither is synced, exported or shared: a song is
+  // the one thing in here that is not the baby's data, and a copy of it
+  // sent to a repository or a link would be the app distributing it.
+  var MUSIC_KEY = "baby-tracker-music";
+  var MUSIC_DB = "baby-tracker-music";
+  var MUSIC_STORE = "tracks";
+  var MUSIC_PREFIX = "track:";
+  var MUSIC_MAX_BYTES = 60 * 1024 * 1024;
+  var MUSIC_MAX_TRACKS = 12;
+  // A timer runs out partway through a song, and the song is let finish
+  // rather than cut off mid-phrase — unless it is a long one, and finishing
+  // it would make the timer a fiction.
+  var MUSIC_FINISH_MS = 10 * 60000;
+  var MUSIC_PROBE_MS = 8000;
+
+  function loadMusicList() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(MUSIC_KEY) || "[]");
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(function (t) {
+        return t && typeof t.id === "string" && typeof t.name === "string";
+      }).map(function (t) {
+        return { id: t.id, name: t.name, bytes: +t.bytes || 0,
+          seconds: +t.seconds || 0, type: typeof t.type === "string" ? t.type : "" };
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveMusicList() {
+    try {
+      localStorage.setItem(MUSIC_KEY, JSON.stringify(musicTracks));
+      return true;
+    } catch (e) {
+      showError("Couldn't save the list of songs");
+      return false;
+    }
+  }
+
+  var musicTracks = loadMusicList();
+
+  function musicTrackFor(sound) {
+    if (typeof sound !== "string" || sound.indexOf(MUSIC_PREFIX) !== 0) return null;
+    var id = sound.slice(MUSIC_PREFIX.length);
+    for (var i = 0; i < musicTracks.length; i++) {
+      if (musicTracks[i].id === id) return musicTracks[i];
+    }
+    return null;
+  }
+
+  var musicDbOpening = null;
+
+  function musicDb() {
+    if (musicDbOpening) return musicDbOpening;
+    musicDbOpening = new Promise(function (resolve, reject) {
+      var req;
+      try {
+        req = window.indexedDB.open(MUSIC_DB, 1);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      req.onupgradeneeded = function () {
+        if (!req.result.objectStoreNames.contains(MUSIC_STORE)) {
+          req.result.createObjectStore(MUSIC_STORE);
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+      req.onblocked = function () { reject(new Error("blocked")); };
+    });
+    musicDbOpening.catch(function () { musicDbOpening = null; });
+    return musicDbOpening;
+  }
+
+  function musicTx(mode, work) {
+    return musicDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(MUSIC_STORE, mode);
+        var store = tx.objectStore(MUSIC_STORE);
+        var result;
+        var req = work(store);
+        if (req) req.onsuccess = function () { result = req.result; };
+        tx.oncomplete = function () { resolve(result); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error("aborted")); };
+      });
+    });
+  }
+
+  // Kept as the bytes and their type rather than as a Blob: older Safari
+  // could not put a Blob into IndexedDB at all, and an ArrayBuffer goes in
+  // everywhere.
+  function musicPut(id, buffer, type) {
+    return musicTx("readwrite", function (store) {
+      return store.put({ buffer: buffer, type: type }, id);
+    });
+  }
+
+  function musicGet(id) {
+    return musicTx("readonly", function (store) { return store.get(id); });
+  }
+
+  function musicDelete(id) {
+    return musicTx("readwrite", function (store) { return store.delete(id); });
+  }
+
+  // Sound left behind by a song removed just before the app was closed,
+  // while its undo was still on offer.
+  function musicTidy() {
+    if (!window.indexedDB) return;
+    musicTx("readonly", function (store) {
+      return store.getAllKeys ? store.getAllKeys() : null;
+    }).then(function (keys) {
+      (keys || []).forEach(function (key) {
+        var kept = musicTracks.some(function (t) { return t.id === key; });
+        if (!kept) musicDelete(key).catch(function () { /* next time */ });
+      });
+    }).catch(function () { /* nothing to tidy, or no way to */ });
+  }
+
   function noisePrefs() {
     try {
       var raw = localStorage.getItem(NOISE_KEY);
@@ -12514,8 +12651,8 @@
       // it. Carried across rather than dropped, so a phone that had chosen
       // it does not quietly come back making a noise instead.
       var want = parsed.sound === "remote" ? NOISE_STANDBY : parsed.sound;
-      var sound = NOISE_SOUNDS.some(function (s) { return s.id === want; })
-        ? want : NOISE_DEFAULTS.sound;
+      var sound = NOISE_SOUNDS.some(function (s) { return s.id === want; }) ||
+        musicTrackFor(want) ? want : NOISE_DEFAULTS.sound;
       var level = NOISE_LEVELS.some(function (l) { return l.id === parsed.level; })
         ? parsed.level : NOISE_DEFAULTS.level;
       var timer = NOISE_TIMERS.indexOf(parsed.timer) !== -1
@@ -12718,7 +12855,7 @@
   // The remote makes no sound of its own, so there is nothing to generate for
   // it — it is the deep one with the volume taken off.
   function noiseSoundToMake() {
-    return noiseIsStandby() ? "brown" : noise.sound;
+    return noiseIsStandby() || musicTrackFor(noise.sound) ? "brown" : noise.sound;
   }
 
   // The block itself does not depend on the volume or the timer, so it
@@ -12747,6 +12884,8 @@
   // ---------- playing it ----------
 
   var noiseOn = false;
+  // The song playing, by its id, or null while it is noise or Standby.
+  var noiseMusic = null;
 
   // A minute mark, written while the sound plays. It answers a question I
   // could not answer from here and would otherwise have to guess at: whether
@@ -12830,7 +12969,7 @@
   // counts the passes, so there the clock does.
   function noiseSoundMs() {
     var player = el.noisePlayer;
-    if (noise.timer && player && player.duration && !isNaN(player.duration)) {
+    if (!noiseMusic && noise.timer && player && player.duration && !isNaN(player.duration)) {
       return (player.currentTime || 0) * 1000;
     }
     return noiseAwake.startedAt ? Date.now() - noiseAwake.startedAt : 0;
@@ -12872,6 +13011,8 @@
   }
 
   function describeNoiseSound(id) {
+    var track = musicTrackFor(id);
+    if (track) return track.name;
     for (var i = 0; i < NOISE_SOUNDS.length; i++) {
       if (NOISE_SOUNDS[i].id === id) return NOISE_SOUNDS[i].label;
     }
@@ -12884,6 +13025,10 @@
   // app is opened again rather than frozen at whatever it last saw.
   function noiseMinutesLeft() {
     if (!noiseOn || !noise.timer) return null;
+    if (noiseMusic) {
+      var gone = noiseAwake.startedAt ? Date.now() - noiseAwake.startedAt : 0;
+      return Math.max(0, Math.ceil((noise.timer * 60000 - gone) / 60000));
+    }
     var player = el.noisePlayer;
     if (!player.duration || isNaN(player.duration)) return noise.timer;
     var left = player.duration - NOISE_BLOCK_SECONDS - player.currentTime;
@@ -12892,6 +13037,7 @@
 
   function noiseIsFading() {
     if (!noiseOn || !noise.timer) return false;
+    if (noiseMusic) return musicTimeUp();
     var player = el.noisePlayer;
     if (!player.duration || isNaN(player.duration)) return false;
     return player.currentTime > player.duration - NOISE_BLOCK_SECONDS;
@@ -12910,6 +13056,11 @@
   function noiseStart() {
     var player = el.noisePlayer;
     if (!player) return;
+    var track = noiseIsStandby() ? null : musicTrackFor(noise.sound);
+    if (track) {
+      musicStart(track);
+      return;
+    }
     var url;
     try {
       url = buildNoiseFile(noise.timer);
@@ -12923,6 +13074,7 @@
       // Safari leaves a hole most of a second wide wherever it loops, which
       // is why the timed files simply run to their end instead.
       player.loop = !noise.timer;
+      player.volume = 1;
       player.src = url;
       var started = player.play();
       if (started && started.catch) {
@@ -12938,6 +13090,7 @@
     }
     releaseNoiseFile();
     noiseFileUrl = url;
+    noiseMusic = null;
     noiseOn = true;
     startCountingAwake();
     describeNoiseToSystem();
@@ -12952,6 +13105,7 @@
     if (noiseOn && player) recordAwake(typeof why === "string" ? why : null);
     stopCountingAwake();
     noiseOn = false;
+    noiseMusic = null;
     if (player) {
       try {
         player.pause();
@@ -12996,6 +13150,7 @@
     var player = el.noisePlayer;
     if (!player) return;
     if (player.ended) { noiseStop("timer"); return; }
+    if (checkMusicTimer()) return;
     if (player.paused && player.currentTime > 0) noiseResume();
   }
 
@@ -13145,11 +13300,14 @@
     // hands a watch are the smaller half of it, and only on a wrist that
     // has one.
     el.noiseFabIcon.textContent = !noiseOn ? "🔈"
-      : noiseIsStandby() ? "💬" : "🔊";
+      : noiseIsStandby() ? "💬" : noiseMusic ? "🎵" : "🔊";
     el.noiseFabLeft.hidden = !noiseOn || left === null;
     if (left !== null) el.noiseFabLeft.textContent = left + "m";
-    el.noiseFab.setAttribute("aria-label", !noiseOn ? "Play white noise"
-      : noiseIsStandby() ? "Stop standby" : "Stop the white noise");
+    var song = noiseIsStandby() ? null : musicTrackFor(noise.sound);
+    el.noiseFab.setAttribute("aria-label", !noiseOn
+      ? (song ? "Play " + song.name : "Play white noise")
+      : noiseIsStandby() ? "Stop standby"
+      : noiseMusic ? "Stop the music" : "Stop the white noise");
   }
 
   function renderNoiseScreen() {
@@ -13159,18 +13317,25 @@
     el.noisePlayIcon.textContent = noiseOn ? "⏹" : "▶";
     el.noisePlayLabel.textContent = noiseOn ? "Stop" : "Play";
     var what = noiseIsStandby() ? "Standby, no sound" : describeNoiseSound(noise.sound);
-    el.noisePlayNote.textContent = noiseIsFading() ? "Fading out"
+    var song = !noiseIsStandby() && musicTrackFor(noise.sound);
+    el.noisePlayNote.textContent = noiseIsFading()
+      ? (noiseMusic ? what + " · finishing this time round" : "Fading out")
       : noiseOn && left !== null ? what + " · " + left + " min left"
-      : noiseOn ? what + " · until you stop it"
-      : what + " · " + describeNoiseTimer(noise.timer);
+      : noiseOn ? what + (noiseMusic ? " · on a loop" : "") + " · until you stop it"
+      : what + (song ? " · on a loop" : "") + " · " + describeNoiseTimer(noise.timer);
 
     chipStates(el.noiseSounds, noise.sound);
     chipStates(el.noiseLevels, noise.level);
     chipStates(el.noiseTimers, noise.timer);
     chipStates(el.noisePrev, noise.prev);
     chipStates(el.noiseNext, noise.next);
-    // Nothing to set the volume of when there is no sound.
-    el.noiseLevels.hidden = noiseIsStandby();
+    // Nothing to set the volume of when there is no sound. A song's level is
+    // the file's own, and an iPhone ignores any other a page asks for, so it
+    // is left to the phone's buttons rather than offered and not kept.
+    el.noiseLevels.hidden = noiseIsStandby() || !!song;
+    el.noiseLevelLabel.hidden = el.noiseLevels.hidden;
+    el.noiseMusicVolume.hidden = !song;
+    renderMusicList();
     renderAwakeLine();
   }
 
@@ -13331,14 +13496,379 @@
     // where beginning again costs nothing.
     if (field === "next" || field === "prev") {
       if (noiseOn) describeNoiseToSystem();
+    } else if (field === "timer" && noiseMusic) {
+      // A song is not a file made to the timer's length, so a new timer is
+      // simply a new time to stop — not a reason to start the song again.
+      checkMusicTimer();
     } else if (noiseOn) {
       noiseStart();
     }
+    if (field === "sound" && musicTrackFor(value)) prepareMusic(musicTrackFor(value).id);
     renderNoise();
   }
 
+  // ---------- playing a song ----------
+
+  // The sound is read out of IndexedDB ahead of the tap, so that play() is
+  // called while the tap is still the reason for it: an iPhone refuses to
+  // start sound a moment later, once the page has gone off to fetch it.
+  var musicReady = { id: null, url: null, loading: null, loadingId: null };
+
+  function prepareMusic(id) {
+    if (musicReady.id === id && musicReady.url) return Promise.resolve(musicReady.url);
+    if (musicReady.loading && musicReady.loadingId === id) return musicReady.loading;
+    if (!window.indexedDB) return Promise.resolve(null);
+    var loading = musicGet(id).then(function (rec) {
+      if (musicReady.loadingId !== id) return null;
+      musicReady.loading = null;
+      musicReady.loadingId = null;
+      if (!rec || !rec.buffer) return null;
+      // The old one is let go only if nothing is still reading it.
+      if (musicReady.url && noiseMusic !== musicReady.id) URL.revokeObjectURL(musicReady.url);
+      musicReady.id = id;
+      musicReady.url = URL.createObjectURL(new Blob([rec.buffer], { type: rec.type || "" }));
+      return musicReady.url;
+    }).catch(function () {
+      if (musicReady.loadingId === id) {
+        musicReady.loading = null;
+        musicReady.loadingId = null;
+      }
+      return null;
+    });
+    musicReady.loading = loading;
+    musicReady.loadingId = id;
+    return loading;
+  }
+
+  function musicStart(track) {
+    if (musicReady.id === track.id && musicReady.url) {
+      musicPlay(track, musicReady.url);
+      return;
+    }
+    // Not read yet — the first tap after the app opened, most likely. Worth
+    // trying; if the phone has decided the tap is too long ago, it says so.
+    prepareMusic(track.id).then(function (url) {
+      if (!url) {
+        showError("That song is no longer on this phone — add it again under Your music");
+        return;
+      }
+      musicPlay(track, url);
+    });
+  }
+
+  function musicPlay(track, url) {
+    var player = el.noisePlayer;
+    try {
+      player.pause();
+      // A lullaby is looped by the browser. The gap Safari leaves at the
+      // join, which is why the noise never loops, is between the end of a
+      // song and its beginning — where a gap belongs.
+      player.loop = true;
+      player.volume = 1;
+      player.src = url;
+      var started = player.play();
+      if (started && started.catch) {
+        started.catch(function () {
+          if (noiseMusic !== track.id) return;
+          noiseStop();
+          showError("Couldn't start the song. Tap play again — and on an iPhone, check the ring/silent switch.");
+        });
+      }
+    } catch (e) {
+      showError("Couldn't start the song");
+      return;
+    }
+    releaseNoiseFile();
+    noiseMusic = track.id;
+    noiseOn = true;
+    startCountingAwake();
+    describeNoiseToSystem();
+    renderNoise();
+  }
+
+  function musicTimeUp() {
+    return !!(noiseOn && noiseMusic && noise.timer && noiseAwake.startedAt &&
+      Date.now() - noiseAwake.startedAt >= noise.timer * 60000);
+  }
+
+  // Once the time is up the loop is taken off, so the song ends where it
+  // ends and the "ended" that follows is the timer going off. True when it
+  // had to be stopped there and then.
+  function checkMusicTimer() {
+    if (!noiseOn || !noiseMusic) return false;
+    var player = el.noisePlayer;
+    var up = musicTimeUp();
+    if (up && Date.now() - noiseAwake.startedAt >= noise.timer * 60000 + MUSIC_FINISH_MS) {
+      noiseStop("timer");
+      return true;
+    }
+    if (player.loop === up) player.loop = !up;
+    return false;
+  }
+
+  // ---------- adding and removing songs ----------
+
+  function musicNameFrom(fileName) {
+    var name = String(fileName || "").replace(/\.[a-z0-9]{1,5}$/i, "")
+      .replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+    if (name.length > 40) name = name.slice(0, 39).trim() + "…";
+    return name || "Song";
+  }
+
+  function musicSizeLabel(bytes) {
+    var mb = bytes / (1024 * 1024);
+    return (mb >= 10 ? Math.round(mb) : mb.toFixed(1)) + " MB";
+  }
+
+  function musicLengthLabel(seconds) {
+    if (!seconds || !isFinite(seconds)) return "";
+    var whole = Math.round(seconds);
+    var m = Math.floor(whole / 60);
+    var sec = whole % 60;
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+
+  function musicError(text) {
+    el.musicError.textContent = text || "";
+    el.musicError.hidden = !text;
+  }
+
+  // Whether this phone can play the file at all, found out by asking it to,
+  // and how long the song is while it is at it. A file that will not load
+  // is turned away here rather than kept and found silent at bedtime.
+  function probeMusic(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var probe = document.createElement("audio");
+      var done = false;
+      function finish(result) {
+        if (done) return;
+        done = true;
+        clearTimeout(wait);
+        probe.removeAttribute("src");
+        try { probe.load(); } catch (e) { /* only tidying */ }
+        URL.revokeObjectURL(url);
+        resolve(result);
+      }
+      // Some phones are slow to read a long file; no answer is not a no.
+      var wait = setTimeout(function () { finish({ ok: true, seconds: 0 }); }, MUSIC_PROBE_MS);
+      probe.preload = "metadata";
+      probe.addEventListener("loadedmetadata", function () {
+        finish({ ok: true, seconds: isFinite(probe.duration) ? probe.duration : 0 });
+      });
+      probe.addEventListener("error", function () { finish({ ok: false }); });
+      probe.src = url;
+      try { probe.load(); } catch (e) { /* the timeout answers instead */ }
+    });
+  }
+
+  function readFileBytes(file) {
+    if (file.arrayBuffer) return file.arrayBuffer();
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(reader.error); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  var musicAdding = false;
+
+  function addMusicFile(file) {
+    musicError("");
+    if (!file || musicAdding) return;
+    if (!window.indexedDB) {
+      musicError("This browser can't keep a song. Open the app from the Home Screen, or in Safari or Chrome.");
+      return;
+    }
+    if (musicTracks.length >= MUSIC_MAX_TRACKS) {
+      musicError("There's room for " + MUSIC_MAX_TRACKS + " songs. Remove one to add another.");
+      return;
+    }
+    if (file.size > MUSIC_MAX_BYTES) {
+      musicError("That file is " + musicSizeLabel(file.size) + ". A song of up to " +
+        musicSizeLabel(MUSIC_MAX_BYTES) + " fits.");
+      return;
+    }
+    if (file.type && file.type.indexOf("audio/") !== 0 && file.type.indexOf("video/") !== 0) {
+      musicError("That isn't a sound file. An MP3 or M4A works on every phone.");
+      return;
+    }
+    musicAdding = true;
+    el.musicAdd.disabled = true;
+    el.musicAdd.textContent = "Adding…";
+    var id = "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    var track;
+    probeMusic(file).then(function (probe) {
+      if (!probe.ok) throw new Error("unplayable");
+      track = { id: id, name: musicNameFrom(file.name), bytes: file.size,
+        seconds: probe.seconds, type: file.type || "" };
+      return readFileBytes(file);
+    }).then(function (buffer) {
+      return musicPut(id, buffer, file.type || "");
+    }).then(function () {
+      musicTracks.push(track);
+      if (!saveMusicList()) {
+        musicTracks.pop();
+        musicDelete(id).catch(function () { /* tidied at the next start */ });
+        return;
+      }
+      // Asked once there is something worth keeping: a phone short of room
+      // may otherwise clear a site's storage without asking.
+      try {
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+      } catch (e) { /* kept either way, just less firmly */ }
+      renderMusicChips();
+      pickNoise("sound", MUSIC_PREFIX + id);
+      showToast("Added: " + track.name);
+    }).catch(function (e) {
+      if (e && e.message === "unplayable") {
+        musicError("This phone can't play that file. An MP3 or M4A works on every phone.");
+      } else if (e && e.name === "QuotaExceededError") {
+        musicError("There isn't room on this phone for that song.");
+      } else {
+        musicError("Couldn't add that song.");
+      }
+      musicDelete(id).catch(function () { /* nothing was kept */ });
+    }).then(function () {
+      musicAdding = false;
+      el.musicAdd.disabled = false;
+      el.musicAdd.textContent = "＋ Add a song from this phone";
+      renderNoise();
+    });
+  }
+
+  // Off the list at once, out of storage only once the undo has gone.
+  function removeMusic(id) {
+    var at = -1;
+    for (var i = 0; i < musicTracks.length; i++) if (musicTracks[i].id === id) at = i;
+    if (at < 0) return;
+    var track = musicTracks[at];
+    var wasChosen = noise.sound === MUSIC_PREFIX + id;
+    if (noiseMusic === id) noiseStop("app");
+    musicTracks.splice(at, 1);
+    saveMusicList();
+    if (wasChosen) {
+      noise.sound = NOISE_DEFAULTS.sound;
+      saveNoisePrefs(noise);
+    }
+    renderMusicChips();
+    renderNoise();
+    var restored = false;
+    showToast("Removed: " + track.name, function () {
+      restored = true;
+      musicTracks.splice(Math.min(at, musicTracks.length), 0, track);
+      saveMusicList();
+      if (wasChosen) {
+        noise.sound = MUSIC_PREFIX + id;
+        saveNoisePrefs(noise);
+      }
+      renderMusicChips();
+      renderNoise();
+    });
+    setTimeout(function () {
+      if (restored) return;
+      if (musicReady.id === id) {
+        if (musicReady.url) URL.revokeObjectURL(musicReady.url);
+        musicReady.id = null;
+        musicReady.url = null;
+      }
+      musicDelete(id).catch(function () { /* tidied at the next start */ });
+    }, UNDO_TIMEOUT + 1000);
+  }
+
+  // The songs sit in the Sound row with the noise, because choosing between
+  // them is one choice: what plays when the corner button is tapped.
+  function renderMusicChips() {
+    var old = el.noiseSounds.querySelectorAll(".mu-chip");
+    for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i]);
+    musicTracks.forEach(function (track) {
+      var chip = buildNoiseChip(el.noiseSounds, MUSIC_PREFIX + track.id, track.name, "🎵 song");
+      chip.classList.add("mu-chip");
+      chip.addEventListener("click", function () { pickNoise("sound", MUSIC_PREFIX + track.id); });
+    });
+    chipStates(el.noiseSounds, noise.sound);
+  }
+
+  // Drawn again only when something in it has changed. The screen is redrawn
+  // several times a second while a sound plays, and a button replaced under
+  // a finger is a tap that never lands.
+  var musicListDrawn = null;
+
+  function renderMusicList() {
+    var list = el.musicList;
+    var key = JSON.stringify([musicTracks, noiseOn && noiseMusic]);
+    if (key === musicListDrawn) return;
+    musicListDrawn = key;
+    list.innerHTML = "";
+    if (!musicTracks.length) {
+      var empty = document.createElement("p");
+      empty.className = "mu-empty";
+      empty.textContent = "No songs yet.";
+      list.appendChild(empty);
+      return;
+    }
+    musicTracks.forEach(function (track) {
+      var playing = noiseOn && noiseMusic === track.id;
+      var row = document.createElement("div");
+      row.className = "mu-row" + (playing ? " playing" : "");
+      row.dataset.id = track.id;
+      var play = document.createElement("button");
+      play.type = "button";
+      play.className = "mu-play";
+      play.textContent = playing ? "⏹" : "▶";
+      play.setAttribute("aria-label", (playing ? "Stop " : "Play ") + track.name);
+      play.addEventListener("click", function () {
+        if (playing) {
+          noiseStop("app");
+          return;
+        }
+        if (noise.sound !== MUSIC_PREFIX + track.id) {
+          noise.sound = MUSIC_PREFIX + track.id;
+          saveNoisePrefs(noise);
+        }
+        noiseStart();
+      });
+      var body = document.createElement("div");
+      body.className = "mu-body";
+      var name = document.createElement("div");
+      name.className = "mu-name";
+      name.textContent = track.name;
+      var meta = document.createElement("div");
+      meta.className = "mu-meta";
+      meta.textContent = [musicLengthLabel(track.seconds), musicSizeLabel(track.bytes)]
+        .filter(Boolean).join(" · ");
+      body.appendChild(name);
+      body.appendChild(meta);
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "mu-del";
+      del.textContent = "🗑";
+      del.setAttribute("aria-label", "Remove " + track.name);
+      del.addEventListener("click", function () { removeMusic(track.id); });
+      row.appendChild(play);
+      row.appendChild(body);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  el.musicAdd.addEventListener("click", function () {
+    musicError("");
+    el.musicFile.click();
+  });
+
+  el.musicFile.addEventListener("change", function () {
+    var file = el.musicFile.files && el.musicFile.files[0];
+    el.musicFile.value = "";
+    addMusicFile(file);
+  });
+
   buildNoiseChips();
+  renderMusicChips();
   buildRemindChips();
+  if (musicTrackFor(noise.sound)) prepareMusic(musicTrackFor(noise.sound).id);
+  musicTidy();
 
   el.remindStart.addEventListener("click", function () {
     if (!noiseOn) noiseStartSilent();
@@ -13429,7 +13959,10 @@
     noiseAwake.pausedAt = noiseAwake.pausedAt || Date.now();
     [1000, 4000, 15000].forEach(function (wait) { setTimeout(noiseResume, wait); });
   });
-  el.noisePlayer.addEventListener("timeupdate", renderNoise);
+  el.noisePlayer.addEventListener("timeupdate", function () {
+    if (checkMusicTimer()) return;
+    renderNoise();
+  });
 
 
   // ---------- ask an AI ----------
@@ -14066,9 +14599,13 @@
       en: "Measurements → Add note is for anything that isn't a number, such as a rash. A photo never lives in the app; paste a link to a shared album instead. The album's link can be saved in Settings.",
       ru: "Measurements → «Add note» — для всего, что не число, например сыпь. Фото в приложении не хранятся: вставьте ссылку на общий альбом. Ссылку на альбом можно сохранить в настройках." },
     { id: "noise", title: { en: "White noise", ru: "Белый шум" }, go: { click: "noiseOpen" },
-      words: "white noise sound shush rain play music белый шум звук шшш дождь музык",
+      words: "white noise sound shush rain play белый шум звук шшш дождь",
       en: "White noise is 🔊 in the top bar. Pick a sound and press play; it keeps going with the screen off. Nothing in the app ever starts it by itself.",
       ru: "Белый шум — 🔊 вверху. Выберите звук и нажмите play; он играет и с выключенным экраном. Сам по себе он никогда не включается." },
+    { id: "music", title: { en: "Your own music", ru: "Своя музыка" }, go: { click: "noiseOpen" },
+      words: "*music *song *songs *lullaby brahms mp3 upload loop *музык песн колыбельн брамс загрузить трек мелоди",
+      en: "🔊 in the top bar → Your music → Add a song: pick an MP3 or M4A on the phone. It joins the sounds under Sound and plays on a loop; once it is chosen, the 🔈 button on the main screen starts it with one tap. The song stays on this phone only — never synced, exported or shared.",
+      ru: "🔊 вверху → «Your music» → «Add a song»: выберите MP3 или M4A на телефоне. Песня появится среди звуков в «Sound» и играет по кругу; если она выбрана, кнопка 🔈 на главном экране включает её одним нажатием. Песня хранится только на этом телефоне — не синхронизируется, не экспортируется и никуда не отправляется." },
     { id: "remind", title: { en: "The wake-window reminder", ru: "Напоминание о времени бодрствования" }, go: { click: "routineOpen" },
       words: "remind reminder alarm nudge standby notification wake window напомин будильник уведомлен standby",
       en: "The reminder lives on ⏰ Daily routine, behind ⋯. It needs Standby — silent playback that keeps the app awake — which only starts when you turn it on there.",

@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=130">
+<link rel="stylesheet" href="style.css?v=131">
 </head>
 <body>
 
@@ -1057,7 +1057,7 @@
 
     <header class="topbar topbar-settings">
       <button class="icon-btn" id="noiseBack" aria-label="Back">←</button>
-      <span class="topbar-heading">White noise</span>
+      <span class="topbar-heading">White noise &amp; music</span>
     </header>
 
     <main class="content">
@@ -1081,10 +1081,22 @@
         <div class="nz-label">Sound</div>
         <div class="nz-chips" id="noiseSounds"></div>
         <p class="data-hint"><strong>Standby</strong> makes no sound at all. A phone stops running an app once the screen is off — unless it is playing something — so this is what keeps the app alive in your pocket. Three things come of that: a <strong>notification</strong> when the wake window is up, set under ⏰ Daily routine; another when the nursery phone hears crying, set below; and on an Apple Watch, a feed, a nappy or a sleep logged from the buttons either side of play, without taking the phone out.</p>
-        <div class="nz-label">Volume</div>
+        <div class="nz-label" id="noiseLevelLabel">Volume</div>
         <div class="nz-chips" id="noiseLevels"></div>
+        <p class="data-hint" id="noiseMusicVolume" hidden>A song plays at the volume you set with the phone's own buttons.</p>
         <div class="nz-label">Stop after</div>
         <div class="nz-chips" id="noiseTimers"></div>
+      </section>
+
+      <section class="data-panel" id="musicPanel">
+        <div class="nz-label">🎵 Your music</div>
+        <div class="mu-list" id="musicList"></div>
+        <button type="button" class="data-btn data-btn-import mu-add" id="musicAdd">＋ Add a song from this phone</button>
+        <input type="file" id="musicFile" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac" hidden>
+        <p class="manual-error" id="musicError" hidden></p>
+        <p class="data-hint">Any song you have as a file — an MP3 or M4A from Files, iCloud Drive or Downloads. Once added it sits under <strong>Sound</strong> above, next to the noise, and plays on a loop: the button in the corner of the main screen then starts it with one tap. With a timer, it stops at the end of the song once the time is up.</p>
+        <p class="data-hint">The song stays on this phone only. It is never synced, backed up, exported, shared or sent anywhere, so add it on each phone that should play it. Songs from Apple Music or Spotify cannot be added — they are locked inside their own apps.</p>
+        <p class="data-hint">The app comes with no music of its own. A tune as old as Brahms' Lullaby (1868) is free for anyone, but each recording belongs to whoever made it — use one you have bought, or one marked public domain, as on Musopen or Wikimedia Commons.</p>
       </section>
 
       <section class="data-panel">
@@ -1108,7 +1120,7 @@
 
       <section class="data-panel">
         <p class="data-hint">Nothing here starts by itself: logging a sleep, a wake-up or a feed never turns the sound or Standby on. Only the play button does.</p>
-        <p class="data-hint">The sound is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button.</p>
+        <p class="data-hint">The noise is made in your browser — no file is downloaded and nothing is sent anywhere. It keeps playing with the screen off, and the lock screen gets a pause button. So does a song of your own.</p>
         <p class="data-hint">These settings belong to this phone. They are not synced, exported or shared, because the right sound and volume depend on the room.</p>
         <p class="data-hint" id="noiseSilentHint">On an iPhone the ring/silent switch has to be on, or the phone plays nothing.</p>
       </section>
@@ -1588,6 +1600,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=130"></script>
+<script src="app.js?v=131"></script>
 </body>
 </html>
