@@ -414,7 +414,11 @@
   // and writes nothing to it, and says why. Half-reading it would put stripped
   // entries on this phone with their timestamps untouched, which no later
   // update could tell from the real thing.
-  var DOC_FORMAT = 4;
+  // 5: the live file may leave out entries that sit, at the same or a newer
+  // version, in a month file of the archive. A copy that does not know about
+  // the archive would take their absence for loss and push the whole past
+  // back, so it is kept out by this number like any other newer shape.
+  var DOC_FORMAT = 5;
   // Long enough to gather a burst of taps into one commit, short enough that
   // the other phone has it by the time anyone thinks to look.
   var SYNC_DEBOUNCE = 4000;
@@ -7770,10 +7774,101 @@
     });
   }
 
+  // Months whose index lists an entry this phone no longer has — a restored
+  // backup, a browser that was cleared, anything that took the local copy
+  // back behind the archive. Read again whatever their sha says. Tombstones
+  // do not count: those are pruned here once old, and asking for them back
+  // would mean reading the month again on every sync for ever.
+  function archiveStaleMonths() {
+    var have = {};
+    events.forEach(function (e) { have[e.id] = true; });
+    return Object.keys(archiveIndex.months).filter(function (month) {
+      var ids = archiveIndex.months[month].ids;
+      for (var id in ids) {
+        if (Object.prototype.hasOwnProperty.call(ids, id) && !ids[id][1] && !have[id]) return true;
+      }
+      return false;
+    });
+  }
+
+  // Brings the archive's news in: the month files written since we last
+  // looked are read and merged, and the index is made to match the folder.
+  // Nothing in here can fail the sync it rides in on. A month that cannot be
+  // read, or does not arrive, is simply left out of the index, and an entry
+  // the index does not cover always goes up in the live file — so the worst
+  // a bad day for the archive can do is make that file bigger for a while.
+  //
+  // Resolves to { pulled, complete }: complete only when every month listed
+  // up there is now in the index at its current sha.
+  function syncArchive(config, listing) {
+    return loadArchiveIndex().then(function () {
+      if (!listing) return { pulled: 0, complete: false };
+      if (!listing.archiveSha) {
+        // No folder up there: nothing archived yet, or it was taken away by
+        // hand. Either way the index has nothing true left to say.
+        if (archiveHasMonths() || archiveIndex.dirSha) archiveForget();
+        return { pulled: 0, complete: true };
+      }
+      var stale = archiveStaleMonths();
+      if (listing.archiveSha === archiveIndex.dirSha && archiveIndex.repo === config.repo && !stale.length) {
+        return { pulled: 0, complete: true };
+      }
+      return listArchive(config).then(function (months) {
+        var listed = {};
+        months.forEach(function (m) { listed[m.month] = m.sha; });
+        Object.keys(archiveIndex.months).forEach(function (month) {
+          if (!listed[month]) archiveDropMonth(month);
+        });
+        var todo = months.filter(function (m) {
+          var known = archiveIndex.months[m.month];
+          return !known || known.sha !== m.sha || stale.indexOf(m.month) !== -1;
+        });
+        var pulled = 0;
+        var complete = true;
+        // One at a time: usually there are none, and on the day a phone
+        // first meets the archive there is no hurry worth a burst.
+        return todo.reduce(function (chain, m) {
+          return chain.then(function () {
+            return downloadArchiveMonth(config, m.month).then(function (got) {
+              if (!got.doc || !got.sha) {
+                archiveDropMonth(m.month);
+                complete = false;
+                return;
+              }
+              var list = (Array.isArray(got.doc.events) ? got.doc.events : [])
+                .map(normaliseImported).filter(Boolean);
+              pulled += mergeIntoLocal(list);
+              archiveSaveMonth(m.month, got.sha, list);
+            }, function () {
+              archiveDropMonth(m.month);
+              complete = false;
+            });
+          });
+        }, Promise.resolve()).then(function () {
+          if (complete) archiveSaveDir(listing.archiveSha, config.repo);
+          return { pulled: pulled, complete: complete };
+        });
+      }, function () {
+        return { pulled: 0, complete: false };
+      });
+    });
+  }
+
+  // Every entry, less those the archive is known to hold at this version or a
+  // newer one. Nothing else is ever left out — not for being old, not for
+  // anything — so a phone that has not managed to read the archive simply
+  // sends more than it needs to.
+  function liveFileEvents() {
+    return events.filter(function (e) { return !archiveCovers(e); });
+  }
+
   function localDocument() {
-    return {
+    var live = liveFileEvents();
+    var doc = {
       app: "baby-tracker",
-      version: DOC_FORMAT,
+      // Still the old number while nothing is left out, so a copy that has
+      // not been updated yet keeps working until the day it would not.
+      version: live.length < events.length ? DOC_FORMAT : 4,
       // Not read by anything — it is for whoever opens the file on GitHub and
       // wants to know which release last touched it.
       writtenBy: APP_VERSION,
@@ -7788,13 +7883,19 @@
         routine: routine,
         updatedAt: metaStamp()
       },
-      events: events,
+      events: live,
       plans: plans,
       shopping: shopping,
       rotaShifts: rotaShifts,
       milk: milk,
       journal: journal
     };
+    // Not read by anything: for whoever opens the file on GitHub and wonders
+    // where the rest went.
+    if (archiveHasMonths()) {
+      doc.archive = { dir: ARCHIVE_DIR, months: Object.keys(archiveIndex.months).sort() };
+    }
+    return doc;
   }
 
   function mergePlans(remotePlans) {
@@ -7842,10 +7943,13 @@
     return changed;
   }
 
+  // "Up there" is the live file and the archive together: an entry the
+  // archive holds at this version or newer needs nothing from us.
   function remoteHasNothingOfOurs(remoteEvents) {
     var remoteById = {};
     (remoteEvents || []).forEach(function (e) { if (e && e.id) remoteById[e.id] = e; });
     return events.some(function (e) {
+      if (archiveCovers(e)) return false;
       var mirror = remoteById[e.id];
       return !mirror || updatedAtOf(e) > (mirror.updatedAt || mirror.time);
     });
@@ -7940,7 +8044,9 @@
         return claimVoiceQueue(config, queued)
           .catch(function () { return 0; })
           .then(function (pulledVoice) {
-            return mergeAndPush(config, found, remoteDoc, pulledVoice, remaining);
+            return syncArchive(config, found.listing).then(function (fromArchive) {
+              return mergeAndPush(config, found, remoteDoc, pulledVoice + fromArchive.pulled, remaining);
+            });
           });
       });
     };
@@ -8025,7 +8131,14 @@
         remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
         remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired) ||
         remoteJournal.some(tombstoneExpired);
-      var mustPush = !found.sha || remoteCarriesExpired || remoteHasNothingOfOurs(remoteEvents) ||
+      // The live file still carrying what the archive now holds — left there
+      // by a fold that wrote the months and then lost the race for the live
+      // file, say. Sending it again without them is what shrinks it.
+      var remoteCarriesArchived = remoteEvents.some(function (e) {
+        return e && e.id && archiveCovers(e);
+      });
+      var mustPush = !found.sha || remoteCarriesExpired || remoteCarriesArchived ||
+        remoteHasNothingOfOurs(remoteEvents) ||
         remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
         remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
         remoteMissesOurJournal(remoteJournal) ||
