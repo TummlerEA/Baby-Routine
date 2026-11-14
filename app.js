@@ -7904,7 +7904,12 @@
       if (!(err && (err.http || err.unreadable)) && syncRetries < SYNC_RETRY_TIMES) {
         syncRetries++;
         clearTimeout(syncRetryTimer);
-        syncRetryTimer = setTimeout(function () { syncNow("retry"); }, SYNC_RETRY_AFTER * syncRetries);
+        syncRetryTimer = setTimeout(function () {
+          // Same rule as the poll: in the dark with nothing playing, nobody
+          // is waiting on this phone, and opening it syncs anyway.
+          if (document.hidden && !noiseOn) return;
+          syncNow("retry");
+        }, SYNC_RETRY_AFTER * syncRetries);
       }
       return false;
     });

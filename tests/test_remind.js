@@ -360,6 +360,9 @@ const APP = h.APP;
 
   await page.evaluate(() => window.__screen(false));
   await page.waitForTimeout(300);
+  // Coming back on, a sync that finds no connection is tried again a few
+  // times within the first minute. Those are not the poll; let them pass.
+  await pollsOver('01:00');
   const lit = await pollsOver('10:00');
   ok('with the screen on it polls every minute', lit > 0, lit);
 
