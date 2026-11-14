@@ -50,7 +50,7 @@ Archive file body:
 
 The live document keeps its existing shape (`app`, `version`, `writtenBy`, `meta`, `events`, `plans`, …) and adds one field:
 ```json
-"archive": { "dir": "archive", "foldedAt": "2026-11-14T10:00:00.000Z" }
+"archive": { "dir": "archive", "months": ["2026-08", "2026-09"] }
 ```
 This field is informational only. The source of truth for which months exist and their shas is the **directory listing** of `archive/`.
 
@@ -129,9 +129,9 @@ The lock check is `remoteFormat > DOC_FORMAT`. With `DOC_FORMAT = 5`, v133 still
   - Add `putArchiveMonth(config, month, doc, sha)`.
   - Commit, then run `node tests/run.js sync` — it must stay green.
 - [x] **S2. Archive index module** (IndexedDB plus memory fallback). Load it at startup next to `musicTidy()` and clear it on disconnect or repo change. Add the `covered(event)` helper.
-- [ ] **S3. Reading archives.** Do step 3 of the algorithm, the I5 heal check, and the `covered`-aware `remoteHasNothingOfOurs` and live builder (steps 7–8). Bump `DOC_FORMAT` to 5. No fold yet. Check by hand that a repo with archives created by the test reads correctly.
+- [x] **S3. Reading archives.** Do step 3 of the algorithm, the I5 heal check, and the `covered`-aware `remoteHasNothingOfOurs` and live builder (steps 7–8). Bump `DOC_FORMAT` to 5. No fold yet. Check by hand that a repo with archives created by the test reads correctly.
 - [ ] **S4. Fold** (step 6), including the 409 loop for archive months and abort-safety.
-- [ ] **S5. Tests: `tests/test_archive.js`.** Extend the fake GitHub from `tests/test_sync.js`: directory listings with tree shas, multiple paths, per-path shas, PUT/409 per path, blobs per sha. Cover the matrix below.
+- [ ] **S5. Tests: `tests/test_archive.js`.** (Reading part done in S3: matrix 9, 10, 11, 12 and the reading half of 2 and 3. Fold scenarios still to add.) Extend the fake GitHub from `tests/test_sync.js`: directory listings with tree shas, multiple paths, per-path shas, PUT/409 per path, blobs per sha. Cover the matrix below.
 - [ ] **S6. User-facing text.**
   - README sync bullet: add the archive paragraph.
   - Help topic `sync` (`app.js`, `id: "sync"`): one line in EN and RU about monthly archives and that all phones must update together.
