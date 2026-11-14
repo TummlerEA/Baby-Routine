@@ -443,13 +443,13 @@
   // The settled past, one file per month, in a folder beside the live file.
   // An entry leaves the live file once it has gone unchanged for HOT_DAYS,
   // and a fold to move such entries out happens once any have gone unchanged
-  // for HOT_DAYS + FOLD_SLACK_DAYS, so the live file holds two to three weeks.
+  // for HOT_DAYS + FOLD_SLACK_DAYS, so the live file holds a week to ten days.
   var ARCHIVE_DIR = "archive";
   var ARCHIVE_NAME_RE = /^events-(\d{4}-\d{2})\.json$/;
   var ARCHIVE_DB = "baby-tracker-archive";
   var ARCHIVE_STORE = "months";
-  var HOT_DAYS = 14;
-  var FOLD_SLACK_DAYS = 7;
+  var HOT_DAYS = 7;
+  var FOLD_SLACK_DAYS = 3;
   // One source of truth for the version on screen. It is read from this
   // script's own ?v= cache-busting query, so bumping the URL in index.html is
   // the only edit needed and the number shown can never disagree with the file
@@ -7498,7 +7498,7 @@
   //
   // The settled past moves out of the live file into one file per calendar
   // month (UTC, by the entry's own time), which hardly ever changes, so a tap
-  // sends a fortnight rather than the whole history. SYNC_ARCHIVE_PLAN.md has
+  // sends about a week rather than the whole history. SYNC_ARCHIVE_PLAN.md has
   // the design and the rules that keep it from ever losing an entry.
 
   function archivePath(month) {
@@ -7877,7 +7877,7 @@
 
   // Due once anything has gone unchanged for HOT_DAYS + FOLD_SLACK_DAYS and
   // is not yet in the archive; it then takes everything past HOT_DAYS. So a
-  // fold happens about once a week, and the live file holds two to three.
+  // fold happens every few days, and the live file holds a week to ten days.
   function foldDue() {
     var limit = new Date(Date.now() - (HOT_DAYS + FOLD_SLACK_DAYS) * MS_DAY).toISOString();
     return events.some(function (e) {

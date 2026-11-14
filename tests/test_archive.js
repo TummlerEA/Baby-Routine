@@ -1,7 +1,7 @@
 "use strict";
 
 // The archive: the settled past kept in one file per month beside the live
-// file, so a tap sends a fortnight rather than the whole history. Everything
+// file, so a tap sends about a week rather than the whole history. Everything
 // here is about one promise — however the files are split, written, raced
 // or lost, no entry goes missing and the two phones end up agreeing — and
 // one benefit: the everyday sync stays small.
@@ -23,6 +23,7 @@ const gh = {
   puts: [],           // { path, bytes, doc }
   gets: [],           // paths fetched with content
   conflictOnce: {},   // path -> true: the next PUT to it is refused with 409
+  beforePut: {},      // path -> fn: run once just before a PUT to it is judged
   hang: false
 };
 
@@ -79,6 +80,11 @@ function answer(url, method, body) {
   }
   if (method === 'PUT') {
     const sent = JSON.parse(body);
+    if (gh.beforePut[path]) {
+      const fn = gh.beforePut[path];
+      delete gh.beforePut[path];
+      fn();
+    }
     const f = gh.files[path];
     if (gh.conflictOnce[path]) {
       delete gh.conflictOnce[path];
@@ -100,7 +106,7 @@ const errs = [];
 
 async function phone(b, opts) {
   opts = opts || {};
-  const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, timezoneId: 'UTC' });
+  const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, timezoneId: process.env.TZ || 'UTC' });
   await ctx.clock.install({ time: opts.time || NOW });
   await ctx.exposeFunction('__gh', (url, method, body) => answer(url, method, body));
   await ctx.addInitScript(noIdb => {
@@ -175,6 +181,7 @@ function reset() {
   gh.puts = [];
   gh.gets = [];
   gh.conflictOnce = {};
+  gh.beforePut = {};
   gh.hang = false;
 }
 
@@ -248,6 +255,164 @@ function reset() {
   const r = await phone(b);
   ok('an archive month over a megabyte is read whole', (await localEvents(r)).length === big.length);
   await r.context().close();
+
+
+  // ================= folding: the first sync on an old log =================
+  reset();
+  const all = spread('2026-08-01T00:00:00Z', 105, 30);   // 1 Aug to 13 Nov, 3,150 entries
+  const allIds = ids(all);
+  setFile(LOG, liveDoc(all, 4));
+  const a = await phone(b);
+  const cutoff = new Date(NOW.getTime() - 7 * DAY).toISOString();
+  // The page's clock has run on a few seconds since NOW.
+  const cutoffLate = new Date(NOW.getTime() - 7 * DAY + 60000).toISOString();
+  const months = Object.keys(gh.files).filter(x => x.indexOf('archive/') === 0).sort();
+  ok('the first sync folds the past into one file per month',
+    months.join(',') === 'archive/events-2026-08.json,archive/events-2026-09.json,archive/events-2026-10.json,archive/events-2026-11.json', months);
+  const archived = [].concat(...months.map(x => doc(x).events));
+  ok('each holding exactly its month, and only what is a week old',
+    months.every(x => doc(x).events.every(e => 'archive/events-' + e.time.slice(0, 7) + '.json' === x)) &&
+    archived.every(e => e.updatedAt < cutoffLate), archived.length);
+  live = doc(LOG);
+  ok('the live file keeps the last week, in the new format',
+    live.version === 5 && live.events.length > 0 && live.events.every(e => e.updatedAt >= cutoff),
+    [live.version, live.events.length]);
+  ok('and between them every entry is still there, once', ids(archived.concat(live.events)) === allIds &&
+    archived.length + live.events.length === all.length);
+  const order = gh.puts.map(x => x.path);
+  ok('the months were written before the live file that leaves them out',
+    order.lastIndexOf(LOG) > order.lastIndexOf('archive/events-2026-11.json'), order);
+  ok('the phone itself still has everything', (await localEvents(a)).length === all.length);
+
+  await a.click('#btnFeed');
+  sent = await syncNow(a);
+  // A week at 30 entries a day, against about 800 KB for the whole log.
+  ok('after that, a tap sends only the live file, a small one',
+    sent.length === 1 && sent[0].path === LOG && sent[0].bytes < 60 * 1024, sent.map(x => [x.path, x.bytes]));
+
+  // ---------- another phone joins ----------
+  const w = await phone(b);
+  ok('a phone joining afterwards gets the whole history', (await localEvents(w)).length === all.length + 1,
+    (await localEvents(w)).length);
+
+  // ---------- an archived entry edited ----------
+  const old = all[200];   // in August
+  const edit = async (pg, id, change) => {
+    await pg.evaluate(([id, change]) => {
+      const list = JSON.parse(localStorage.getItem('baby-tracker-events'));
+      const e = list.find(x => x.id === id);
+      Object.assign(e, change, { updatedAt: new Date().toISOString() });
+      localStorage.setItem('baby-tracker-events', JSON.stringify(list));
+    }, [id, change]);
+    await pg.reload();
+    await pg.waitForLoadState('load');
+    await synced(pg);
+  };
+  await edit(a, old.id, { type: 'diaper', nappy: 'dirty' });
+  ok('an edit to an archived entry goes up in the live file',
+    doc(LOG).events.some(e => e.id === old.id && e.nappy === 'dirty'));
+  ok('and leaves the archive alone for now',
+    doc('archive/events-2026-08.json').events.find(e => e.id === old.id).nappy !== 'dirty');
+  await syncNow(w);
+  ok('the other phone takes the edit over the archived copy',
+    (await localEvents(w)).find(e => e.id === old.id).nappy === 'dirty');
+
+  // ---------- an archived entry deleted ----------
+  const gone = all[1500];   // in September
+  await edit(w, gone.id, { deleted: true });
+  await syncNow(a);
+  const onA = (await localEvents(a)).find(e => e.id === gone.id);
+  ok('deleting an archived entry reaches the other phone', onA && onA.deleted === true, onA);
+
+  // ---------- three weeks on: the next fold ----------
+  const later = new Date(NOW.getTime() + 22 * DAY);
+  await a.context().clock.setSystemTime(later);
+  sent = await syncNow(a);
+  ok('three weeks on, a fold takes the edit into its month',
+    doc('archive/events-2026-08.json').events.find(e => e.id === old.id).nappy === 'dirty');
+  ok('and the deletion into its', doc('archive/events-2026-09.json').events.find(e => e.id === gone.id).deleted === true);
+  live = doc(LOG);
+  ok('and the live file lets go of both', !live.events.some(e => e.id === old.id || e.id === gone.id),
+    live.events.length);
+  ok('and of everything else a week old',
+    live.events.every(e => e.updatedAt >= new Date(later.getTime() - 7 * DAY).toISOString()), live.events.length);
+  await w.context().clock.setSystemTime(later);
+  await syncNow(w);
+  const wHas = await localEvents(w);
+  ok('both phones still agree on every entry', ids(wHas) === ids(await localEvents(a)), [wHas.length]);
+
+  // ---------- a month past its deletions: no fetching it again and again ----------
+  const muchLater = new Date(NOW.getTime() + 60 * DAY);
+  await a.context().clock.setSystemTime(muchLater);
+  await syncNow(a);
+  ok('a tombstone past its time is gone from the phone',
+    !(await localEvents(a)).some(e => e.id === gone.id));
+  gh.gets = [];
+  await syncNow(a);
+  await syncNow(a);
+  ok('and does not make it read its month on every sync', !gh.gets.some(g => g.indexOf('archive/') === 0), gh.gets);
+  await a.context().close();
+  await w.context().close();
+
+  // ================= two phones folding at once =================
+  reset();
+  const shared = spread('2026-08-01T00:00:00Z', 20, 10);
+  setFile(LOG, liveDoc(shared, 4));
+  const other = entry('2026-08-10T05:00:00Z');
+  // Just as this phone writes August, another one does: August now holds one
+  // entry this phone has never seen.
+  gh.beforePut['archive/events-2026-08.json'] = () => {
+    setFile('archive/events-2026-08.json', archiveDoc('2026-08', shared.slice(0, 50).concat([other])));
+  };
+  const c = await phone(b);
+  const aug2 = doc('archive/events-2026-08.json').events;
+  ok('when another phone wrote the month first, it is read again and merged, not overwritten',
+    aug2.length === shared.length + 1 && aug2.some(e => e.id === other.id), aug2.length);
+  ok('and the entry only the other phone had is now here too',
+    (await localEvents(c)).some(e => e.id === other.id));
+  ok('the live file still leaves the month out', doc(LOG).events.length === 0, doc(LOG).events.length);
+  await c.context().close();
+
+  // ================= a phone that was away =================
+  reset();
+  const base = spread('2026-08-01T00:00:00Z', 20, 10);
+  setFile('archive/events-2026-08.json', archiveDoc('2026-08', base));
+  setFile(LOG, liveDoc(recent, 5));
+  // Logged a month ago on a phone that was offline the whole time, or out of
+  // an old backup put back: old timestamps, never seen up there.
+  const away = [entry('2026-10-12T08:00:00Z'), entry('2026-08-15T09:30:00Z')];
+  const d = await phone(b, { own: away });
+  const e1 = await phone(b);
+  const eHas = await localEvents(e1);
+  ok('entries made long ago on a phone that was away still reach the other phone',
+    away.every(x => eHas.some(y => y.id === x.id)), eHas.length);
+  const augNow = doc('archive/events-2026-08.json').events;
+  ok('folded straight into their months', augNow.some(y => y.id === away[1].id) &&
+    doc('archive/events-2026-10.json').events.some(y => y.id === away[0].id));
+  await d.context().close();
+  await e1.context().close();
+
+  // ================= a log written by a newer version =================
+  reset();
+  setFile(LOG, liveDoc(recent, 6));
+  const before = gh.puts.length;
+  const ctxL = await b.newContext({ viewport: { width: 390, height: 900 }, timezoneId: process.env.TZ || 'UTC' });
+  await ctxL.clock.install({ time: NOW });
+  await ctxL.exposeFunction('__gh', (url, method, body) => answer(url, method, body));
+  await ctxL.addInitScript(() => {
+    const real = window.fetch;
+    window.fetch = (url, o) => String(url).indexOf('api.github.com') === -1 ? real(url, o) :
+      window.__gh(String(url), (o && o.method) || 'GET', (o && o.body) || null)
+        .then(r => new Response(r.body, { status: r.status }));
+  });
+  const L = await ctxL.newPage();
+  L.on('pageerror', e => errs.push('ERR ' + e.message));
+  await L.goto(APP);
+  await L.evaluate(() => localStorage.setItem('baby-tracker-sync', JSON.stringify({ repo: 'us/log', token: 'x', sha: null })));
+  await L.goto(APP);
+  await L.waitForFunction(() => /behind the log/.test(document.getElementById('syncStatus').textContent));
+  ok('a log in a newer format still locks this version out, writing nothing', gh.puts.length === before);
+  await ctxL.close();
 
   ok('no page errors', errs.length === 0, errs);
   await b.close();
