@@ -79,13 +79,18 @@ const PLOT_W = 320 - 38 - 4;
   ok('and its totals add up to its 25 hours', /asleep 15h 30m/.test(line) && /awake 8h(?! ?\d)/.test(line) &&
     /hard settling 1h 30m/.test(line), line);
 
-  await page.reload();
-  await page.waitForLoadState('load');
-  await page.waitForTimeout(300);
-  await page.click('#statsOpen');
-  await page.waitForSelector('#patternSvg', { timeout: 10000 }).catch(() => null);
-  ok('opened, it stays open on this phone', await page.isVisible('#patternSvg'),
-    await page.evaluate(() => localStorage.getItem('baby-tracker-pattern-open')));
+  // Opened again in a second tab rather than by reloading: a reload can beat
+  // Chromium's batched write of localStorage and come back to the storage as
+  // it was a moment before, while two tabs of one browser share it live.
+  const again = await ctx.newPage();
+  again.on('pageerror', e => errs.push('ERR ' + e.message));
+  await again.goto(h.APP);
+  await again.waitForLoadState('load');
+  await again.waitForTimeout(300);
+  await again.click('#statsOpen');
+  await again.waitForSelector('#patternSvg', { timeout: 10000 }).catch(() => null);
+  ok('opened, it stays open on this phone', await again.isVisible('#patternSvg'),
+    await again.evaluate(() => localStorage.getItem('baby-tracker-pattern-open')));
   await ctx.close();
 
   ({ ctx, page } = await open([{ type: 'feed', time: '2026-10-27T08:00:00Z' }]));
