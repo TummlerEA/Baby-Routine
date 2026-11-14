@@ -7498,8 +7498,16 @@
   //
   // The settled past moves out of the live file into one file per calendar
   // month (UTC, by the entry's own time), which hardly ever changes, so a tap
-  // sends about a week rather than the whole history. SYNC_ARCHIVE_PLAN.md has
-  // the design and the rules that keep it from ever losing an entry.
+  // sends about a week rather than the whole history. The rules that keep it
+  // from ever losing an entry:
+  //   - an entry is left out of the live file only when the index says its
+  //     month file holds that version or a newer one (archiveCovers);
+  //   - months are written before the live file that leaves them out, so a
+  //     failure between the two leaves duplicates, never a gap;
+  //   - a month is only ever merged into, over the sha just read, and one
+  //     that cannot be read is not written at all;
+  //   - the index is filled only from files read or written up there, and a
+  //     month listing an entry this phone lacks is read again.
 
   function archivePath(month) {
     return ARCHIVE_DIR + "/events-" + month + ".json";
