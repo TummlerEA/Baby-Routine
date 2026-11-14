@@ -128,7 +128,7 @@ The lock check is `remoteFormat > DOC_FORMAT`. With `DOC_FORMAT = 5`, v133 still
   - Add `listArchive(config)` and `downloadArchiveMonth(config, month)`. Reuse `downloadRemote` with a path, and make sure the remote cache only applies when there is no path. It already does.
   - Add `putArchiveMonth(config, month, doc, sha)`.
   - Commit, then run `node tests/run.js sync` — it must stay green.
-- [ ] **S2. Archive index module** (IndexedDB plus memory fallback). Load it at startup next to `musicTidy()` and clear it on disconnect or repo change. Add the `covered(event)` helper.
+- [x] **S2. Archive index module** (IndexedDB plus memory fallback). Load it at startup next to `musicTidy()` and clear it on disconnect or repo change. Add the `covered(event)` helper.
 - [ ] **S3. Reading archives.** Do step 3 of the algorithm, the I5 heal check, and the `covered`-aware `remoteHasNothingOfOurs` and live builder (steps 7–8). Bump `DOC_FORMAT` to 5. No fold yet. Check by hand that a repo with archives created by the test reads correctly.
 - [ ] **S4. Fold** (step 6), including the 409 loop for archive months and abort-safety.
 - [ ] **S5. Tests: `tests/test_archive.js`.** Extend the fake GitHub from `tests/test_sync.js`: directory listings with tree shas, multiple paths, per-path shas, PUT/409 per path, blobs per sha. Cover the matrix below.

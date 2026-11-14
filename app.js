@@ -7533,6 +7533,127 @@
     return putRemote(config, archiveDocument(month, list), sha, archivePath(month));
   }
 
+  // What this phone knows to be in each month's file up there: for every id,
+  // the updatedAt of the copy in that file and whether it is a tombstone.
+  // It is filled only from files actually read or actually written, never
+  // from this phone's own log, because its one job is to answer "is this
+  // entry safely up there already?" — and an entry is only ever left out of
+  // the live file when the answer is yes. Kept in IndexedDB, so a phone does
+  // not fetch the whole past again every time it is opened; held in memory
+  // for the session wherever IndexedDB is not to be had, which costs one
+  // full read of the archive per start and nothing in correctness.
+  var archiveIndex = { months: {}, dirSha: null, repo: "" };
+  var archiveIndexLoading = null;
+  var archiveDbOpening = null;
+
+  function archiveDb() {
+    if (archiveDbOpening) return archiveDbOpening;
+    archiveDbOpening = new Promise(function (resolve, reject) {
+      var req;
+      try {
+        req = window.indexedDB.open(ARCHIVE_DB, 1);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      req.onupgradeneeded = function () {
+        if (!req.result.objectStoreNames.contains(ARCHIVE_STORE)) {
+          req.result.createObjectStore(ARCHIVE_STORE);
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+      req.onblocked = function () { reject(new Error("blocked")); };
+    });
+    archiveDbOpening.catch(function () { archiveDbOpening = null; });
+    return archiveDbOpening;
+  }
+
+  function archiveTx(mode, work) {
+    if (!window.indexedDB) return Promise.reject(new Error("no IndexedDB"));
+    return archiveDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(ARCHIVE_STORE, mode);
+        var store = tx.objectStore(ARCHIVE_STORE);
+        var result;
+        var req = work(store);
+        if (req) req.onsuccess = function () { result = req.result; };
+        tx.oncomplete = function () { resolve(result); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error("aborted")); };
+      });
+    });
+  }
+
+  // Resolves once the index is in memory, whatever became of IndexedDB.
+  function loadArchiveIndex() {
+    if (archiveIndexLoading) return archiveIndexLoading;
+    archiveIndexLoading = archiveTx("readonly", function (store) {
+      return store.getAll ? store.getAll() : null;
+    }).then(function (records) {
+      var loaded = { months: {}, dirSha: null, repo: "" };
+      (records || []).forEach(function (rec) {
+        if (!rec || !rec.key) return;
+        if (rec.key === "__dir") {
+          loaded.dirSha = rec.sha || null;
+          loaded.repo = rec.repo || "";
+        } else if (rec.sha && rec.ids && typeof rec.ids === "object") {
+          loaded.months[rec.key] = { sha: rec.sha, ids: rec.ids };
+        }
+      });
+      archiveIndex = loaded;
+    }, function () { /* memory only, this session */ }).then(function () {
+      // Kept for another repository, or another log entirely.
+      if (syncConfig && archiveIndex.repo && archiveIndex.repo !== syncConfig.repo) archiveForget();
+    });
+    return archiveIndexLoading;
+  }
+
+  function archiveIdsOf(list) {
+    var ids = {};
+    (list || []).forEach(function (e) {
+      if (e && e.id) ids[e.id] = [updatedAtOf(e), isDeleted(e) ? 1 : 0];
+    });
+    return ids;
+  }
+
+  // Memory first, always; the disk copy is a convenience and a failure to
+  // write it is forgiven.
+  function archiveSaveMonth(month, sha, list) {
+    var rec = { key: month, sha: sha, ids: archiveIdsOf(list) };
+    archiveIndex.months[month] = { sha: rec.sha, ids: rec.ids };
+    archiveTx("readwrite", function (store) { return store.put(rec, month); }).catch(function () {});
+  }
+
+  function archiveDropMonth(month) {
+    delete archiveIndex.months[month];
+    archiveTx("readwrite", function (store) { return store.delete(month); }).catch(function () {});
+  }
+
+  function archiveSaveDir(sha, repo) {
+    archiveIndex.dirSha = sha || null;
+    archiveIndex.repo = repo || "";
+    var rec = { key: "__dir", sha: archiveIndex.dirSha, repo: archiveIndex.repo };
+    archiveTx("readwrite", function (store) { return store.put(rec, "__dir"); }).catch(function () {});
+  }
+
+  function archiveForget() {
+    archiveIndex = { months: {}, dirSha: null, repo: "" };
+    archiveTx("readwrite", function (store) { return store.clear(); }).catch(function () {});
+  }
+
+  // Is this very version of the entry, or a newer one, in its month's file
+  // up there? The only question that allows an entry out of the live file.
+  function archiveCovers(event) {
+    var rec = archiveIndex.months[monthOfEntry(event)];
+    var held = rec && rec.ids[event.id];
+    return !!held && held[0] >= updatedAtOf(event);
+  }
+
+  function archiveHasMonths() {
+    return Object.keys(archiveIndex.months).length > 0;
+  }
+
   function putRemote(config, doc, sha, path) {
     var payload = {
       message: (doc && doc.kind === "archive" ? "Archive baby log " + doc.month : "Update baby log") +
@@ -8034,6 +8155,7 @@
     // A different repository, or the same one reached with a different
     // token, has nothing to do with the body we were holding.
     forgetRemoteCache();
+    if (!syncConfig || syncConfig.repo !== repo) archiveForget();
     syncConfig = { repo: repo, token: token, sha: null };
     if (!saveSyncConfig(syncConfig)) return;
     renderSyncState();
@@ -8047,6 +8169,7 @@
 
   el.syncDisconnect.addEventListener("click", function () {
     forgetRemoteCache();
+    archiveForget();
     syncConfig = null;
     saveSyncConfig(null);
     clearTimeout(syncTimer);
@@ -14052,6 +14175,8 @@
   buildRemindChips();
   if (musicTrackFor(noise.sound)) prepareMusic(musicTrackFor(noise.sound).id);
   musicTidy();
+  // Read in early, so the first sync rarely has to wait for it.
+  if (syncConfig) loadArchiveIndex();
 
   el.remindStart.addEventListener("click", function () {
     if (!noiseOn) noiseStartSilent();
