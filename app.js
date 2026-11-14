@@ -415,8 +415,20 @@
   // entries on this phone with their timestamps untouched, which no later
   // update could tell from the real thing.
   var DOC_FORMAT = 4;
-  var SYNC_DEBOUNCE = 8000;
+  // Long enough to gather a burst of taps into one commit, short enough that
+  // the other phone has it by the time anyone thinks to look.
+  var SYNC_DEBOUNCE = 4000;
   var SYNC_POLL = 60000;
+  // How long one request to GitHub may take before it is given up on. The
+  // whole log going up or coming down gets longer: on a weak signal a log of
+  // a few thousand entries is a good part of a megabyte.
+  var SYNC_TIMEOUT = 25000;
+  var SYNC_BIG_TIMEOUT = 90000;
+  // A sync that failed for want of a connection — typically the first one
+  // after the phone wakes, before its radio is back — is tried again this
+  // many times, this far apart, rather than waiting out a minute's poll.
+  var SYNC_RETRY_AFTER = 8000;
+  var SYNC_RETRY_TIMES = 3;
   // With the screen off, every other tick instead of every one. The only
   // reason to poll in the dark at all is that the other phone may have logged
   // the wake-up this one is waiting to be nudged about, and a minute either
@@ -430,7 +442,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "131";
+    var fallback = "132";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -7278,6 +7290,10 @@
   var syncInFlight = false;
   var applyingRemote = false;
   var syncQueued = false;
+  var syncRetries = 0;
+  var syncStartedAt = 0;
+  var syncRun = 0;
+  var syncRetryTimer = null;
   // The last document a fetch actually brought back, kept with the sha it
   // had. Before downloading it again, sync asks the cheap question — is the
   // sha still that one? — and on a match reuses this body instead, so every
@@ -7323,6 +7339,46 @@
     };
   }
 
+  // Every request to GitHub goes through here, and every one has a deadline.
+  // A phone put away mid-sync can come back with its request neither answered
+  // nor failed — iOS freezes it rather than ending it — and a sync that never
+  // finishes holds the in-flight flag for good, so every later sync quietly
+  // queues behind it and the phone stops hearing from the other one until the
+  // app is closed. The deadline covers reading the body as well as the reply,
+  // since a large log can stall halfway down just as easily.
+  //
+  // Resolves to { status, ok, body } with the body already parsed (null if it
+  // was not JSON), or rejects with { timeout: true } or the network error.
+  function githubRequest(url, opts, ms) {
+    var options = opts || {};
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    if (controller) options.signal = controller.signal;
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        if (controller) { try { controller.abort(); } catch (e) {} }
+        reject({ timeout: true });
+      }, ms || SYNC_TIMEOUT);
+      function finish(fn, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(value);
+      }
+      fetch(url, options).then(function (response) {
+        return response.text().then(function (text) {
+          var body = null;
+          try { body = text ? JSON.parse(text) : null; } catch (e) { body = null; }
+          finish(resolve, { status: response.status, ok: response.ok, body: body });
+        });
+      }).catch(function (err) {
+        finish(reject, err);
+      });
+    });
+  }
+
   function describeHttp(status) {
     if (status === 401) return "Token rejected — check it, or make a new one.";
     if (status === 403) return "GitHub refused. The token may lack Contents write access, or you have hit a rate limit.";
@@ -7332,32 +7388,63 @@
   }
 
   // Reads the stored document. A 404 simply means nothing has been written yet.
+  //
+  // Past a megabyte the Contents API stops sending the file: the reply still
+  // names it and its sha, but the content comes back empty. A log of a few
+  // thousand entries gets there in a few months, and an empty reply read as
+  // an empty log is the worst thing sync can do — the phone would find
+  // nothing of the other phone's up there, conclude the copy up there was
+  // missing everything of its own, and write its own log over the top. So a
+  // reply with a sha and no content fetches the same file again as a git
+  // blob by that sha, which is good to a hundred megabytes; and a document
+  // that still cannot be read is refused outright rather than treated as
+  // empty, so nothing is pushed over it.
   function downloadRemote(config, path) {
-    return fetch(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
+    return githubRequest(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
       headers: githubHeaders(config.token),
       cache: "no-store"
-    }).then(function (response) {
-      if (response.status === 404) {
+    }).then(function (reply) {
+      if (reply.status === 404) {
         if (!path) forgetRemoteCache();
         return { doc: null, sha: null };
       }
-      if (!response.ok) throw { http: response.status };
-      return response.json().then(function (body) {
+      if (!reply.ok) throw { http: reply.status };
+      var body = reply.body || {};
+      var sha = body.sha || null;
+      var content = body.content ? Promise.resolve(body.content) :
+        (sha && body.size ? downloadBlob(config, sha) : Promise.resolve(""));
+      return content.then(function (encoded) {
         var doc = null;
         try {
-          doc = JSON.parse(base64ToText(body.content || ""));
+          doc = JSON.parse(base64ToText(encoded || ""));
         } catch (e) {
           doc = null;
         }
-        var sha = body.sha || null;
+        if (doc !== null && (typeof doc !== "object" || Array.isArray(doc))) doc = null;
         // Only a document that came back whole may be served from memory
         // later; anything we could not parse is not worth keeping.
         if (!path) {
           if (doc && sha) remoteCache = { repo: config.repo, sha: sha, doc: doc };
           else forgetRemoteCache();
         }
+        // A file that is really empty — made by hand, say — has nothing in
+        // it to lose, so that one is still written over as before.
+        if (sha && !doc && (body.size || encoded)) throw { unreadable: true };
         return { doc: doc, sha: sha };
       });
+    });
+  }
+
+  // The same file by its sha, through the git database rather than the
+  // Contents API, which is what still answers once the log is over a
+  // megabyte. Base64 like the other, so the caller cannot tell them apart.
+  function downloadBlob(config, sha) {
+    return githubRequest("https://api.github.com/repos/" + config.repo + "/git/blobs/" + sha, {
+      headers: githubHeaders(config.token),
+      cache: "no-store"
+    }, SYNC_BIG_TIMEOUT).then(function (reply) {
+      if (!reply.ok) throw { http: reply.status };
+      return (reply.body && reply.body.content) || "";
     });
   }
 
@@ -7402,15 +7489,14 @@
       content: textToBase64(JSON.stringify(doc))
     };
     if (sha) payload.sha = sha;
-    return fetch(githubUrl(config.repo, path), {
+    return githubRequest(githubUrl(config.repo, path), {
       method: "PUT",
       headers: githubHeaders(config.token),
       body: JSON.stringify(payload)
-    }).then(function (response) {
-      if (!response.ok) throw { http: response.status };
-      return response.json().then(function (body) {
-        return (body.content && body.content.sha) || null;
-      });
+    }, SYNC_BIG_TIMEOUT).then(function (reply) {
+      if (!reply.ok) throw { http: reply.status };
+      var body = reply.body || {};
+      return (body.content && body.content.sha) || null;
     });
   }
 
@@ -7418,27 +7504,25 @@
   // time, so this one request is all sync needs to know what a voice
   // shortcut has dropped since the last look — no per-file read.
   function listRemoteDir(config, path) {
-    return fetch(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
+    return githubRequest(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
       headers: githubHeaders(config.token),
       cache: "no-store"
-    }).then(function (response) {
-      if (response.status === 404) return [];
-      if (!response.ok) throw { http: response.status };
-      return response.json().then(function (body) {
-        return Array.isArray(body) ? body : [];
-      });
+    }).then(function (reply) {
+      if (reply.status === 404) return [];
+      if (!reply.ok) throw { http: reply.status };
+      return Array.isArray(reply.body) ? reply.body : [];
     });
   }
 
   // Best-effort: if it is already gone (another sync got there first) that
   // is the outcome we wanted anyway.
   function deleteRemoteFile(config, path, sha, message) {
-    return fetch(githubUrl(config.repo, path), {
+    return githubRequest(githubUrl(config.repo, path), {
       method: "DELETE",
       headers: githubHeaders(config.token),
       body: JSON.stringify({ message: message || "Baby tracker: processed voice entry", sha: sha })
-    }).then(function (response) {
-      if (!response.ok && response.status !== 404 && response.status !== 409) throw { http: response.status };
+    }).then(function (reply) {
+      if (!reply.ok && reply.status !== 404 && reply.status !== 409) throw { http: reply.status };
     }).catch(function () {});
   }
 
@@ -7627,11 +7711,20 @@
 
   function syncNow(reason, joining) {
     if (!syncConfig) return Promise.resolve(false);
-    if (syncInFlight) {
+    // One still running is normally left to finish. But a phone put away in
+    // the middle of one can be frozen with it, and its timers with it, so the
+    // deadlines above have not had a chance to run; by the clock on the wall
+    // it is long dead. That one is abandoned rather than waited for. Whatever
+    // it was doing is harmless to let finish — a merge only ever adds, and a
+    // write over a sha that has moved on is simply refused — but it no
+    // longer gets a say in the status line or the in-flight flag.
+    if (syncInFlight && Date.now() - syncStartedAt < SYNC_BIG_TIMEOUT + SYNC_TIMEOUT) {
       syncQueued = true;
       return Promise.resolve(false);
     }
     syncInFlight = true;
+    syncStartedAt = Date.now();
+    var run = ++syncRun;
     setSyncState("busy", "Syncing…");
 
     var attempt = function (remaining) {
@@ -7765,6 +7858,7 @@
     }
 
     return attempt(SYNC_RETRIES).then(function (result) {
+      if (run !== syncRun) return false;
       syncInFlight = false;
       if (result.locked) {
         // Not a fault of the connection, and not something waiting will mend.
@@ -7783,6 +7877,7 @@
         return false;
       }
       setSyncState("ok", "Connected to " + syncConfig.repo);
+      syncRetries = 0;
       if (result.pulled) {
         showToast("Synced — " + result.pulled + (result.pulled === 1 ? " new entry" : " new entries"));
       }
@@ -7792,11 +7887,25 @@
       }
       return true;
     }).catch(function (err) {
+      if (run !== syncRun) return false;
       syncInFlight = false;
       syncQueued = false;
-      var message = (err && err.http) ? describeHttp(err.http) : "No connection to GitHub.";
+      var message = (err && err.http) ? describeHttp(err.http) :
+        (err && err.unreadable) ? "Couldn't read the log on GitHub, so nothing was sent and nothing " +
+          "up there was written over. Try again in a minute." :
+        (err && err.timeout) ? "GitHub took too long to answer. Trying again shortly." :
+        "No connection to GitHub.";
       setSyncState("bad", message);
       if (reason === "manual") showToast("Sync failed. " + message);
+      // No answer at all is usually a phone just woken, its radio not back
+      // yet. Waiting for the next poll would leave it a minute behind just
+      // when somebody has opened it to look, so try again soon, a few times.
+      // A refusal from GitHub is not mended by asking again straight away.
+      if (!(err && (err.http || err.unreadable)) && syncRetries < SYNC_RETRY_TIMES) {
+        syncRetries++;
+        clearTimeout(syncRetryTimer);
+        syncRetryTimer = setTimeout(function () { syncNow("retry"); }, SYNC_RETRY_AFTER * syncRetries);
+      }
       return false;
     });
   }
@@ -7868,6 +7977,7 @@
     syncConfig = null;
     saveSyncConfig(null);
     clearTimeout(syncTimer);
+    clearTimeout(syncRetryTimer);
     clearInterval(syncPoller);
     el.syncToken.value = "";
     renderSyncState();
