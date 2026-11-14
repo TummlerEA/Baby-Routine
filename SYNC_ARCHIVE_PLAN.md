@@ -1,6 +1,6 @@
 # Sync archive — working plan (v133)
 
-**Status:** IN PROGRESS. Tick the boxes as you go and commit this file along with the code it describes.
+**Status:** IN PROGRESS — S0–S7 done; next is S8 (full suite). Tick the boxes as you go and commit this file along with the code it describes.
 **Branch:** `claude/baby-tracker-app-96guwg`. While this plan is open, **do not** reset the branch from `origin/main`. If main moves, merge it in.
 **Talk to the user** in Russian, short and plain. All app text stays in UK English.
 
@@ -13,7 +13,7 @@
 
 ## Why
 
-Today every sync uploads the **whole** log. At about 3,000 entries that is about 0.6 MB, sent base64 as about 0.8 MB, on every tap, and it grows by roughly 50 entries a day. Moving the settled past into monthly archive files, which rarely change, cuts each tap to about 10–30 KB. It also shortens the window in which two phones collide.
+Today every sync uploads the **whole** log. At about 3,000 entries that is about 0.6 MB, sent base64 as about 0.8 MB, on every tap, and it grows by roughly 50 entries a day. Moving the settled past into monthly archive files, which rarely change, cuts each tap to about 40–60 KB at 30 entries a day. It also shortens the window in which two phones collide.
 
 v132 already made big logs **correct**. Files over 1 MB are read through the git blob API, an unreadable file is never overwritten, requests time out, and a frozen sync is abandoned. This plan is about **speed and data use**. Correctness must not regress.
 
@@ -23,13 +23,13 @@ v132 already made big logs **correct**. Files over 1 MB are read through the git
 |---|----------|
 | D1 | Only `events` are archived. `meta`, `plans`, `shopping`, `rotaShifts`, `milk` and `journal` stay in the live file, unchanged. They are small. A later generalisation is possible, but it is out of scope. |
 | D2 | Archive files are grouped by the **month of the event's `time`**, taken as the UTC calendar month: `time.slice(0, 7)`, for example `2026-10`. Every entry has exactly one home, and that grouping is the same on every phone and in every timezone. |
-| D3 | An entry leaves the live file once its **`updatedAt`** (falling back to `time`, see `updatedAtOf`) is older than `HOT_DAYS = 14` days. The age is measured by last change, not by event time. That way an edit or delete of an old entry goes into the live file, wins by `updatedAt`, and is folded into its month's archive 14+ days later. |
+| D3 | An entry leaves the live file once its **`updatedAt`** (falling back to `time`, see `updatedAtOf`) is older than `HOT_DAYS = 7` days (was 14 in the first draft; cut to 7 in S5 because 14 days at 30 entries a day made a tap about 80 KB). The age is measured by last change, not by event time. That way an edit or delete of an old entry goes into the live file, wins by `updatedAt`, and is folded into its month's archive 7+ days later. |
 | D4 | Archive files are not strictly immutable. They are rewritten **rarely**: on a fold that touches that month. Every write uses the sha, so a conflict re-reads, re-merges and retries. |
 | D5 | Nothing is left out of the live file unless this phone has **seen the same or a newer version of it in an archive file**, checked against the archive index (see I1). Being "old" is never on its own a reason to leave something out. |
 | D6 | The live document's format goes 4 → **5** once it omits anything, meaning archives exist and this phone has a complete index. A v132 phone meeting format 5 is locked by the existing `DOC_FORMAT` check ("This phone is behind the log…"). It neither reads nor writes, and its own entries wait safely. **All phones must update to v133.** |
 | D7 | The local copy keeps the **full** history in localStorage, exactly as today. Stats, the pattern chart, exports, share links and the AI prompt are untouched. |
 | D8 | The archive index is kept in **IndexedDB**, falling back to memory for the session when IndexedDB is unavailable. It is never put in localStorage, which is near its limit at about 5 MB. |
-| D9 | A fold happens only when the live file holds entries whose `updatedAt` is older than `HOT_DAYS + FOLD_SLACK_DAYS` (14 + 7 = 21 days). The live file therefore holds about 14–21 days. The first v133 sync on a v4 document folds the whole past at once, which is the migration. |
+| D9 | A fold happens only when the live file holds entries whose `updatedAt` is older than `HOT_DAYS + FOLD_SLACK_DAYS` (7 + 3 = 10 days). The live file therefore holds about 7–10 days, and a fold happens every few days. The first v133 sync on a v4 document folds the whole past at once, which is the migration. |
 | D10 | The voice queue, tombstone TTL (30 days), meta merge, `joining` rule and remote-cache sha check keep their current meaning. |
 
 ## Repository layout (in the user's private sync repo)
@@ -89,8 +89,8 @@ This field is informational only. The source of truth for which months exist and
    - Downloads run one at a time to stay gentle. Usually there are zero.
 4. **Merge the live document** exactly as today: events, plans, shopping, rota, milk, journal, meta.
 5. **Prune** exactly as today.
-6. **Fold?** Fold when `archiveIndexComplete` (the listing succeeded and every listed month is indexed) and some local non-deleted-or-deleted event has `updatedAt < now − 21 days` and is not covered by the index. **On the first migration, the index is empty and everything older than 14 days qualifies.** For the fold:
-   - `cutoff = now − HOT_DAYS` (14 days).
+6. **Fold?** Fold when `archiveIndexComplete` (the listing succeeded and every listed month is indexed) and some local non-deleted-or-deleted event has `updatedAt < now − 10 days` and is not covered by the index. **On the first migration, the index is empty and everything older than 7 days qualifies.** For the fold:
+   - `cutoff = now − HOT_DAYS` (7 days).
    - `candidates` = local events with `updatedAt < cutoff` that the index does not already cover at the same or a newer version.
    - Group the candidates by `time.slice(0, 7)`.
    - For each month, in order:
@@ -112,8 +112,8 @@ The remaining steps are unchanged: status line, toasts, retries, the frozen-sync
 ```js
 var DOC_FORMAT = 5;          // was 4. The live file omits archived entries from 5 on.
 var ARCHIVE_DIR = "archive";
-var HOT_DAYS = 14;
-var FOLD_SLACK_DAYS = 7;
+var HOT_DAYS = 7;
+var FOLD_SLACK_DAYS = 3;
 var ARCHIVE_NAME_RE = /^events-(\d{4}-\d{2})\.json$/;
 ```
 
@@ -130,13 +130,13 @@ The lock check is `remoteFormat > DOC_FORMAT`. With `DOC_FORMAT = 5`, v133 still
   - Commit, then run `node tests/run.js sync` — it must stay green.
 - [x] **S2. Archive index module** (IndexedDB plus memory fallback). Load it at startup next to `musicTidy()` and clear it on disconnect or repo change. Add the `covered(event)` helper.
 - [x] **S3. Reading archives.** Do step 3 of the algorithm, the I5 heal check, and the `covered`-aware `remoteHasNothingOfOurs` and live builder (steps 7–8). Bump `DOC_FORMAT` to 5. No fold yet. Check by hand that a repo with archives created by the test reads correctly.
-- [ ] **S4. Fold** (step 6), including the 409 loop for archive months and abort-safety.
-- [ ] **S5. Tests: `tests/test_archive.js`.** (Reading part done in S3: matrix 9, 10, 11, 12 and the reading half of 2 and 3. Fold scenarios still to add.) Extend the fake GitHub from `tests/test_sync.js`: directory listings with tree shas, multiple paths, per-path shas, PUT/409 per path, blobs per sha. Cover the matrix below.
-- [ ] **S6. User-facing text.**
+- [x] **S4. Fold** (step 6), including the 409 loop for archive months and abort-safety.
+- [x] **S5. Tests: `tests/test_archive.js`.** (Reading part done in S3: matrix 9, 10, 11, 12 and the reading half of 2 and 3. Fold scenarios added too: 1–8 and 13 all pass, 39 checks, in UTC and Pacific/Auckland. S5 done.) Extend the fake GitHub from `tests/test_sync.js`: directory listings with tree shas, multiple paths, per-path shas, PUT/409 per path, blobs per sha. Cover the matrix below.
+- [x] **S6. User-facing text.**
   - README sync bullet: add the archive paragraph.
   - Help topic `sync` (`app.js`, `id: "sync"`): one line in EN and RU about monthly archives and that all phones must update together.
-  - The status line may say "Synced · archive up to <month>". This is optional, so keep it small.
-- [ ] **S7. Version bump to 133**, all four places: the two `?v=` in `index.html`, `version.json`, `var fallback` in `app.js`, `var VERSION` in `sw.js`.
+  - The status line may say "Synced · archive up to <month>". This is optional, so keep it small. (Skipped: not needed.)
+- [x] **S7. Version bump to 133**, all four places: the two `?v=` in `index.html`, `version.json`, `var fallback` in `app.js`, `var VERSION` in `sw.js`.
 - [ ] **S8. Full suite:** `node tests/run.js`, run in the background, about 10 minutes, 59 runs expected once the archive test is added. Do not edit files while it runs. All must pass, with EXIT 0.
 - [ ] **S9. PR, then squash-merge.** Use the usual `gh api` commands; see the project notes. In the PR body, warn that all phones must update.
 - [ ] **S10. Rollout message to the user, in Russian.** The user explicitly asked to be **reminded when to make the backup**, so step 1 below must be the first thing in the message, said plainly, **before** they update any phone:

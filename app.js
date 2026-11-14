@@ -456,7 +456,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "132";
+    var fallback = "133";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -15203,9 +15203,9 @@
       en: "Settings → Share with your partner. Invite your partner the first time; after that, make a link with recent entries — their app asks before merging. For automatic two-way sync, use Sync across phones.",
       ru: "Settings → «Share with your partner». В первый раз — «Invite your partner», дальше — ссылка с последними записями, приложение партнёра спросит перед объединением. Для автоматической синхронизации — «Sync across phones»." },
     { id: "sync", title: { en: "Keeping two phones in step", ru: "Синхронизация двух телефонов" }, go: { settings: "syncRepo" },
-      words: "sync synchronise synchronize github repository token two phones automatic синхрон github репозитор токен два телефона автоматически",
-      en: "Settings → Sync across phones keeps both phones in step through a private GitHub repository you own. Each phone needs the repository name and a fine-grained token limited to it.",
-      ru: "Settings → «Sync across phones» синхронизирует телефоны через ваш приватный репозиторий GitHub. На каждом телефоне нужны имя репозитория и токен, ограниченный только им." },
+      words: "sync synchronise synchronize github repository token two phones automatic archive архив синхрон github репозитор токен два телефона автоматически",
+      en: "Settings → Sync across phones keeps both phones in step through a private GitHub repository you own. Each phone needs the repository name and a fine-grained token limited to it. Entries over a week old move into one archive file per month there, so each sync sends only the last week; every phone keeps the whole history. All phones should run the same version.",
+      ru: "Settings → «Sync across phones» синхронизирует телефоны через ваш приватный репозиторий GitHub. На каждом телефоне нужны имя репозитория и токен, ограниченный только им. Записи старше недели переносятся там в архив, по файлу на месяц, поэтому каждая синхронизация отправляет только последнюю неделю; на телефоне остаётся вся история. Версия приложения на всех телефонах должна быть одна." },
     { id: "backup", title: { en: "Backup and export", ru: "Резервная копия и экспорт" }, go: { settings: "exportJson" },
       words: "backup back up export import restore json csv file save new phone бэкап резерв копи экспорт импорт восстановить файл сохранить новый телефон",
       en: "Settings → Export & backup → Download JSON, every so often. Restoring merges rather than replaces. Clearing browser data or changing phone loses everything not backed up.",
