@@ -84,6 +84,9 @@ function answer(url, method, body) {
       delete gh.conflictOnce[path];
       return reply(409, {});
     }
+    // GitHub's own answers: 422 for a file that exists but no sha was sent,
+    // 409 for a sha that is not the current one.
+    if (f && !sent.sha) return reply(422, {});
     if (f ? sent.sha !== f.sha : !!sent.sha) return reply(409, {});
     const text = Buffer.from(sent.content, 'base64').toString('utf8');
     setFile(path, text);

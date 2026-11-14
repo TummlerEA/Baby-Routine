@@ -7800,6 +7800,8 @@
   //
   // Resolves to { pulled, complete }: complete only when every month listed
   // up there is now in the index at its current sha.
+  var archiveUnreadable = {};
+
   function syncArchive(config, listing) {
     return loadArchiveIndex().then(function () {
       if (!listing) return { pulled: 0, complete: false };
@@ -7819,12 +7821,18 @@
         Object.keys(archiveIndex.months).forEach(function (month) {
           if (!listed[month]) archiveDropMonth(month);
         });
+        var pulled = 0;
+        var complete = true;
         var todo = months.filter(function (m) {
+          // Already found unreadable at this very sha: not worth fetching
+          // again every minute. Its entries stay in the live file meanwhile.
+          if (archiveUnreadable[m.month] === m.sha) {
+            complete = false;
+            return false;
+          }
           var known = archiveIndex.months[m.month];
           return !known || known.sha !== m.sha || stale.indexOf(m.month) !== -1;
         });
-        var pulled = 0;
-        var complete = true;
         // One at a time: usually there are none, and on the day a phone
         // first meets the archive there is no hurry worth a burst.
         return todo.reduce(function (chain, m) {
@@ -7839,7 +7847,8 @@
                 .map(normaliseImported).filter(Boolean);
               pulled += mergeIntoLocal(list);
               archiveSaveMonth(m.month, got.sha, list);
-            }, function () {
+            }, function (err) {
+              if (err && err.unreadable) archiveUnreadable[m.month] = m.sha;
               archiveDropMonth(m.month);
               complete = false;
             });
@@ -7851,6 +7860,108 @@
       }, function () {
         return { pulled: 0, complete: false };
       });
+    });
+  }
+
+  // ---------- folding the settled past into the archive ----------
+
+  // Months found unreadable while folding, kept for the session so a broken
+  // file is not fetched again on every sync. Whatever they would have taken
+  // stays in the live file meanwhile.
+  var foldBlocked = {};
+
+  function foldableMonth(event) {
+    var month = monthOfEntry(event);
+    return /^\d{4}-\d{2}$/.test(month) && !foldBlocked[month];
+  }
+
+  // Due once anything has gone unchanged for HOT_DAYS + FOLD_SLACK_DAYS and
+  // is not yet in the archive; it then takes everything past HOT_DAYS. So a
+  // fold happens about once a week, and the live file holds two to three.
+  function foldDue() {
+    var limit = new Date(Date.now() - (HOT_DAYS + FOLD_SLACK_DAYS) * MS_DAY).toISOString();
+    return events.some(function (e) {
+      return updatedAtOf(e) < limit && foldableMonth(e) && !archiveCovers(e);
+    });
+  }
+
+  // One list from two, by id, the newer version winning — the merge rule
+  // everywhere else — with tombstones past their time left behind.
+  function mergeArchiveLists(current, additions) {
+    var byId = {};
+    current.concat(additions).forEach(function (e) {
+      if (!e || !e.id || tombstoneExpired(e)) return;
+      var held = byId[e.id];
+      if (!held || updatedAtOf(e) > updatedAtOf(held)) byId[e.id] = e;
+    });
+    return Object.keys(byId).map(function (id) { return byId[id]; }).sort(function (a, b) {
+      return a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+    });
+  }
+
+  // One month: read what is up there now, merge ours in, write it back over
+  // the sha just read. Never a blind write — a month is only ever added to —
+  // and a month that cannot be read is not written at all. A conflict means
+  // another phone folded first: read again, merge again, try again.
+  // Resolves to the number of entries the month brought down that this
+  // phone did not have; rejects if the month could not be written.
+  function foldMonth(config, month, additions, remaining) {
+    return downloadArchiveMonth(config, month).then(function (got) {
+      var current = (got.doc && Array.isArray(got.doc.events) ? got.doc.events : [])
+        .map(normaliseImported).filter(Boolean);
+      var brought = mergeIntoLocal(current);
+      var merged = mergeArchiveLists(current, additions);
+      return putArchiveMonth(config, month, merged, got.sha).then(function (sha) {
+        if (!sha) throw { http: 0 };
+        archiveSaveMonth(month, sha, merged);
+        return brought;
+      }, function (err) {
+        if (err && (err.http === 409 || err.http === 422) && remaining > 0) {
+          return foldMonth(config, month, additions, remaining - 1).then(function (more) {
+            return brought + more;
+          });
+        }
+        throw err;
+      });
+    }, function (err) {
+      if (err && err.unreadable) foldBlocked[month] = true;
+      throw err;
+    });
+  }
+
+  // Every entry unchanged for HOT_DAYS and not yet in the archive goes into
+  // its month's file, a month at a time, oldest first. The live file is
+  // written afterwards by the ordinary push, and only leaves out what the
+  // index now says is up there — so stopping part way, for any reason, just
+  // leaves the rest in the live file until next time.
+  // Resolves to the number of months written.
+  function foldArchive(config) {
+    var cutoff = new Date(Date.now() - HOT_DAYS * MS_DAY).toISOString();
+    var byMonth = {};
+    events.forEach(function (e) {
+      if (updatedAtOf(e) >= cutoff || !foldableMonth(e) || archiveCovers(e)) return;
+      var month = monthOfEntry(e);
+      (byMonth[month] = byMonth[month] || []).push(e);
+    });
+    var written = 0;
+    var brought = 0;
+    var stopped = false;
+    return Object.keys(byMonth).sort().reduce(function (chain, month) {
+      return chain.then(function () {
+        if (stopped) return;
+        return foldMonth(config, month, byMonth[month], SYNC_RETRIES).then(function (n) {
+          written++;
+          brought += n;
+        }, function () {
+          stopped = true;
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      if (brought) {
+        saveEvents(events);
+        renderAll();
+      }
+      return written;
     });
   }
 
@@ -8045,7 +8156,8 @@
           .catch(function () { return 0; })
           .then(function (pulledVoice) {
             return syncArchive(config, found.listing).then(function (fromArchive) {
-              return mergeAndPush(config, found, remoteDoc, pulledVoice + fromArchive.pulled, remaining);
+              return mergeAndPush(config, found, remoteDoc, pulledVoice + fromArchive.pulled, remaining,
+                fromArchive.complete);
             });
           });
       });
@@ -8053,7 +8165,7 @@
 
     // Everything past the shape check: what came down is merged in, and what
     // this phone holds goes back up if the copy up there is missing any of it.
-    function mergeAndPush(config, found, remoteDoc, pulledVoice, remaining) {
+    function mergeAndPush(config, found, remoteDoc, pulledVoice, remaining, archiveComplete) {
       var remoteEvents = Array.isArray(remoteDoc.events) ? remoteDoc.events : [];
       var pulled = mergeIntoLocal(remoteEvents);
       var remotePlans = Array.isArray(remoteDoc.plans) ? remoteDoc.plans : [];
@@ -8127,36 +8239,47 @@
       if (pruneMilkTombstones()) saveMilk(milk);
       if (pruneJournalTombstones()) saveJournal(journal);
 
-      var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
-        remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
-        remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired) ||
-        remoteJournal.some(tombstoneExpired);
-      // The live file still carrying what the archive now holds — left there
-      // by a fold that wrote the months and then lost the race for the live
-      // file, say. Sending it again without them is what shrinks it.
-      var remoteCarriesArchived = remoteEvents.some(function (e) {
-        return e && e.id && archiveCovers(e);
+      // Only with the whole archive known: a fold merges into the months up
+      // there, and a month this phone has not read is one it cannot merge
+      // into safely.
+      var folding = archiveComplete && foldDue() ? foldArchive(config) : Promise.resolve(0);
+      return folding.then(function (folded) {
+        return pushIfNeeded(folded);
       });
-      var mustPush = !found.sha || remoteCarriesExpired || remoteCarriesArchived ||
-        remoteHasNothingOfOurs(remoteEvents) ||
-        remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
-        remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
-        remoteMissesOurJournal(remoteJournal) ||
-        metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
-      if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
-      return putRemote(config, localDocument(), found.sha).then(function (sha) {
-        // What is up there is ours now, and carries an ETag we have never
-        // seen; the next fetch asks plainly and caches the answer afresh.
-        forgetRemoteCache();
-        syncConfig.sha = sha;
-        saveSyncConfig(syncConfig);
-        return { pulled: pulled + pulledVoice, pushed: 1 };
-      }).catch(function (err) {
-        // Another phone committed between our read and our write.
-        if (err && err.http === 409 && remaining > 0) return attempt(remaining - 1);
-        throw err;
-      });
+      function pushIfNeeded(folded) {
+        var remoteCarriesExpired = remoteEvents.some(tombstoneExpired) ||
+          remotePlans.some(tombstoneExpired) || remoteShopping.some(tombstoneExpired) ||
+          remoteRotaShifts.some(tombstoneExpired) || remoteMilk.some(tombstoneExpired) ||
+          remoteJournal.some(tombstoneExpired);
+        // The live file still carrying what the archive now holds — left there
+        // by a fold that wrote the months and then lost the race for the live
+        // file, say. Sending it again without them is what shrinks it.
+        var remoteCarriesArchived = remoteEvents.some(function (e) {
+          return e && e.id && archiveCovers(e);
+        });
+        var mustPush = !found.sha || folded > 0 || remoteCarriesExpired || remoteCarriesArchived ||
+          remoteHasNothingOfOurs(remoteEvents) ||
+          remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
+          remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
+          remoteMissesOurJournal(remoteJournal) ||
+          metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
+        if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
+
+        return putRemote(config, localDocument(), found.sha).then(function (sha) {
+          // What is up there is ours now, and carries an ETag we have never
+          // seen; the next fetch asks plainly and caches the answer afresh.
+          forgetRemoteCache();
+          syncConfig.sha = sha;
+          saveSyncConfig(syncConfig);
+          return { pulled: pulled + pulledVoice, pushed: 1 };
+        }).catch(function (err) {
+          // Another phone committed between our read and our write. (422 is
+          // what GitHub says instead when the file appeared since we looked.)
+          if (err && (err.http === 409 || err.http === 422) && remaining > 0) return attempt(remaining - 1);
+          throw err;
+        });
+      }
     }
 
     return attempt(SYNC_RETRIES).then(function (result) {
