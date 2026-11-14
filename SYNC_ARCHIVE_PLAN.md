@@ -122,7 +122,7 @@ The lock check is `remoteFormat > DOC_FORMAT`. With `DOC_FORMAT = 5`, v133 still
 ## Steps
 
 - [x] **S0. Write this plan.** Commit and push it on the branch.
-- [ ] **S1. Transport groundwork, with no change in behaviour.**
+- [x] **S1. Transport groundwork, with no change in behaviour.**
   - Make the root listing return the live sha and the archive dir sha: `remoteListing(config)` returns `{ logSha, archiveSha }`.
   - Make `fetchRemote` use it.
   - Add `listArchive(config)` and `downloadArchiveMonth(config, month)`. Reuse `downloadRemote` with a path, and make sure the remote cache only applies when there is no path. It already does.
@@ -139,7 +139,7 @@ The lock check is `remoteFormat > DOC_FORMAT`. With `DOC_FORMAT = 5`, v133 still
 - [ ] **S7. Version bump to 133**, all four places: the two `?v=` in `index.html`, `version.json`, `var fallback` in `app.js`, `var VERSION` in `sw.js`.
 - [ ] **S8. Full suite:** `node tests/run.js`, run in the background, about 10 minutes, 59 runs expected once the archive test is added. Do not edit files while it runs. All must pass, with EXIT 0.
 - [ ] **S9. PR, then squash-merge.** Use the usual `gh api` commands; see the project notes. In the PR body, warn that all phones must update.
-- [ ] **S10. Rollout message to the user, in Russian:**
+- [ ] **S10. Rollout message to the user, in Russian.** The user explicitly asked to be **reminded when to make the backup**, so step 1 below must be the first thing in the message, said plainly, **before** they update any phone:
   1. On one phone, make a JSON backup first (Settings → Export), just in case.
   2. Update **all** phones: restart the app until it says version 133.
   3. The first sync will create the `archive/` folder in the repo. That is expected.

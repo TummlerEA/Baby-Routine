@@ -436,6 +436,16 @@
   // woke rather than by when the news arrived.
   var SYNC_DARK_EVERY = 2;
   var SYNC_RETRIES = 3;
+  // The settled past, one file per month, in a folder beside the live file.
+  // An entry leaves the live file once it has gone unchanged for HOT_DAYS,
+  // and a fold to move such entries out happens once any have gone unchanged
+  // for HOT_DAYS + FOLD_SLACK_DAYS, so the live file holds two to three weeks.
+  var ARCHIVE_DIR = "archive";
+  var ARCHIVE_NAME_RE = /^events-(\d{4}-\d{2})\.json$/;
+  var ARCHIVE_DB = "baby-tracker-archive";
+  var ARCHIVE_STORE = "months";
+  var HOT_DAYS = 14;
+  var FOLD_SLACK_DAYS = 7;
   // One source of truth for the version on screen. It is read from this
   // script's own ?v= cache-busting query, so bumping the URL in index.html is
   // the only edit needed and the number shown can never disagree with the file
@@ -7448,40 +7458,85 @@
     });
   }
 
-  // Asks what the stored document's sha is without downloading it. The
-  // listing names every file in the repository root with its sha and no
-  // contents, so it stays small however long the log grows — which is the
-  // whole point: a poll that finds the same sha we already hold has learned
-  // everything it needed for a few hundred bytes instead of the lot.
-  function remoteShaOf(config) {
+  // Asks what the stored document's sha is without downloading it, and the
+  // archive folder's with it. The listing names every file and folder in the
+  // repository root with its sha and no contents, so it stays small however
+  // long the log grows — which is the whole point: a poll that finds the same
+  // sha we already hold has learned everything it needed for a few hundred
+  // bytes instead of the lot. A folder's sha is its tree's, which moves
+  // whenever anything inside it does, so the same one request also says
+  // whether any month of the archive has been written since we last looked.
+  function remoteListing(config) {
     return listRemoteDir(config, "").then(function (entries) {
-      var found = null;
+      var found = { logSha: null, archiveSha: null };
       entries.forEach(function (entry) {
-        if (entry && entry.name === SYNC_PATH) found = entry.sha || null;
+        if (!entry) return;
+        if (entry.name === SYNC_PATH) found.logSha = entry.sha || null;
+        if (entry.name === ARCHIVE_DIR && entry.type === "dir") found.archiveSha = entry.sha || null;
       });
       return found;
     });
   }
 
-  function fetchRemote(config, path) {
-    var cached = !path && remoteCache.doc && remoteCache.sha &&
+  // The listing is asked for by the caller, once per sync, and handed in; a
+  // listing that failed arrives as null and tells us nothing, so it falls
+  // through to the ordinary download rather than guessing.
+  function fetchRemote(config, listing) {
+    var cached = remoteCache.doc && remoteCache.sha &&
       remoteCache.repo === config.repo ? remoteCache : null;
-    if (!cached) return downloadRemote(config, path);
-    // A listing that fails for any reason tells us nothing, so it falls
-    // through to the ordinary download rather than guessing.
-    return remoteShaOf(config).then(function (sha) {
-      if (sha && sha === cached.sha) {
-        return { doc: cached.doc, sha: cached.sha, unchanged: true };
-      }
-      return downloadRemote(config, path);
-    }, function () {
-      return downloadRemote(config, path);
+    if (cached && listing && listing.logSha && listing.logSha === cached.sha) {
+      return Promise.resolve({ doc: cached.doc, sha: cached.sha, unchanged: true });
+    }
+    return downloadRemote(config);
+  }
+
+  // ---------- the archive: one file per month of the past ----------
+  //
+  // The settled past moves out of the live file into one file per calendar
+  // month (UTC, by the entry's own time), which hardly ever changes, so a tap
+  // sends a fortnight rather than the whole history. SYNC_ARCHIVE_PLAN.md has
+  // the design and the rules that keep it from ever losing an entry.
+
+  function archivePath(month) {
+    return ARCHIVE_DIR + "/events-" + month + ".json";
+  }
+
+  function monthOfEntry(event) {
+    return String((event && event.time) || "").slice(0, 7);
+  }
+
+  // [{ month, sha }] for every month file in the folder; none at all when the
+  // folder is not there yet.
+  function listArchive(config) {
+    return listRemoteDir(config, ARCHIVE_DIR).then(function (entries) {
+      var months = [];
+      entries.forEach(function (entry) {
+        var m = entry && entry.type === "file" && ARCHIVE_NAME_RE.exec(entry.name || "");
+        if (m && entry.sha) months.push({ month: m[1], sha: entry.sha });
+      });
+      return months;
     });
+  }
+
+  // { doc, sha }, with the same handling of a file past a megabyte and the
+  // same refusal of one that cannot be read as the live document gets.
+  function downloadArchiveMonth(config, month) {
+    return downloadRemote(config, archivePath(month));
+  }
+
+  function archiveDocument(month, list) {
+    return { app: "baby-tracker", kind: "archive", version: DOC_FORMAT, month: month,
+      writtenBy: APP_VERSION, events: list };
+  }
+
+  function putArchiveMonth(config, month, list, sha) {
+    return putRemote(config, archiveDocument(month, list), sha, archivePath(month));
   }
 
   function putRemote(config, doc, sha, path) {
     var payload = {
-      message: "Update baby log (" + new Date().toISOString() + ")",
+      message: (doc && doc.kind === "archive" ? "Archive baby log " + doc.month : "Update baby log") +
+        " (" + new Date().toISOString() + ")",
       // Sent without the indentation it used to carry: this file is a
       // transport between two phones, read only by the app, and the spaces
       // were about a fifth of every upload. The backup a person actually
@@ -7734,7 +7789,20 @@
       // hiccup (offline, a bad token) must never fail the sync it rode in
       // on, so it is swallowed here rather than left to reject the pair.
       var voicePromise = listVoiceQueue(config).catch(function () { return []; });
-      return Promise.all([fetchRemote(config), voicePromise]).then(function (results) {
+      // A refusal of the listing alone is survivable — the document is still
+      // fetched the plain way. No answer at all is not: the download would
+      // only sit through the same wait again.
+      var listingPromise = remoteListing(config).catch(function (err) {
+        if (err && err.http) return null;
+        throw err;
+      });
+      var docPromise = listingPromise.then(function (listing) {
+        return fetchRemote(config, listing).then(function (found) {
+          found.listing = listing;
+          return found;
+        });
+      });
+      return Promise.all([docPromise, voicePromise]).then(function (results) {
         var found = results[0];
         var queued = results[1];
         // Before anything that could refuse the log: a phone that is behind
