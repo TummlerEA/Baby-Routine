@@ -608,6 +608,10 @@ function rms(s, from, count) {
   await page.click('#btnSleep');
   await page.waitForTimeout(500);
   ok('nor does waking up', !(await player()).playing);
+  ok('the combined wake button is hidden while awake', await page.isHidden('#btnWakeChangeFeed'));
+  await page.click('#btnSleep');
+  await page.waitForTimeout(500);
+  ok('and back once asleep', await page.isVisible('#btnWakeChangeFeed'));
   await page.click('#btnWakeChangeFeed');
   await page.waitForTimeout(500);
   ok('nor the combined wake button', !(await player()).playing);
