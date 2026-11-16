@@ -79,12 +79,17 @@ const PLOT_W = 320 - 38 - 4;
   ok('and its totals add up to its 25 hours', /asleep 15h 30m/.test(line) && /awake 8h(?! ?\d)/.test(line) &&
     /hard settling 1h 30m/.test(line), line);
 
-  // Opened again in a second tab rather than by reloading: a reload can beat
-  // Chromium's batched write of localStorage and come back to the storage as
-  // it was a moment before, while two tabs of one browser share it live.
+  // Opened again in a second tab. Under load, a page opened straight away
+  // from a file can still see localStorage as it was a moment before the
+  // first tab wrote to it, so wait for the write to reach this tab and then
+  // start the app afresh — which is the part being checked: that it reads
+  // the choice back when it starts.
   const again = await ctx.newPage();
   again.on('pageerror', e => errs.push('ERR ' + e.message));
   await again.goto(h.APP);
+  await again.waitForFunction(() => localStorage.getItem('baby-tracker-pattern-open') === '1',
+    null, { timeout: 10000 }).catch(() => null);
+  await again.reload();
   await again.waitForLoadState('load');
   await again.waitForTimeout(300);
   await again.click('#statsOpen');
