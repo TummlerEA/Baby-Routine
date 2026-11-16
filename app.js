@@ -456,7 +456,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "134";
+    var fallback = "135";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1486,6 +1486,31 @@
     return Math.round(mid / (5 * MS_MIN)) * 5 * MS_MIN;
   }
 
+  // How long her night sleeps begun near this time of night have run over
+  // the last week: the middle of them, to five minutes. At least three are
+  // needed, or it is a guess dressed as a figure. Under ten minutes is a
+  // stir, not a sleep; over half a day a wake-up nobody logged.
+  function usualNightSleepMs(analysis, startedAt) {
+    var since = +startedAt - 7 * MS_DAY;
+    var clock = startedAt.getHours() * 60 + startedAt.getMinutes();
+    var near = [];
+    analysis.sessions.forEach(function (s) {
+      if (s.startMs < since || s.endMs > +startedAt) return;
+      var at = new Date(s.startMs);
+      var mins = at.getHours() * 60 + at.getMinutes();
+      if (!isNightClock(mins)) return;
+      var len = s.endMs - s.startMs;
+      if (len < 10 * MS_MIN || len > SUSPICIOUS_SLEEP) return;
+      var apart = Math.abs(mins - clock);
+      if (Math.min(apart, 1440 - apart) * MS_MIN <= NAP_NEAR_MS) near.push(len);
+    });
+    if (near.length < NAP_OWN_MIN) return null;
+    near.sort(function (a, b) { return a - b; });
+    var half = near.length / 2;
+    var mid = near.length % 2 ? near[Math.floor(half)] : (near[half - 1] + near[half]) / 2;
+    return Math.round(mid / (5 * MS_MIN)) * 5 * MS_MIN;
+  }
+
   // How long her daytime naps usually run: the middle of last week's naps
   // that began near this time of day — an afternoon nap is often a shorter
   // one than the morning's — or of all last week's daytime naps when there
@@ -1618,6 +1643,23 @@
       // end, a baby who went down at 07:15 was due up at 07:30.
       var tail = inSlot && isNightClock(clockMinutes(began.slot.time)) &&
         began.until - startedAt < (nap ? nap.ms : NIGHT_TAIL_MS);
+      var downAtNight = isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes());
+      // Down at night, and not for the morning's first nap: how long her own
+      // sleeps begun at about this time of night have run lately. The table's
+      // hour is a plan for the night as a whole; a baby who goes down at
+      // 23:30 and usually wakes two hours later is not going to sleep to the
+      // table's 03:30 because it says so, and the parent at 23:30 wants to
+      // know how long they have.
+      if (downAtNight && !tail) {
+        var stretch = usualNightSleepMs(analysis, startedAt);
+        if (stretch) {
+          status.wakeDue = new Date(+startedAt + stretch);
+          status.wakeFrom = "baby";
+          status.napMs = stretch;
+          status.napNight = true;
+          return status;
+        }
+      }
       if (nap && (tail || !isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes()))) {
         status.wakeDue = new Date(+startedAt + nap.ms);
         status.wakeFrom = "baby";
@@ -1636,12 +1678,17 @@
       }
       // Otherwise the sleep slot she was actually put down for. At night its
       // hour stands; a nap begun late in its slot runs the slot's length
-      // rather than being woken a few minutes in.
+      // rather than being woken a few minutes in. Night is judged by when
+      // she went down as well as by when the slot begins: an evening slot of
+      // 19:45 to 00:45, before a night that starts at 21:00, is the first of
+      // the night's sleeps and not a nap, and a baby put down for it at 23:27
+      // was told she would sleep the slot's whole five hours, until 04:27.
       if (inSlot) {
         status.wakeDue = began.until;
         status.wakeFrom = "routine";
         var length = began.until - began.at;
-        if (!isNightClock(clockMinutes(began.slot.time)) && began.until - startedAt < length / 2) {
+        if (!downAtNight && !isNightClock(clockMinutes(began.slot.time)) &&
+            began.until - startedAt < length / 2) {
           status.wakeDue = new Date(+startedAt + length);
         }
       }
@@ -3076,6 +3123,7 @@
   }
 
   function napWords(status) {
+    if (status.napNight) return "her sleeps at this time of night run about " + formatDuration(status.napMs);
     return (status.napNearby ? "her naps at this time of day run about " : "her daytime naps run about ") +
       formatDuration(status.napMs);
   }

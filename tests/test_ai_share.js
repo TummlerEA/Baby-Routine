@@ -46,12 +46,16 @@ const ok = t.ok;
   ok('and says what it is for', await page.isVisible('#aiShareHint'));
   ok('above the per-service links, which stay',
     (await page.$$('#aiTargets .ai-target')).length === 3);
+  // The text carries the time, so a minute turning over between the tap and
+  // the look can redraw it; it must match what was there on one side of it.
+  const previewBefore = await page.evaluate(() => document.getElementById('aiPreview').value);
   await page.click('#aiShare');
   await page.waitForTimeout(300);
   const shared = await page.evaluate(() => window.__shared);
   const preview = await page.evaluate(() => document.getElementById('aiPreview').value);
   ok('one tap opens the menu once', shared.length === 1, shared);
-  ok('handing it exactly the text on screen', shared[0] && shared[0].text === preview);
+  ok('handing it exactly the text on screen',
+    shared[0] && (shared[0].text === preview || shared[0].text === previewBefore));
   ok('as text alone, so the apps put it in the message box',
     shared[0] && !shared[0].url && !shared[0].files, shared[0]);
   ok('the text is the summary with its question',
