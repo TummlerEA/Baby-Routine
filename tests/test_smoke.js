@@ -136,7 +136,13 @@ const APP = h.APP;
   // Shallower, but never below what a finger needs.
   const targets = await page.evaluate(() => {
     const h = s => Math.round(document.querySelector(s).getBoundingClientRect().height);
-    return { action: h('.action-btn'), combo: h('.combo-btn') };
+    // The combo shows only while asleep; measured as it would be then.
+    const combo = document.querySelector('.combo-btn');
+    const was = combo.hidden;
+    combo.hidden = false;
+    const size = { action: h('.action-btn'), combo: h('.combo-btn') };
+    combo.hidden = was;
+    return size;
   });
   ok('the action buttons are still a comfortable target', targets.action >= 44, targets);
   ok('the combo button is still a comfortable target', targets.combo >= 44, targets);
