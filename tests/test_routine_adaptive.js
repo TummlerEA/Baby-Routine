@@ -68,6 +68,7 @@ const ROUTINE = { on: true, slots: [
       if (o.asleep) add('sleep_start', clock(0, o.asleep));
       localStorage.setItem('baby-tracker-events', JSON.stringify(ev));
       localStorage.setItem('baby-tracker-routine', JSON.stringify(routine));
+      if (o.night) localStorage.setItem('baby-tracker-night', JSON.stringify(o.night));
       if (o.dobDays !== undefined) {
         const dob = new Date(now); dob.setDate(dob.getDate() - o.dobDays);
         localStorage.setItem('baby-tracker-dob', dob.getFullYear() + '-' +
@@ -161,6 +162,28 @@ const ROUTINE = { on: true, slots: [
   ({ ctx, read } = await open({ dobDays: 62, history: 80, asleep: '21:05', at: at('21:10') }));
   r = await read();
   ok('at night the routine\'s hour stands', /the routine has her up at 06:00/.test(r.line), r.line);
+  await ctx.close();
+
+  // An evening slot that begins before the night does and runs into it. Down
+  // late for it, at night, she is not a napper owed the slot's full length.
+  const evening = { on: true, slots: [
+    { time: '07:45', until: '09:30', kind: 'sleep' },
+    { time: '12:00', until: '14:00', kind: 'sleep' },
+    { time: '19:45', until: '00:45', kind: 'sleep' },
+    { time: '01:00', until: '03:30', kind: 'sleep' },
+    { time: '03:30', until: '07:30', kind: 'sleep' }
+  ] };
+  ({ ctx, read } = await open({ routine: evening, night: { start: 21, end: 8 }, today: ['18:00', '19:11'],
+    asleep: '23:27', at: at('23:27') }));
+  r = await read();
+  ok('down at 23:27 for an evening slot that ends at 00:45: up at 00:45, not five hours on',
+    /the routine has her up at 00:45/.test(r.line) && !/04:27/.test(r.line), r.line);
+  await ctx.close();
+
+  ({ ctx, read } = await open({ routine: evening, night: { start: 21, end: 8 }, asleep: '20:40', at: at('20:41') }));
+  r = await read();
+  ok('down for it before the night begins, it is still held to its own hour',
+    /the routine has her up at 00:45/.test(r.line), r.line);
   await ctx.close();
 
   // ---- a step passed over is not still due ----

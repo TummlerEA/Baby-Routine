@@ -456,7 +456,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "134";
+    var fallback = "135";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1636,12 +1636,18 @@
       }
       // Otherwise the sleep slot she was actually put down for. At night its
       // hour stands; a nap begun late in its slot runs the slot's length
-      // rather than being woken a few minutes in.
+      // rather than being woken a few minutes in. Night is judged by when
+      // she went down as well as by when the slot begins: an evening slot of
+      // 19:45 to 00:45, before a night that starts at 21:00, is the first of
+      // the night's sleeps and not a nap, and a baby put down for it at 23:27
+      // was told she would sleep the slot's whole five hours, until 04:27.
       if (inSlot) {
         status.wakeDue = began.until;
         status.wakeFrom = "routine";
         var length = began.until - began.at;
-        if (!isNightClock(clockMinutes(began.slot.time)) && began.until - startedAt < length / 2) {
+        var downAtNight = isNightClock(startedAt.getHours() * 60 + startedAt.getMinutes());
+        if (!downAtNight && !isNightClock(clockMinutes(began.slot.time)) &&
+            began.until - startedAt < length / 2) {
           status.wakeDue = new Date(+startedAt + length);
         }
       }
