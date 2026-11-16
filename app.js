@@ -456,7 +456,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "133";
+    var fallback = "134";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -3203,6 +3203,11 @@
     var sleeping = isSleepingNow();
     el.sleepLabel.textContent = sleeping ? "Wake up" : "Sleep";
     el.btnSleep.classList.toggle("sleeping", sleeping);
+    // Only while asleep: the first thing it logs is a wake-up. Shown while
+    // awake it sat right under the button just tapped for that wake-up, and
+    // a second tap a moment later logged a second wake ten minutes back,
+    // a nappy and a feed nobody had given.
+    el.btnWakeChangeFeed.hidden = !sleeping;
   }
 
   // ---------- the routine on the main screen ----------
@@ -6238,6 +6243,7 @@
   // entry's own edit are for if five minutes or fifteen minutes was not
   // quite right this time.
   function quickWakeChangeFeed() {
+    if (!isSleepingNow()) return;
     var now = Date.now();
     var wakeId = addEvent("sleep_end", new Date(now - 2 * WAKE_CHANGE_FEED_GAP).toISOString());
     if (!wakeId) return;
@@ -15132,8 +15138,8 @@
       ru: "«Sleep» работает как переключатель: нажмите, когда малыш уснул, — кнопка станет «Wake up». Нажмите ещё раз, когда проснётся, и приложение посчитает, сколько он спал." },
     { id: "combo", title: { en: "Woke, nappy and feed in one tap", ru: "Проснулся, подгузник и кормление одним нажатием" }, go: { main: "btnWakeChangeFeed" },
       words: "combo three once together sequence woke nappy feed три сразу одной вместе последовательн",
-      en: "Below the three buttons, Woke → nappy change → feeding logs all three at once: a wake-up ten minutes ago, a nappy five minutes ago and a feed now. Undo removes all three. It never turns on any sound.",
-      ru: "Под тремя кнопками есть «Woke → nappy change → feeding»: одно нажатие записывает пробуждение 10 минут назад, подгузник 5 минут назад и кормление сейчас. «Undo» отменяет все три. Звук при этом не включается." },
+      en: "While the baby is asleep, Woke → nappy change → feeding sits below the three buttons and logs all three at once: a wake-up ten minutes ago, a nappy five minutes ago and a feed now. Undo removes all three. It is hidden while the baby is awake, so it cannot be hit just after logging a wake-up. It never turns on any sound.",
+      ru: "Пока ребёнок спит, под тремя кнопками есть «Woke → nappy change → feeding»: одно нажатие записывает пробуждение 10 минут назад, подгузник 5 минут назад и кормление сейчас. «Undo» отменяет все три. Когда ребёнок не спит, кнопка скрыта, чтобы её нельзя было задеть сразу после отметки «проснулся». Звук при этом не включается." },
     { id: "edit", title: { en: "Fixing or deleting an entry", ru: "Исправить или удалить запись" }, go: { main: "logToggle" },
       words: "*edit *delete *remove *mistake undo wrong *fix change correct *удалить *удалит *исправить *ошибк *ошиблась *ошибся отменить отмена поменять изменить неправильн",
       en: "Open Show history on the main screen and tap the entry: you can change its type, time or details, or delete it. A delete gives you seven seconds to undo.",
