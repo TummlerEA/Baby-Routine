@@ -63,6 +63,15 @@ const ROUTINE = { on: true, slots: [
           add('sleep_start', clock(day, '20:30'));
         }
       }
+      if (o.nights) {
+        // One sleep a night at 23:00, this many minutes long, ending the
+        // nights before today.
+        o.nights.forEach((mins, i) => {
+          const down = clock(i - o.nights.length, '23:00');
+          add('sleep_start', down);
+          add('sleep_end', new Date(+down + mins * 60e3));
+        });
+      }
       add('sleep_end', clock(0, o.morning || '06:30'));
       if (o.today) { add('sleep_start', clock(0, o.today[0])); add('sleep_end', clock(0, o.today[1])); }
       if (o.asleep) add('sleep_start', clock(0, o.asleep));
@@ -161,7 +170,11 @@ const ROUTINE = { on: true, slots: [
 
   ({ ctx, read } = await open({ dobDays: 62, history: 80, asleep: '21:05', at: at('21:10') }));
   r = await read();
-  ok('at night the routine\'s hour stands', /the routine has her up at 06:00/.test(r.line), r.line);
+  // A week of nights from 20:30 to 08:00 (the last one ended at 06:30).
+  ok('at night, with a week of her own nights, it goes by how long they run',
+    /Asleep for 5m · likely up about 08:35/.test(r.line), r.line);
+  ok('and says so', /her sleeps at this time of night run about 11h 30m/.test(r.sub), r.sub);
+  ok('What\'s next says the same', /likely up about 08:35/.test(r.forecast), r.forecast);
   await ctx.close();
 
   // An evening slot that begins before the night does and runs into it. Down
@@ -176,6 +189,22 @@ const ROUTINE = { on: true, slots: [
   ({ ctx, read } = await open({ routine: evening, night: { start: 21, end: 8 }, today: ['18:00', '19:11'],
     asleep: '23:27', at: at('23:27') }));
   r = await read();
+  ({ ctx, read } = await open({ routine: evening, night: { start: 21, end: 8 }, nights: [60, 120, 135, 120, 220],
+    asleep: '23:27', at: at('23:30') }));
+  r = await read();
+  ok('a baby whose sleeps at this time of night run two hours: likely up about 01:27',
+    /likely up about 01:27/.test(r.line) && /in 1h 57m · her sleeps at this time of night run about 2h/.test(r.sub),
+    [r.line, r.sub]);
+  await ctx.close();
+
+  ({ ctx, read } = await open({ routine: evening, night: { start: 21, end: 8 }, nights: [60, 120],
+    asleep: '23:27', at: at('23:30') }));
+  r = await read();
+  ok('two nights of her own are not enough to go on: the routine\'s hour',
+    /the routine has her up at 00:45/.test(r.line), r.line);
+  await ctx.close();
+
+  // With too few nights of her own logged, the routine's hour.
   ok('down at 23:27 for an evening slot that ends at 00:45: up at 00:45, not five hours on',
     /the routine has her up at 00:45/.test(r.line) && !/04:27/.test(r.line), r.line);
   await ctx.close();
