@@ -1,6 +1,6 @@
 # Spoken diary + advisor — working plan (v136)
 
-**Status:** B1 done (diary chat created). Next: the user does A1; the diary chat does B2–B4; then the app part (C) after the user confirms D2. Tick boxes as you go and commit this file with the work.
+**Status:** B1 done; D2 confirmed by the user (notes are not in the sync file nor the backup export); app part C in progress. Tick boxes as you go and commit this file with the work.
 **Branch:** `claude/baby-tracker-app-96guwg`. While this plan is open, do not reset the branch from main; merge main in instead.
 **Talk to the user** in Russian, short and plain. App UI stays in UK English. The diary itself is in Russian: that is the family's own setting, not the app's.
 **Never** put the private repo's name, or anyone's name, in this file or in the public repo. Call it "the private sync repo".
@@ -8,7 +8,7 @@
 ## Resuming after a context compaction
 
 1. Read this file. The ticked boxes show where work stopped.
-2. The diary chat is a separate Claude Code session on the private sync repo, titled "Дневник". Its rules live in that repo's `CLAUDE.md`, which is the contract between that chat and the app.
+2. The diary chat is a separate Claude Code session on the private sync repo, titled **"Baby-Journal"** (renamed from «Дневник»; cloud sessions cannot be messaged from here, so the user relays changes to it by pasting text). Its rules live in that repo's `CLAUDE.md`, which is the contract between that chat and the app.
 3. Carry on with the first unticked step. Do not redesign anything: the decisions below are agreed with the user.
 
 ## What it is
@@ -31,10 +31,14 @@ The other parent has no Claude account and writes through the **app**. The user 
 | D2 | Notes are **not** stored in `baby-tracker-log.json`. They are also kept out of the JSON backup export, share links and the "Ask an AI" prompt. Notes live on GitHub as Markdown. (The user said "не надо в JSON выгрузку". Confirm with them that this covers both the sync file and the backup export; it is assumed here.) |
 | D3 | **One file per note**, so two phones and the chat never write the same file. Claude never rewrites a note file: it is the verbatim record. |
 | D4 | A **day file** per baby-day is derived from the notes plus the app's log. It holds a rewritten **Сводка** (summary), the verbatim **Записи** (time, author, text), and **Цифры** (numbers from the app). It is rebuilt by the chat, never by the app. |
-| D5 | **Day boundary:** a baby-day starts at the morning wake, the first `sleep_end` between 04:00 and 11:00 local that ends a sleep begun inside the night window. A note before that wake belongs to the previous day. If no such wake is logged, the boundary is 06:00. The app and the chat use the same rule. |
+| D5 | **Day boundary:** a baby-day starts at the morning wake, the first `sleep_end` between **05:00** and 11:00 local that ends a sleep begun inside the night window. A note before that wake belongs to the previous day. If no such wake is logged, the boundary is 06:00. The app and the chat use the same rule. |
 | D6 | **Author:** each phone has a local "Who's using this phone" name. It is stored on that phone only: not synced, not exported. Every note carries it. Chat notes carry the user's name and `source: chat`. |
 | D7 | Advice only **when asked**, for now. |
 | D8 | **Reminders, trial:** a dedicated Google Calendar the user creates and shares with the other parent. Event at **bedtime − 10 min**: "🌙 Через 10 минут — спать: начинайте пеленать / укачивать". The alert fires at the event's start. |
+| D10 | **Names in English:** every file, folder, commit message and chat/session name is in English. Only the content is Russian. Commits from the chat: "Journal: …". |
+| D11 | **Author names come from the app.** For chat notes, the chat uses the same name the user set in the app. |
+| D12 | **Calendar link in the app:** Settings has a field for the baby calendar's link. It is **local to each phone**: not synced, not exported, not in share links or the AI prompt. The Diary screen shows a "📅 Baby calendar" button that opens it. |
+| D13 | **The Calendar connector is on the work Google account.** It sees only that account's calendars, and the baby calendar must be shared with that account, or created in it, before reminders can work. The Baby-Journal session showed no Calendar tools at creation. Reminders may therefore have to come from a scheduled task created **from this session** with `connectors: ["Google Calendar"]`; its fired sessions clone the private repo themselves. |
 | D9 | Notes go to GitHub **only through sync**. Without sync connected, notes stay on the phone, and the screen says so. |
 
 ## Note file format (the contract between the app and the chat)
@@ -109,7 +113,7 @@ tools/analyze.py                reads baby-tracker-log.json + archive/ → day s
 ## Steps
 
 ### Part A — the user, by hand
-- [ ] A1. Create a Google Calendar named after the baby:
+- [x] A1. (Done by the user; the connector cannot see the calendar yet, see D13.) Create a Google Calendar named after the baby:
   - calendar.google.com → Other calendars → ＋ → Create new calendar;
   - share it with the other parent, choosing "Make changes to events";
   - on both phones, make sure its notifications are on: Google Calendar app → Settings → that calendar → notifications.
@@ -132,6 +136,7 @@ tools/analyze.py                reads baby-tracker-log.json + archive/ → day s
 
 ### Part C — the app (v136), in this repo
 - [ ] C1. Settings: **Who's using this phone**, a local-only key `baby-tracker-author`. Excluded from sync, backup, share and AI.
+- [ ] C1b. Settings: **Baby calendar link**, a local-only key `baby-tracker-calendar-url`. It accepts only https URLs and is excluded everywhere, as C1 is. The Diary screen shows a "📅 Baby calendar" button that opens it (`target=_blank`, `rel=noopener`) while it is set.
 - [ ] C2. Diary screen: a **Notes** section at the top.
   - A text box: the keyboard's 🎤 dictation works. Reuse the app's own voice button if it fits.
   - Save, with Undo.
