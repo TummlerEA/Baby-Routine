@@ -3902,3 +3902,88 @@ body {
 }
 
 .mu-chip { min-width: 0; max-width: 100%; }
+
+/* ---------- diary notes ---------- */
+.dn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dn-cal {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 15px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dn-cal:active { opacity: 0.75; }
+.dn-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dn-step {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 22px;
+  min-width: 48px;
+  min-height: 48px;
+  cursor: pointer;
+}
+.dn-step:disabled { opacity: 0.3; cursor: default; }
+.dn-day-label {
+  color: var(--text-dim);
+  font-size: 15px;
+  text-align: center;
+  flex: 1;
+}
+.dn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dn-item {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.dn-item.editing { border-color: var(--accent-sleep); }
+.dn-meta {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.dn-text {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dn-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dn-act {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 44px;
+  padding: 0 14px;
+  cursor: pointer;
+}

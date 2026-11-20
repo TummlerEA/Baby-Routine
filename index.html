@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=135">
+<link rel="stylesheet" href="style.css?v=136">
 </head>
 <body>
 
@@ -982,6 +982,24 @@
     <main class="content">
 
       <section>
+        <div class="data-panel" id="dnPanel">
+          <div class="dn-head">
+            <h3 class="jr-head">Notes</h3>
+            <a class="dn-cal" id="calendarOpen" target="_blank" rel="noopener" hidden>📅 Baby calendar</a>
+          </div>
+          <div class="dn-day">
+            <button class="dn-step" id="dnPrev" aria-label="The day before">‹</button>
+            <span class="dn-day-label" id="dnDay">Today</span>
+            <button class="dn-step" id="dnNext" aria-label="The day after">›</button>
+          </div>
+          <div class="dn-list" id="dnList"></div>
+          <textarea id="dnText" class="jr-text" rows="3" maxlength="4000" placeholder="How it's going — the keyboard's 🎤 dictates"></textarea>
+          <button class="data-btn data-btn-import" id="dnSave">Add note</button>
+          <button class="data-btn" id="dnCancel" hidden>Cancel</button>
+          <p class="data-hint" id="dnWho"></p>
+          <p class="data-hint" id="dnSync" hidden></p>
+        </div>
+
         <div class="data-panel">
           <h3 class="jr-head" id="journalTodayTitle">How was today</h3>
           <label class="jr-rate jr-day">
@@ -1434,6 +1452,21 @@
       </section>
 
       <section>
+        <h2 class="section-title"><span class="section-icon">📱</span> This phone</h2>
+        <div class="settings-panel">
+          <label class="manual-field">
+            <span class="manual-label">Who's using this phone</span>
+            <input id="authorName" class="manual-input" type="text" maxlength="30" autocomplete="off" placeholder="Your name, as it should sign diary notes">
+          </label>
+          <label class="manual-field">
+            <span class="manual-label">Baby calendar link <span class="manual-optional">— optional</span></span>
+            <input id="calendarUrl" class="manual-input" type="url" maxlength="500" autocomplete="off" inputmode="url" placeholder="https://calendar.google.com/…">
+          </label>
+          <p class="settings-hint">Both stay on this phone only — not synced, and never in a backup, a share link or anything sent to an AI. The name signs the notes you add in the Diary, so each phone sets its own. The calendar link puts a 📅 button in the Diary; only the people the calendar is shared with can open it.</p>
+        </div>
+      </section>
+
+      <section>
         <h2 class="section-title"><span class="section-icon">⏱</span> Planned intervals</h2>
         <div class="settings-panel">
           <p class="settings-intro">How often you plan each one to happen. Predictions are built from these, so they match your routine from the very first entry rather than waiting for a pattern to emerge.</p>
@@ -1600,6 +1633,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=135"></script>
+<script src="app.js?v=136"></script>
 </body>
 </html>
