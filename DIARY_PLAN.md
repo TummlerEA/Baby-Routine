@@ -1,6 +1,6 @@
 # Spoken diary + advisor — working plan (v136)
 
-**Status:** PLANNED. Nothing built yet. Tick boxes as you go and commit this file with the work.
+**Status:** B1 done (diary chat created). Next: the user does A1; the diary chat does B2–B4; then the app part (C) after the user confirms D2. Tick boxes as you go and commit this file with the work.
 **Branch:** `claude/baby-tracker-app-96guwg`. While this plan is open, do not reset the branch from main; merge main in instead.
 **Talk to the user** in Russian, short and plain. App UI stays in UK English. The diary itself is in Russian: that is the family's own setting, not the app's.
 **Never** put the private repo's name, or anyone's name, in this file or in the public repo. Call it "the private sync repo".
@@ -117,7 +117,7 @@ tools/analyze.py                reads baby-tracker-log.json + archive/ → day s
 - [ ] A3. Optional, later: a Claude account for the other parent. Not needed, because she writes through the app.
 
 ### Part B — the diary chat (a separate session on the private repo)
-- [ ] B1. Create the session, titled «Дневник», with a setup prompt carrying this plan's formats.
+- [x] B1. Create the session, titled «Дневник», with a setup prompt carrying this plan's formats.
 - [ ] B2. In that session, write `CLAUDE.md`, `goals.md`, `insights.md` and `tasks.md`, and the empty `journal/` tree.
 - [ ] B3. In that session, write `tools/analyze.py` (stdlib only). It must:
   - read the live file plus every `archive/events-*.json`, merged by id with the newest `updatedAt` winning, ignoring tombstones;
