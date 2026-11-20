@@ -1,6 +1,6 @@
 # Spoken diary + advisor — working plan (v136)
 
-**Status:** B1 done; D2 confirmed by the user (notes are not in the sync file nor the backup export); app part C in progress. Tick boxes as you go and commit this file with the work.
+**Status:** B1 done; D2 confirmed by the user (notes are not in the sync file nor the backup export); app part C built (C1–C8); next C9 full suite + PR, then C10 message to the user. Tick boxes as you go and commit this file with the work.
 **Branch:** `claude/baby-tracker-app-96guwg`. While this plan is open, do not reset the branch from main; merge main in instead.
 **Talk to the user** in Russian, short and plain. App UI stays in UK English. The diary itself is in Russian: that is the family's own setting, not the app's.
 **Never** put the private repo's name, or anyone's name, in this file or in the public repo. Call it "the private sync repo".
@@ -135,25 +135,25 @@ tools/analyze.py                reads baby-tracker-log.json + archive/ → day s
   Run it as a one-week trial, then ask the user whether to keep it.
 
 ### Part C — the app (v136), in this repo
-- [ ] C1. Settings: **Who's using this phone**, a local-only key `baby-tracker-author`. Excluded from sync, backup, share and AI.
-- [ ] C1b. Settings: **Baby calendar link**, a local-only key `baby-tracker-calendar-url`. It accepts only https URLs and is excluded everywhere, as C1 is. The Diary screen shows a "📅 Baby calendar" button that opens it (`target=_blank`, `rel=noopener`) while it is set.
-- [ ] C2. Diary screen: a **Notes** section at the top.
+- [x] C1. Settings: **Who's using this phone**, a local-only key `baby-tracker-author`. Excluded from sync, backup, share and AI.
+- [x] C1b. Settings: **Baby calendar link**, a local-only key `baby-tracker-calendar-url`. It accepts only https URLs and is excluded everywhere, as C1 is. The Diary screen shows a "📅 Baby calendar" button that opens it (`target=_blank`, `rel=noopener`) while it is set.
+- [x] C2. Diary screen: a **Notes** section at the top.
   - A text box: the keyboard's 🎤 dictation works. Reuse the app's own voice button if it fits.
   - Save, with Undo.
   - The current baby-day's notes from both parents, shown as time · author · text, newest last.
   - Tap your own note to edit or delete it. Notes by the other parent are read-only.
   - A day picker, so earlier days can be read.
-- [ ] C3. Local store: `baby-tracker-notes` as `[{id, author, at, updated, text, deleted?, sha?, path?, pending?}]`.
+- [x] C3. Local store: `baby-tracker-notes` as `[{id, author, at, updated, text, deleted?, sha?, path?, pending?}]`.
   - A note is shown at once and marked pending until it is pushed.
-- [ ] C4. Sync, riding the existing `syncNow`. The live JSON is untouched.
+- [x] C4. Sync, riding the existing `syncNow`. The live JSON is untouched.
   - **Push:** PUT each pending note, as new or with its sha; DELETE each pending deletion.
   - **Pull:** list `journal/notes/<this month>` and `<last month>`, cached by the folder sha the way the archive is. Download files whose sha is unknown (small), then parse the front matter.
   - **Conflicts:** 409 or 422 re-reads the file and retries. The other parent's edits win for their own notes.
   - The listing piggybacks on the root listing's `journal` tree sha, so there are no extra requests when nothing changed.
-- [ ] C5. Keep notes out of `localDocument()`, the JSON export, share links and the AI prompt. Add tests asserting each.
-- [ ] C6. Day grouping uses rule D5. Put it in a helper `babyDayOf(time)` and test it across midnight and with no wake logged.
-- [ ] C7. README, plus a help topic (EN/RU): "Notes for the diary".
-- [ ] C8. `tests/test_notes.js`, extending the fake GitHub from `test_archive.js`:
+- [x] C5. Keep notes out of `localDocument()`, the JSON export, share links and the AI prompt. Add tests asserting each.
+- [x] C6. Day grouping uses rule D5. Put it in a helper `babyDayOf(time)` and test it across midnight and with no wake logged.
+- [x] C7. README, plus a help topic (EN/RU): "Notes for the diary".
+- [x] C8. `tests/test_notes.js`, extending the fake GitHub from `test_archive.js`:
   - two phones with two authors;
   - add, edit and delete;
   - offline then online;

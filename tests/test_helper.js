@@ -21,7 +21,7 @@ const QUESTIONS = [
   ["What's next?", 'next'], ['Что дальше?', 'next'],
   ['how is today going', 'today'], ['сводка за день', 'today'],
   ['how old is the baby', 'age'], ['сколько недель малышу', 'age'], ['какой вес', 'weight'],
-  ['How do I turn on white noise?', 'noise'], ['Как включить белый шум?', 'noise'], ['где шум', 'noise'], ['How do I add a lullaby?', 'music'], ['Как поставить колыбельную?', 'music'], ['What is the archive folder in my sync repository?', 'sync'], ['Что за архив в синхронизации?', 'sync'],
+  ['How do I turn on white noise?', 'noise'], ['Как включить белый шум?', 'noise'], ['где шум', 'noise'], ['How do I add a lullaby?', 'music'], ['Как поставить колыбельную?', 'music'], ['What is the archive folder in my sync repository?', 'sync'], ['How do I dictate a note?', 'dnotes'], ['Как надиктовать заметку?', 'dnotes'], ['Что за архив в синхронизации?', 'sync'],
   ['How do I share with my partner?', 'share'], ['Как поделиться с партнёром?', 'share'],
   ['как отправить мужу записи', 'share'],
   ['how do I log a feed', 'log-feed'], ['как записать кормление', 'log-feed'],

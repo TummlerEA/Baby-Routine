@@ -127,6 +127,13 @@
   // a folder the parent already shares (Google Drive, iCloud), offered as a
   // starting point on each new note and editable per entry.
   var PHOTO_ALBUM_KEY = "baby-tracker-photo-album";
+  // Diary notes, and the two settings that belong to one phone rather than
+  // to the family: who is holding it, and a link to the baby's calendar.
+  // None of the three is synced as part of the log, backed up, shared or
+  // put into an AI summary — the notes travel as their own files instead.
+  var DNOTES_KEY = "baby-tracker-notes";
+  var AUTHOR_KEY = "baby-tracker-author";
+  var CALENDAR_KEY = "baby-tracker-calendar-url";
   var NIGHT_KEY = "baby-tracker-night";
   // When the night starts and ends, as local hours. A household decision, not
   // a fact about babies: cluster feeding until nine is one family's evening
@@ -456,7 +463,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "135";
+    var fallback = "136";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2248,6 +2255,18 @@
     noiseFabLeft: document.getElementById("noiseFabLeft"),
     screenJournal: document.getElementById("screenJournal"),
     journalOpenBtn: document.getElementById("journalOpen"),
+    dnPrev: document.getElementById("dnPrev"),
+    dnNext: document.getElementById("dnNext"),
+    dnDay: document.getElementById("dnDay"),
+    dnList: document.getElementById("dnList"),
+    dnText: document.getElementById("dnText"),
+    dnSave: document.getElementById("dnSave"),
+    dnCancel: document.getElementById("dnCancel"),
+    dnWho: document.getElementById("dnWho"),
+    dnSync: document.getElementById("dnSync"),
+    calendarOpen: document.getElementById("calendarOpen"),
+    authorName: document.getElementById("authorName"),
+    calendarUrl: document.getElementById("calendarUrl"),
     journalBack: document.getElementById("journalBack"),
     journalTitle: document.getElementById("journalTitle"),
     journalTodayTitle: document.getElementById("journalTodayTitle"),
@@ -7359,6 +7378,7 @@
   var applyingRemote = false;
   var syncQueued = false;
   var syncRetries = 0;
+  var lastListing = null;
   var syncStartedAt = 0;
   var syncRun = 0;
   var syncRetryTimer = null;
@@ -7526,11 +7546,12 @@
   // whether any month of the archive has been written since we last looked.
   function remoteListing(config) {
     return listRemoteDir(config, "").then(function (entries) {
-      var found = { logSha: null, archiveSha: null };
+      var found = { logSha: null, archiveSha: null, journalSha: null };
       entries.forEach(function (entry) {
         if (!entry) return;
         if (entry.name === SYNC_PATH) found.logSha = entry.sha || null;
         if (entry.name === ARCHIVE_DIR && entry.type === "dir") found.archiveSha = entry.sha || null;
+        if (entry.name === DNOTES_ROOT && entry.type === "dir") found.journalSha = entry.sha || null;
       });
       return found;
     });
@@ -8197,6 +8218,7 @@
       var docPromise = listingPromise.then(function (listing) {
         return fetchRemote(config, listing).then(function (found) {
           found.listing = listing;
+          lastListing = listing;
           return found;
         });
       });
@@ -8345,6 +8367,13 @@
     }
 
     return attempt(SYNC_RETRIES).then(function (result) {
+      // The diary notes ride along once the log itself is done. Their own
+      // files, their own failures: a note that did not go up waits for the
+      // next sync and never fails this one.
+      if (run !== syncRun || result.locked || !syncConfig) return result;
+      return syncDiaryNotes(syncConfig, lastListing).then(function () { return result; },
+        function () { return result; });
+    }).then(function (result) {
       if (run !== syncRun) return false;
       syncInFlight = false;
       if (result.locked) {
@@ -12561,7 +12590,531 @@
     closeNoteForm();
     loadJournalForm();
     renderJournal();
+    dnDay = null;
+    renderDiaryNotes();
   });
+
+  // ---------- diary notes ----------
+  //
+  // Short notes through the day — how she woke, how settling went, what she
+  // ate — signed by whoever is holding the phone. Each note is its own
+  // Markdown file in the private repository, under journal/notes/, so two
+  // phones never write the same file and nothing here can collide with the
+  // log. The family's diary chat reads them there and folds them into one
+  // page per day; this screen only adds, shows and corrects them.
+  //
+  // A note belongs to a baby-day, which runs from one morning wake to the
+  // next: the first wake between 05:00 and 11:00 that ends a sleep begun at
+  // night, or 06:00 when none was logged. A note at 02:00 is part of the
+  // night before, not of a new day.
+
+  var DNOTES_ROOT = "journal";
+  var DNOTES_DIR = DNOTES_ROOT + "/notes";
+  var DNOTE_NAME_RE = /^(\d{8}T\d{6}Z)__([a-z0-9-]+)__([A-Za-z0-9_-]+)\.md$/;
+  var DNOTE_MAX = 4000;
+  var DNOTE_AUTHOR_MAX = 30;
+  // How far back a phone fetches the other phones' notes. Older ones stay
+  // in the repository and in the day pages; a phone joining late does not
+  // download months of them one file at a time.
+  var DNOTE_FETCH_DAYS = 14;
+
+  function loadAuthor() {
+    try { return cleanText(localStorage.getItem(AUTHOR_KEY) || "", DNOTE_AUTHOR_MAX); } catch (e) { return ""; }
+  }
+
+  function saveAuthor(value) {
+    var name = cleanText(value, DNOTE_AUTHOR_MAX);
+    try {
+      if (name) localStorage.setItem(AUTHOR_KEY, name);
+      else localStorage.removeItem(AUTHOR_KEY);
+    } catch (e) { /* the field still shows what was typed */ }
+    return name;
+  }
+
+  // Only a web address, and only https: the button opens it as it is.
+  function loadCalendarUrl() {
+    try {
+      var url = String(localStorage.getItem(CALENDAR_KEY) || "");
+      return /^https:\/\/\S+$/i.test(url) ? url : "";
+    } catch (e) { return ""; }
+  }
+
+  function saveCalendarUrl(value) {
+    var url = cleanText(value, 500);
+    if (url && !/^https:\/\/\S+$/i.test(url)) {
+      showError("The calendar link has to start with https://");
+      return false;
+    }
+    try {
+      if (url) localStorage.setItem(CALENDAR_KEY, url);
+      else localStorage.removeItem(CALENDAR_KEY);
+      hideError();
+      return true;
+    } catch (e) {
+      showError("Couldn't save the calendar link");
+      return false;
+    }
+  }
+
+  function validIso(value) {
+    var d = new Date(String(value || ""));
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+
+  function normaliseDiaryNote(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var id = String(raw.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+    var at = validIso(raw.at);
+    if (!id || !at) return null;
+    var note = {
+      id: id,
+      author: cleanText(raw.author, DNOTE_AUTHOR_MAX),
+      at: at,
+      updated: validIso(raw.updated) || at,
+      text: cleanLines(raw.text, DNOTE_MAX)
+    };
+    if (raw.deleted) note.deleted = true;
+    if (raw.pending) note.pending = true;
+    if (raw.own) note.own = true;
+    if (typeof raw.path === "string" && raw.path.indexOf(DNOTES_DIR + "/") === 0) note.path = raw.path;
+    if (typeof raw.sha === "string" && raw.sha) note.sha = raw.sha;
+    return note;
+  }
+
+  function loadDiaryNotes() {
+    try {
+      var list = JSON.parse(localStorage.getItem(DNOTES_KEY) || "[]");
+      return Array.isArray(list) ? list.map(normaliseDiaryNote).filter(Boolean) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveDiaryNotes() {
+    try { localStorage.setItem(DNOTES_KEY, JSON.stringify(dnotes)); } catch (e) {
+      showError("Couldn't save the note on this phone");
+    }
+  }
+
+  var dnotes = loadDiaryNotes();
+  var dnDay = null;        // the baby-day on screen, as a local-midnight Date; null means the current one
+  var dnEditing = null;    // id of the note in the box, when it is being corrected
+  var dnSeenSha = null;    // the journal folder's sha when its notes were last read
+
+  // Cyrillic spelled out in Latin letters, for the file name only; the name
+  // itself is read back from inside the file.
+  var DNOTE_TRANSLIT = { "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
+    "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r",
+    "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya" };
+
+  function authorSlug(name) {
+    var out = String(name || "").toLowerCase().split("").map(function (c) {
+      return Object.prototype.hasOwnProperty.call(DNOTE_TRANSLIT, c) ? DNOTE_TRANSLIT[c] : c;
+    }).join("").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
+    return out || "anon";
+  }
+
+  function noteStamp(iso) {
+    return iso.replace(/\.\d+Z$/, "Z").replace(/[-:]/g, "");
+  }
+
+  function diaryNotePath(note) {
+    return DNOTES_DIR + "/" + note.at.slice(0, 4) + "/" + note.at.slice(5, 7) + "/" +
+      noteStamp(note.at) + "__" + authorSlug(note.author) + "__" + note.id + ".md";
+  }
+
+  function diaryNoteFile(note) {
+    var line = function (v) { return String(v || "").replace(/[\r\n]+/g, " "); };
+    return "---\n" +
+      "id: " + note.id + "\n" +
+      "author: " + line(note.author) + "\n" +
+      "at: " + note.at.replace(/\.\d+Z$/, "Z") + "\n" +
+      "updated: " + note.updated.replace(/\.\d+Z$/, "Z") + "\n" +
+      "source: app\n" +
+      "---\n" + note.text + "\n";
+  }
+
+  // The front matter written above, or by the diary chat in the same shape.
+  function parseDiaryNoteFile(text) {
+    var m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(text || ""));
+    if (!m) return null;
+    var head = {};
+    m[1].split(/\r?\n/).forEach(function (row) {
+      var i = row.indexOf(":");
+      if (i > 0) head[row.slice(0, i).trim()] = row.slice(i + 1).trim();
+    });
+    return normaliseDiaryNote({ id: head.id, author: head.author, at: head.at,
+      updated: head.updated, text: m[2].replace(/\s+$/, "") });
+  }
+
+  // ----- baby-days -----
+
+  function morningWakeOn(dayStart, sessions) {
+    var from = new Date(dayStart); from.setHours(5, 0, 0, 0);
+    var to = new Date(dayStart); to.setHours(11, 0, 0, 0);
+    var best = null;
+    sessions.forEach(function (s) {
+      if (s.endMs === null || s.endMs < +from || s.endMs >= +to) return;
+      var began = new Date(s.startMs);
+      if (!isNightClock(began.getHours() * 60 + began.getMinutes())) return;
+      if (best === null || s.endMs < best) best = s.endMs;
+    });
+    if (best === null) {
+      var six = new Date(dayStart); six.setHours(6, 0, 0, 0);
+      best = +six;
+    }
+    return best;
+  }
+
+  // The local-midnight Date of the baby-day a moment belongs to.
+  function babyDayOf(ms, sessions) {
+    var day = new Date(ms); day.setHours(0, 0, 0, 0);
+    if (ms < morningWakeOn(day, sessions)) day.setDate(day.getDate() - 1);
+    return day;
+  }
+
+  // ----- adding, correcting, deleting -----
+
+  function liveDiaryNotes() {
+    return dnotes.filter(function (n) { return !n.deleted; });
+  }
+
+  function isMyNote(note) {
+    var me = loadAuthor().toLowerCase();
+    return !!note.own || (!!me && note.author.toLowerCase() === me);
+  }
+
+  function saveDiaryNoteFromBox() {
+    var text = cleanLines(el.dnText.value, DNOTE_MAX);
+    if (!text) {
+      showToast("Nothing to save yet — say or type a line.");
+      return;
+    }
+    var now = new Date().toISOString();
+    if (dnEditing) {
+      var note = dnotes.filter(function (n) { return n.id === dnEditing; })[0];
+      if (note) {
+        note.text = text;
+        note.updated = now;
+        note.pending = true;
+      }
+      showToast("Note updated");
+    } else {
+      dnotes.push({ id: uuid(), author: loadAuthor(), at: now, updated: now, text: text,
+        pending: true, own: true });
+      showToast("Note added");
+    }
+    dnEditing = null;
+    el.dnText.value = "";
+    dnDay = null;
+    saveDiaryNotes();
+    renderDiaryNotes();
+    scheduleSync();
+  }
+
+  function editDiaryNote(id) {
+    var note = dnotes.filter(function (n) { return n.id === id; })[0];
+    if (!note) return;
+    dnEditing = id;
+    el.dnText.value = note.text;
+    renderDiaryNotes();
+    el.dnText.focus();
+  }
+
+  function deleteDiaryNote(id) {
+    var note = dnotes.filter(function (n) { return n.id === id; })[0];
+    if (!note) return;
+    var wasPending = !!note.pending;
+    note.deleted = true;
+    note.pending = true;
+    if (dnEditing === id) {
+      dnEditing = null;
+      el.dnText.value = "";
+    }
+    saveDiaryNotes();
+    renderDiaryNotes();
+    scheduleSync();
+    showToast("Note deleted", function () {
+      if (!note.deleted) return;
+      delete note.deleted;
+      if (!wasPending && note.sha) delete note.pending;
+      saveDiaryNotes();
+      renderDiaryNotes();
+    });
+  }
+
+  // ----- the panel -----
+
+  function renderDiaryNotes() {
+    var sessions = analyzeSleep().sessions.slice();
+    var current = babyDayOf(Date.now(), sessions);
+    var day = dnDay && +dnDay < +current ? dnDay : current;
+    var key = dayKeyOf(day);
+    var wakeAt = morningWakeOn(day, sessions);
+    var isCurrent = +day === +current;
+    el.dnDay.textContent = (isCurrent ? "Today" : formatDateShort(day)) +
+      " · from " + formatClockTime(new Date(wakeAt));
+    el.dnNext.disabled = isCurrent;
+
+    var shown = liveDiaryNotes().filter(function (n) {
+      return dayKeyOf(babyDayOf(+new Date(n.at), sessions)) === key;
+    }).sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    el.dnList.innerHTML = "";
+    if (!shown.length) {
+      var empty = document.createElement("p");
+      empty.className = "data-hint dn-empty";
+      empty.textContent = isCurrent ? "No notes yet today." : "No notes that day.";
+      el.dnList.appendChild(empty);
+    }
+    shown.forEach(function (n) {
+      var row = document.createElement("div");
+      row.className = "dn-item" + (dnEditing === n.id ? " editing" : "");
+      var meta = document.createElement("div");
+      meta.className = "dn-meta";
+      meta.textContent = formatClockTime(new Date(n.at)) + " · " + (n.author || "—") +
+        (n.pending && syncConfig ? " · not sent yet" : "");
+      var body = document.createElement("div");
+      body.className = "dn-text";
+      body.textContent = n.text;
+      row.appendChild(meta);
+      row.appendChild(body);
+      if (isMyNote(n)) {
+        var actions = document.createElement("div");
+        actions.className = "dn-actions";
+        var edit = document.createElement("button");
+        edit.className = "dn-act";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", function () { editDiaryNote(n.id); });
+        var del = document.createElement("button");
+        del.className = "dn-act";
+        del.textContent = "Delete";
+        del.addEventListener("click", function () { deleteDiaryNote(n.id); });
+        actions.appendChild(edit);
+        actions.appendChild(del);
+        row.appendChild(actions);
+      }
+      el.dnList.appendChild(row);
+    });
+
+    el.dnSave.textContent = dnEditing ? "Save the change" : "Add note";
+    el.dnCancel.hidden = !dnEditing;
+    var me = loadAuthor();
+    el.dnWho.textContent = me ? "Signed as " + me + " — set under Settings → This phone."
+      : "Put your name under Settings → This phone, so the notes say who wrote them.";
+    el.dnSync.hidden = !!syncConfig;
+    el.dnSync.textContent = "Sync isn't connected, so these notes stay on this phone. " +
+      "Connected, each one goes to your repository for the other phone and the diary chat.";
+    var cal = loadCalendarUrl();
+    el.calendarOpen.hidden = !cal;
+    if (cal) el.calendarOpen.href = cal;
+    else el.calendarOpen.removeAttribute("href");
+  }
+
+  function diaryNotesOnScreen() {
+    return !el.dnList.closest(".screen").hidden;
+  }
+
+  el.dnSave.addEventListener("click", saveDiaryNoteFromBox);
+  el.dnCancel.addEventListener("click", function () {
+    dnEditing = null;
+    el.dnText.value = "";
+    renderDiaryNotes();
+  });
+  el.dnPrev.addEventListener("click", function () {
+    var sessions = analyzeSleep().sessions;
+    var base = dnDay || babyDayOf(Date.now(), sessions);
+    dnDay = new Date(base); dnDay.setDate(dnDay.getDate() - 1);
+    renderDiaryNotes();
+  });
+  el.dnNext.addEventListener("click", function () {
+    if (!dnDay) return;
+    dnDay = new Date(dnDay); dnDay.setDate(dnDay.getDate() + 1);
+    renderDiaryNotes();
+  });
+
+  el.authorName.value = loadAuthor();
+  el.authorName.addEventListener("change", function () {
+    el.authorName.value = saveAuthor(el.authorName.value);
+  });
+  el.calendarUrl.value = loadCalendarUrl();
+  el.calendarUrl.addEventListener("change", function () {
+    if (saveCalendarUrl(el.calendarUrl.value)) el.calendarUrl.value = loadCalendarUrl();
+  });
+
+  // ----- going up and coming down -----
+
+  function getRemoteFile(config, path) {
+    return githubRequest(githubUrl(config.repo, path) + "?ref=HEAD&t=" + Date.now(), {
+      headers: githubHeaders(config.token),
+      cache: "no-store"
+    }).then(function (reply) {
+      if (reply.status === 404) return null;
+      if (!reply.ok) throw { http: reply.status };
+      var body = reply.body || {};
+      return { sha: body.sha || null, text: body.content ? base64ToText(body.content) : "" };
+    });
+  }
+
+  function dropDiaryNote(note) {
+    dnotes = dnotes.filter(function (n) { return n !== note; });
+  }
+
+  // One note: written, rewritten or removed. A conflict means the file moved
+  // under us — read its sha again and try once more; this phone's own note
+  // is this phone's to say.
+  function pushDiaryNote(config, note, retry) {
+    if (note.deleted) {
+      if (!note.path || !note.sha) {
+        dropDiaryNote(note);
+        return Promise.resolve(true);
+      }
+      return githubRequest(githubUrl(config.repo, note.path), {
+        method: "DELETE",
+        headers: githubHeaders(config.token),
+        body: JSON.stringify({ message: "Journal: note removed (" + authorSlug(note.author) + ")", sha: note.sha })
+      }).then(function (reply) {
+        if (reply.ok || reply.status === 404) {
+          dropDiaryNote(note);
+          return true;
+        }
+        if ((reply.status === 409 || reply.status === 422) && retry) {
+          return getRemoteFile(config, note.path).then(function (got) {
+            if (!got) { dropDiaryNote(note); return true; }
+            note.sha = got.sha;
+            return pushDiaryNote(config, note, false);
+          });
+        }
+        throw { http: reply.status };
+      });
+    }
+    var path = note.path || diaryNotePath(note);
+    var payload = { message: "Journal: note by " + authorSlug(note.author),
+      content: textToBase64(diaryNoteFile(note)) };
+    if (note.sha) payload.sha = note.sha;
+    return githubRequest(githubUrl(config.repo, path), {
+      method: "PUT",
+      headers: githubHeaders(config.token),
+      body: JSON.stringify(payload)
+    }).then(function (reply) {
+      if (reply.ok) {
+        note.path = path;
+        note.sha = (reply.body && reply.body.content && reply.body.content.sha) || note.sha || null;
+        delete note.pending;
+        return true;
+      }
+      if ((reply.status === 409 || reply.status === 422) && retry) {
+        return getRemoteFile(config, path).then(function (got) {
+          note.path = path;
+          if (got) note.sha = got.sha;
+          else delete note.sha;
+          return pushDiaryNote(config, note, false);
+        });
+      }
+      throw { http: reply.status };
+    });
+  }
+
+  // The month folders that can hold a note from the last DNOTE_FETCH_DAYS.
+  function diaryNoteMonths(now) {
+    var months = {};
+    for (var d = 0; d <= DNOTE_FETCH_DAYS; d += 7) {
+      var iso = new Date(now - d * MS_DAY).toISOString();
+      months[iso.slice(0, 4) + "/" + iso.slice(5, 7)] = true;
+    }
+    var iso0 = new Date(now - DNOTE_FETCH_DAYS * MS_DAY).toISOString();
+    months[iso0.slice(0, 4) + "/" + iso0.slice(5, 7)] = true;
+    return Object.keys(months).sort();
+  }
+
+  // Reads what the other phones and the diary chat have written lately.
+  // Resolves to whether anything here changed.
+  function pullDiaryNotes(config) {
+    var now = Date.now();
+    var since = new Date(now - DNOTE_FETCH_DAYS * MS_DAY).toISOString();
+    var months = diaryNoteMonths(now);
+    var listed = [];
+    return months.reduce(function (chain, month) {
+      return chain.then(function () {
+        return listRemoteDir(config, DNOTES_DIR + "/" + month).then(function (entries) {
+          entries.forEach(function (entry) {
+            var m = entry && entry.type === "file" && DNOTE_NAME_RE.exec(entry.name || "");
+            if (m && entry.sha) listed.push({ path: DNOTES_DIR + "/" + month + "/" + entry.name,
+              sha: entry.sha, id: m[3], stamp: m[1] });
+          });
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      var changed = false;
+      var seen = {};
+      listed.forEach(function (f) { seen[f.path] = true; });
+      // Gone up there, and not something of ours still waiting to go up.
+      dnotes.slice().forEach(function (n) {
+        if (!n.path || n.pending) return;
+        var month = n.path.slice(DNOTES_DIR.length + 1, DNOTES_DIR.length + 8);
+        if (months.indexOf(month) !== -1 && !seen[n.path]) {
+          dropDiaryNote(n);
+          changed = true;
+        }
+      });
+      var todo = listed.filter(function (f) {
+        var mine = dnotes.filter(function (n) { return n.path === f.path || n.id === f.id; })[0];
+        if (mine && (mine.pending || mine.sha === f.sha)) return false;
+        var at = f.stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6.000Z");
+        return !!mine || at >= since;
+      });
+      return todo.reduce(function (chain, f) {
+        return chain.then(function () {
+          return getRemoteFile(config, f.path).then(function (got) {
+            var parsed = got && parseDiaryNoteFile(got.text);
+            if (!parsed) return;
+            parsed.path = f.path;
+            parsed.sha = got.sha || f.sha;
+            var mine = dnotes.filter(function (n) { return n.path === f.path || n.id === parsed.id; })[0];
+            if (mine && mine.pending) return;
+            if (mine) {
+              mine.author = parsed.author;
+              mine.at = parsed.at;
+              mine.updated = parsed.updated;
+              mine.text = parsed.text;
+              mine.path = parsed.path;
+              mine.sha = parsed.sha;
+            } else {
+              dnotes.push(parsed);
+            }
+            changed = true;
+          }, function () { /* that one waits for next time */ });
+        });
+      }, Promise.resolve()).then(function () { return changed; });
+    });
+  }
+
+  function syncDiaryNotes(config, listing) {
+    var pushed = 0;
+    var waiting = dnotes.filter(function (n) { return n.pending; });
+    return waiting.reduce(function (chain, note) {
+      return chain.then(function () {
+        return pushDiaryNote(config, note, true).then(function () { pushed++; }, function () {});
+      });
+    }, Promise.resolve()).then(function () {
+      if (pushed) saveDiaryNotes();
+      if (!listing) return;
+      var sha = listing.journalSha || null;
+      // Nothing written up there since we last read it, and nothing of ours
+      // just went up: there is nothing new to fetch.
+      if (!pushed && dnSeenSha && sha === dnSeenSha) return;
+      if (!sha && !dnotes.some(function (n) { return n.path; })) {
+        dnSeenSha = null;
+        return;
+      }
+      return pullDiaryNotes(config).then(function (changed) {
+        dnSeenSha = pushed ? null : sha;
+        if (changed) saveDiaryNotes();
+        if ((changed || pushed) && diaryNotesOnScreen()) renderDiaryNotes();
+      });
+    }).then(function () {
+      if (pushed && diaryNotesOnScreen()) renderDiaryNotes();
+    });
+  }
+
   el.journalBack.addEventListener("click", showMain);
   el.journalSave.addEventListener("click", saveJournalDay);
   el.journalCancel.addEventListener("click", function () {
@@ -15252,6 +15805,10 @@
       words: "diary journal mood feelings coping дневник настроение чувств",
       en: "The diary is behind ⋯ in the top bar: how the day went and how you are both coping, plus notes for a specialist.",
       ru: "Дневник — в меню ⋯ вверху: как прошёл день и как вы справляетесь, плюс заметки для специалиста." },
+    { id: "dnotes", title: { en: "Notes through the day", ru: "Заметки в течение дня" }, go: { click: "journalOpen" },
+      words: "*notes *note dictate dictation author signed calendar *заметк надиктов диктов автор подпис календар",
+      en: "Diary → Notes: say or type a line as the day goes — the keyboard's 🎤 dictates. Each note is signed with the name under Settings → This phone and, with sync on, goes to your repository as its own file, where the other phone and your diary chat read it. A day runs from the morning wake to the next one. Notes are not in the backup or share links. The 📅 button opens the baby calendar set under This phone.",
+      ru: "Дневник → Notes: надиктуйте или напишите строчку в течение дня — 🎤 на клавиатуре диктует. Заметка подписывается именем из Settings → This phone и при включённой синхронизации уходит в ваш репозиторий отдельным файлом — её видит второй телефон и ваш чат-дневник. День идёт от утреннего пробуждения до следующего. В резервную копию и ссылки заметки не попадают. Кнопка 📅 открывает календарь ребёнка, ссылка на него — там же, в This phone." },
     { id: "milk", title: { en: "Milk in the freezer", ru: "Запас молока" }, go: { click: "milkOpen" },
       words: "freezer frozen milk stash expressed pumped bags морозилк заморож молоко запас сцеж пакет",
       en: "Milk stash, behind ⋯, keeps count of bags and millilitres in the freezer: froze one, took one out, or counted what is really there.",
