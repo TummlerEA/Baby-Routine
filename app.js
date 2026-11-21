@@ -469,7 +469,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "137";
+    var fallback = "138";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -2938,8 +2938,8 @@
     return cleanSettle(event.settle);
   }
 
-  // How she went down, beside how long it took: one way of getting her off
-  // and any of the things around it. Kept so the household can see, over a
+  // How she went down, beside how long it took: the ways of getting her off
+  // (often more than one — fed, then rocked) and any of the things around it. Kept so the household can see, over a
   // fortnight, what helps her settle on her own and what does not — so the
   // list is the handful a parent actually uses, not every method there is.
   var SETTLE_HOW = [
@@ -2961,20 +2961,26 @@
     return null;
   }
 
-  function cleanHow(raw) {
-    return settleLabel(SETTLE_HOW, raw) ? String(raw) : null;
-  }
-
   // Always in the list's own order and never twice, so two phones that ticked
   // the same things store the same array.
-  function cleanMarks(raw) {
+  function cleanPicks(list, raw) {
     if (!Array.isArray(raw)) return [];
-    return SETTLE_MARKS.map(function (m) { return m.id; })
+    return list.map(function (m) { return m.id; })
       .filter(function (id) { return raw.indexOf(id) !== -1; });
   }
 
+  // A sleep logged by 137 holds a single way as a plain string; it reads as a
+  // list of one.
+  function cleanHow(raw) {
+    return cleanPicks(SETTLE_HOW, typeof raw === "string" ? [raw] : raw);
+  }
+
+  function cleanMarks(raw) {
+    return cleanPicks(SETTLE_MARKS, raw);
+  }
+
   function howOf(event) {
-    if (!event || event.type !== "sleep_start") return null;
+    if (!event || event.type !== "sleep_start") return [];
     return cleanHow(event.how);
   }
 
@@ -2986,14 +2992,14 @@
   // "Self · Dummy · Cried", for the history, the exports and the summary.
   function settleDetailText(event) {
     var parts = [];
-    var how = howOf(event);
-    if (how) parts.push(settleLabel(SETTLE_HOW, how));
+    howOf(event).forEach(function (id) { parts.push(settleLabel(SETTLE_HOW, id)); });
     marksOf(event).forEach(function (id) { parts.push(settleLabel(SETTLE_MARKS, id)); });
     return parts.join(" · ");
   }
 
   function setHow(event, how) {
-    if (cleanHow(how)) event.how = how;
+    var clean = cleanHow(how);
+    if (clean.length) event.how = clean;
     else delete event.how;
   }
 
@@ -5272,14 +5278,15 @@
 
   // ---------- how she went down ----------
 
-  // Two rows of chips: one way of getting her off (a second tap on it clears
-  // it), and any of the things around it. The same rows on the card that
+  // Two rows of chips, each a tap on and a tap off: the ways of getting her
+  // off, and the things around it. The same rows on the card that
   // opens after "Sleep" and in the edit form.
   function goDownChipsHtml(how, marks) {
     var out = ['<div class="nextup-chips go-chips">'];
     SETTLE_HOW.forEach(function (h) {
-      out.push('<button type="button" class="nextup-chip go-chip' + (h.id === how ? ' selected' : '') +
-        '" data-how="' + h.id + '" aria-pressed="' + (h.id === how ? 'true' : 'false') + '">' +
+      var on = how.indexOf(h.id) !== -1;
+      out.push('<button type="button" class="nextup-chip go-chip' + (on ? ' selected' : '') +
+        '" data-how="' + h.id + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
         escapeHtml(h.label) + '</button>');
     });
     out.push('</div><div class="nextup-chips go-chips">');
@@ -5294,18 +5301,21 @@
   }
 
   // What a tap on one of those chips turns the pair into.
-  function goDownAfterTap(chip, how, marks) {
-    var pickHow = chip.getAttribute("data-how");
-    if (pickHow) return { how: pickHow === how ? null : pickHow, marks: marks };
-    var mark = chip.getAttribute("data-mark");
-    if (!mark) return null;
-    var next = marks.indexOf(mark) !== -1
-      ? marks.filter(function (id) { return id !== mark; })
-      : marks.concat([mark]);
-    return { how: how, marks: cleanMarks(next) };
+  function toggled(list, id) {
+    return list.indexOf(id) !== -1
+      ? list.filter(function (x) { return x !== id; })
+      : list.concat([id]);
   }
 
-  var manualHow = null;
+  function goDownAfterTap(chip, how, marks) {
+    var pickHow = chip.getAttribute("data-how");
+    if (pickHow) return { how: cleanHow(toggled(how, pickHow)), marks: marks };
+    var mark = chip.getAttribute("data-mark");
+    if (!mark) return null;
+    return { how: how, marks: cleanMarks(toggled(marks, mark)) };
+  }
+
+  var manualHow = [];
   var manualMarks = [];
 
   function renderManualGoDown() {
@@ -5618,7 +5628,7 @@
     el.manualGoDown.hidden = !isSleep;
     if (!isSleep) {
       manualSettle = 0;
-      manualHow = null;
+      manualHow = [];
       manualMarks = [];
     }
     renderManualSettle();
@@ -5638,7 +5648,7 @@
   function resetManualForm() {
     editingId = null;
     manualSettle = 0;
-    manualHow = null;
+    manualHow = [];
     manualMarks = [];
     el.manualFed.value = "";
     el.manualSource.value = defaultFedWith();
@@ -5862,7 +5872,7 @@
       else delete target.link;
       if (type === "sleep_start" && manualSettle) target.settle = manualSettle;
       else delete target.settle;
-      setHow(target, type === "sleep_start" ? manualHow : null);
+      setHow(target, type === "sleep_start" ? manualHow : []);
       setMarks(target, type === "sleep_start" ? manualMarks : []);
       touch(target);
       savedId = editingId;
@@ -5878,7 +5888,7 @@
         type === "feed" ? fedMillilitres : 0, type === "sleep_start" ? manualSettle : 0,
         type === "feed" ? el.manualSide.value : "");
       if (!savedId) return;
-      if (type === "sleep_start" && (manualHow || manualMarks.length)) {
+      if (type === "sleep_start" && (manualHow.length || manualMarks.length)) {
         var added = events.filter(function (e) { return e.id === savedId; })[0];
         if (added) {
           setHow(added, manualHow);
@@ -6710,7 +6720,7 @@
         noteLinkOf(e),
         settleOf(e) || "",
         sideOf(e) || "",
-        howOf(e) || "",
+        howOf(e).join(" "),
         marksOf(e).join(" ")
       ]);
     });
@@ -6900,13 +6910,24 @@
           fedMlOf(e) || 0,
           settleOf(e) || 0,
           FEED_SIDE_IDS.indexOf(sideOf(e) || ""),
-          SETTLE_HOW.map(function (h) { return h.id; }).indexOf(howOf(e) || ""),
-          marksOf(e).reduce(function (bits, id) {
-            return bits | (1 << SETTLE_MARKS.map(function (m) { return m.id; }).indexOf(id));
-          }, 0)
+          // 137 read one way here, by its place in the list; it still finds
+          // the first of them. The whole set goes at the end.
+          SETTLE_HOW.map(function (h) { return h.id; }).indexOf(howOf(e)[0] || ""),
+          pickBits(SETTLE_MARKS, marksOf(e)),
+          pickBits(SETTLE_HOW, howOf(e))
         ];
       })
     };
+  }
+
+  function pickBits(list, ids) {
+    return list.reduce(function (bits, item, i) {
+      return ids.indexOf(item.id) !== -1 ? bits | (1 << i) : bits;
+    }, 0);
+  }
+
+  function bitsToPicks(list, bits) {
+    return list.filter(function (item, i) { return bits & (1 << i); }).map(function (item) { return item.id; });
   }
 
   function readSharePayload(payload) {
@@ -6944,11 +6965,9 @@
       // And the breast, after that.
       if (row[14] > 0 && FEED_SIDE_IDS[row[14]] && type === "feed") entry.side = FEED_SIDE_IDS[row[14]];
       // How she went down, and what was around it, after that again.
-      if (type === "sleep_start" && row[15] >= 0 && SETTLE_HOW[row[15]]) entry.how = SETTLE_HOW[row[15]].id;
-      if (type === "sleep_start" && row[16] > 0) {
-        setMarks(entry, SETTLE_MARKS.filter(function (m, i) { return row[16] & (1 << i); })
-          .map(function (m) { return m.id; }));
-      }
+      if (type === "sleep_start" && row[17] > 0) setHow(entry, bitsToPicks(SETTLE_HOW, row[17]));
+      else if (type === "sleep_start" && row[15] >= 0 && SETTLE_HOW[row[15]]) setHow(entry, [SETTLE_HOW[row[15]].id]);
+      if (type === "sleep_start" && row[16] > 0) setMarks(entry, bitsToPicks(SETTLE_MARKS, row[16]));
       out.events.push(entry);
     });
     return out;
@@ -15857,11 +15876,11 @@
     var marks = {};
     liveEvents().forEach(function (e) {
       if (e.type !== "sleep_start" || +new Date(e.time) < since) return;
-      var h = howOf(e);
+      var hs = howOf(e);
       var m = marksOf(e);
-      if (!h && !m.length) return;
+      if (!hs.length && !m.length) return;
       noted++;
-      if (h) how[h] = (how[h] || 0) + 1;
+      hs.forEach(function (id) { how[id] = (how[id] || 0) + 1; });
       m.forEach(function (id) { marks[id] = (marks[id] || 0) + 1; });
     });
     var goals = routineGoals();
@@ -16224,8 +16243,8 @@
       ru: "«Уснул» без «проснулся» (или наоборот) нельзя измерить, и он не входит в итоги сна. Над историей есть панель с такими записями — нажмите, чтобы исправить или удалить." },
     { id: "settle", title: { en: "How hard it was to settle", ru: "Как тяжело укладывался" }, go: { main: "logToggle" },
       words: "*settle *settling *rocking hard dummy cried crying self *укачив *укладыв долго засыпал пустышк плакал сама самостоятельн",
-      en: "After Sleep, the card asks how she went down — Self, Rocked, Breast, Bottle or Held, then any of Dummy, White noise, Quiet time and Cried — and how long it took, on a strip of five segments. All optional; the history shows it under the sleep, and the edit form changes it later.",
-      ru: "После «Sleep» карточка спрашивает, как уснула — Self, Rocked, Breast, Bottle или Held, потом Dummy, White noise, Quiet time, Cried — и сколько заняло, на полоске из пяти делений. Всё по желанию; в истории это видно под сном, исправить можно в форме редактирования." },
+      en: "After Sleep, the card asks how she went down — any of Self, Rocked, Breast, Bottle and Held, then any of Dummy, White noise, Quiet time and Cried — and how long it took, on a strip of five segments. All optional; the history shows it under the sleep, and the edit form changes it later.",
+      ru: "После «Sleep» карточка спрашивает, как уснула — Self, Rocked, Breast, Bottle, Held (можно несколько), потом Dummy, White noise, Quiet time, Cried — и сколько заняло, на полоске из пяти делений. Всё по желанию; в истории это видно под сном, исправить можно в форме редактирования." },
     { id: "goals", title: { en: "Goals", ru: "Цели" }, go: { click: "routineOpen" },
       words: "*goal *goals target aim priority *цел приоритет задач",
       en: "Goals sit at the top of ⏰ Daily routine, behind ⋯: what you are working towards, first one first. ↑ ↓ change the order; they sync with the routine and the AI summary lists them.",
