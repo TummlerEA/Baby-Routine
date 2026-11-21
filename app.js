@@ -294,6 +294,12 @@
   // A routine with more steps than this is not a routine any more, and the
   // screen that edits it stops being readable on a phone.
   var MAX_ROUTINE_SLOTS = 24;
+  // What the household is working towards, first one first. Kept with the
+  // routine because that is what they are steering, so they travel and are
+  // backed up with it.
+  var MAX_GOALS = 5;
+  var MAX_GOAL_TEXT = 80;
+  var SUGGESTED_GOALS = ["Self-settling", "Longer night stretch", "Consistent bedtime", "Fewer night feeds"];
   // A gap this far past the planned wake window is worth colouring rather
   // than merely stating: past it a baby is not a little late for a nap, she
   // is overtired, which is the thing this whole screen exists to prevent.
@@ -463,7 +469,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "136";
+    var fallback = "137";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1319,7 +1325,23 @@
       slots = suggestedRoutine().slots.map(function (s) { return sanitiseRoutineSlot(s); });
     }
     slots.sort(function (a, b) { return clockMinutes(a.time) - clockMinutes(b.time); });
-    return { on: !!(raw && raw.on), slots: slots };
+    var clean = { on: !!(raw && raw.on), slots: slots };
+    var goals = sanitiseGoals(raw && raw.goals);
+    if (goals.length) clean.goals = goals;
+    return clean;
+  }
+
+  // Plain lines, in priority order, never the same one twice.
+  function sanitiseGoals(raw) {
+    var out = [];
+    if (!Array.isArray(raw)) return out;
+    raw.forEach(function (item) {
+      var text = cleanText(item, MAX_GOAL_TEXT);
+      if (!text || out.length >= MAX_GOALS) return;
+      var dup = out.some(function (g) { return g.toLowerCase() === text.toLowerCase(); });
+      if (!dup) out.push(text);
+    });
+    return out;
   }
 
   function loadRoutine() {
@@ -1329,6 +1351,11 @@
   }
 
   function saveRoutine(next) {
+    // Every caller that changes the day passes only the switch and the
+    // slots; the goals ride along untouched unless they are what changed.
+    if (next && next.goals === undefined && routine && routine.goals) {
+      next = { on: next.on, slots: next.slots, goals: routine.goals };
+    }
     var clean = sanitiseRoutine(next);
     try {
       localStorage.setItem(ROUTINE_KEY, JSON.stringify(clean));
@@ -1963,7 +1990,7 @@
     var carried = { nappy: event.nappy, value: event.value, nextMin: event.nextMin,
       label: event.label, unit: event.unit, fedMin: event.fedMin, fedMl: event.fedMl,
       fedWith: event.fedWith, text: event.text, link: event.link, settle: event.settle,
-      side: event.side };
+      side: event.side, how: event.how, marks: event.marks };
     delete event.nappy;
     delete event.value;
     delete event.nextMin;
@@ -1976,6 +2003,8 @@
     delete event.link;
     delete event.settle;
     delete event.side;
+    delete event.how;
+    delete event.marks;
     event.deleted = true;
     return carried;
   }
@@ -1994,6 +2023,8 @@
     if (carried.link !== undefined) event.link = carried.link;
     if (carried.settle !== undefined) event.settle = carried.settle;
     if (carried.side !== undefined) event.side = carried.side;
+    if (carried.how !== undefined) event.how = carried.how;
+    if (carried.marks !== undefined) event.marks = carried.marks;
   }
 
   function tombstoneExpired(event) {
@@ -2065,6 +2096,10 @@
     manualNoteText: document.getElementById("manualNoteText"),
     manualLinkField: document.getElementById("manualLinkField"),
     manualSettleField: document.getElementById("manualSettleField"),
+    manualGoDown: document.getElementById("manualGoDown"),
+    goDownBlock: document.getElementById("goDownBlock"),
+    goDownChips: document.getElementById("goDownChips"),
+    goDownSettle: document.getElementById("goDownSettle"),
     manualLink: document.getElementById("manualLink"),
     addNoteBtn: document.getElementById("addNoteBtn"),
     photoAlbum: document.getElementById("photoAlbum"),
@@ -2348,6 +2383,12 @@
     routineOpenBtn: document.getElementById("routineOpen"),
     routineBack: document.getElementById("routineBack"),
     routineEnabled: document.getElementById("routineEnabled"),
+    goalList: document.getElementById("goalList"),
+    goalEmpty: document.getElementById("goalEmpty"),
+    goalAddRow: document.getElementById("goalAddRow"),
+    goalText: document.getElementById("goalText"),
+    goalAdd: document.getElementById("goalAdd"),
+    goalSuggest: document.getElementById("goalSuggest"),
     routineProgress: document.getElementById("routineProgress"),
     routineSlots: document.getElementById("routineSlots"),
     routineAddSleep: document.getElementById("routineAddSleep"),
@@ -2895,6 +2936,71 @@
   function settleOf(event) {
     if (!event || event.type !== "sleep_start") return null;
     return cleanSettle(event.settle);
+  }
+
+  // How she went down, beside how long it took: one way of getting her off
+  // and any of the things around it. Kept so the household can see, over a
+  // fortnight, what helps her settle on her own and what does not — so the
+  // list is the handful a parent actually uses, not every method there is.
+  var SETTLE_HOW = [
+    { id: "self", label: "Self" },
+    { id: "rocked", label: "Rocked" },
+    { id: "breast", label: "Breast" },
+    { id: "bottle", label: "Bottle" },
+    { id: "held", label: "Held" }
+  ];
+  var SETTLE_MARKS = [
+    { id: "dummy", label: "Dummy" },
+    { id: "noise", label: "White noise" },
+    { id: "quiet", label: "Quiet time" },
+    { id: "cried", label: "Cried" }
+  ];
+
+  function settleLabel(list, id) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i].label;
+    return null;
+  }
+
+  function cleanHow(raw) {
+    return settleLabel(SETTLE_HOW, raw) ? String(raw) : null;
+  }
+
+  // Always in the list's own order and never twice, so two phones that ticked
+  // the same things store the same array.
+  function cleanMarks(raw) {
+    if (!Array.isArray(raw)) return [];
+    return SETTLE_MARKS.map(function (m) { return m.id; })
+      .filter(function (id) { return raw.indexOf(id) !== -1; });
+  }
+
+  function howOf(event) {
+    if (!event || event.type !== "sleep_start") return null;
+    return cleanHow(event.how);
+  }
+
+  function marksOf(event) {
+    if (!event || event.type !== "sleep_start") return [];
+    return cleanMarks(event.marks);
+  }
+
+  // "Self · Dummy · Cried", for the history, the exports and the summary.
+  function settleDetailText(event) {
+    var parts = [];
+    var how = howOf(event);
+    if (how) parts.push(settleLabel(SETTLE_HOW, how));
+    marksOf(event).forEach(function (id) { parts.push(settleLabel(SETTLE_MARKS, id)); });
+    return parts.join(" · ");
+  }
+
+  function setHow(event, how) {
+    if (cleanHow(how)) event.how = how;
+    else delete event.how;
+  }
+
+  function setMarks(event, marks) {
+    var clean = cleanMarks(marks);
+    if (clean.length) event.marks = clean;
+    else delete event.marks;
   }
 
   function sideOf(event) {
@@ -3530,6 +3636,7 @@
   function renderRoutineScreen() {
     disarmRoutineReset();
     el.routineEnabled.checked = routine.on;
+    renderGoals();
     renderRoutineProgress();
     renderRoutineSlots();
     renderRoutineWindow();
@@ -3559,6 +3666,89 @@
     }
     el.routineWindow.textContent = text;
   }
+
+  // ---------- goals ----------
+
+  function routineGoals() {
+    return routine.goals || [];
+  }
+
+  function renderGoals() {
+    var goals = routineGoals();
+    el.goalList.innerHTML = goals.map(function (text, i) {
+      return '<li class="goal-item' + (i === 0 ? ' goal-first' : '') + '">' +
+        '<span class="goal-rank">' + (i + 1) + '</span>' +
+        '<span class="goal-text">' + escapeHtml(text) + '</span>' +
+        '<button type="button" class="goal-btn" data-act="up" data-index="' + i + '"' +
+          (i === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
+        '<button type="button" class="goal-btn" data-act="down" data-index="' + i + '"' +
+          (i === goals.length - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
+        '<button type="button" class="goal-btn goal-del" data-act="del" data-index="' + i + '"' +
+          ' aria-label="Remove">✕</button>' +
+        '</li>';
+    }).join("");
+    el.goalList.hidden = !goals.length;
+    el.goalEmpty.hidden = goals.length > 0;
+    var full = goals.length >= MAX_GOALS;
+    el.goalAddRow.hidden = full;
+    var lower = goals.map(function (g) { return g.toLowerCase(); });
+    var offer = full ? [] : SUGGESTED_GOALS.filter(function (g) { return lower.indexOf(g.toLowerCase()) === -1; });
+    el.goalSuggest.innerHTML = offer.map(function (g) {
+      return '<button type="button" class="nextup-chip goal-chip" data-goal="' + escapeHtml(g) + '">+ ' +
+        escapeHtml(g) + '</button>';
+    }).join("");
+    el.goalSuggest.hidden = !offer.length;
+  }
+
+  function saveGoals(goals) {
+    if (!saveRoutine({ on: routine.on, slots: routine.slots, goals: goals })) return false;
+    renderGoals();
+    return true;
+  }
+
+  function addGoal(text) {
+    var clean = cleanText(text, MAX_GOAL_TEXT);
+    if (!clean) return false;
+    var goals = routineGoals();
+    if (goals.some(function (g) { return g.toLowerCase() === clean.toLowerCase(); })) {
+      showToast("That goal is already there");
+      return false;
+    }
+    if (goals.length >= MAX_GOALS) return false;
+    return saveGoals(goals.concat([clean]));
+  }
+
+  el.goalAdd.addEventListener("click", function () {
+    if (addGoal(el.goalText.value)) el.goalText.value = "";
+  });
+  el.goalText.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (addGoal(el.goalText.value)) el.goalText.value = "";
+  });
+  el.goalSuggest.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".goal-chip");
+    if (chip) addGoal(chip.getAttribute("data-goal"));
+  });
+  el.goalList.addEventListener("click", function (ev) {
+    var btn = ev.target.closest(".goal-btn");
+    if (!btn || btn.disabled) return;
+    var i = parseInt(btn.getAttribute("data-index"), 10);
+    var goals = routineGoals().slice();
+    if (!goals[i]) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "del") {
+      var gone = goals.splice(i, 1)[0];
+      if (saveGoals(goals)) showToast("Removed: " + gone);
+      return;
+    }
+    var j = act === "up" ? i - 1 : i + 1;
+    if (!goals[j]) return;
+    var held = goals[i];
+    goals[i] = goals[j];
+    goals[j] = held;
+    saveGoals(goals);
+  });
 
   function updateRoutineSlot(index, field, value) {
     var next = { on: routine.on, slots: routine.slots.map(function (s) {
@@ -5080,6 +5270,59 @@
     });
   });
 
+  // ---------- how she went down ----------
+
+  // Two rows of chips: one way of getting her off (a second tap on it clears
+  // it), and any of the things around it. The same rows on the card that
+  // opens after "Sleep" and in the edit form.
+  function goDownChipsHtml(how, marks) {
+    var out = ['<div class="nextup-chips go-chips">'];
+    SETTLE_HOW.forEach(function (h) {
+      out.push('<button type="button" class="nextup-chip go-chip' + (h.id === how ? ' selected' : '') +
+        '" data-how="' + h.id + '" aria-pressed="' + (h.id === how ? 'true' : 'false') + '">' +
+        escapeHtml(h.label) + '</button>');
+    });
+    out.push('</div><div class="nextup-chips go-chips">');
+    SETTLE_MARKS.forEach(function (m) {
+      var on = marks.indexOf(m.id) !== -1;
+      out.push('<button type="button" class="nextup-chip go-chip go-mark' + (m.id === "cried" ? ' go-cried' : '') +
+        (on ? ' selected' : '') + '" data-mark="' + m.id + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+        escapeHtml(m.label) + '</button>');
+    });
+    out.push('</div>');
+    return out.join("");
+  }
+
+  // What a tap on one of those chips turns the pair into.
+  function goDownAfterTap(chip, how, marks) {
+    var pickHow = chip.getAttribute("data-how");
+    if (pickHow) return { how: pickHow === how ? null : pickHow, marks: marks };
+    var mark = chip.getAttribute("data-mark");
+    if (!mark) return null;
+    var next = marks.indexOf(mark) !== -1
+      ? marks.filter(function (id) { return id !== mark; })
+      : marks.concat([mark]);
+    return { how: how, marks: cleanMarks(next) };
+  }
+
+  var manualHow = null;
+  var manualMarks = [];
+
+  function renderManualGoDown() {
+    el.manualGoDown.innerHTML = '<span class="manual-label">How did she go down? ' +
+      '<span class="manual-optional">— optional</span></span>' + goDownChipsHtml(manualHow, manualMarks);
+  }
+
+  el.manualGoDown.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".go-chip");
+    if (!chip) return;
+    var next = goDownAfterTap(chip, manualHow, manualMarks);
+    if (!next) return;
+    manualHow = next.how;
+    manualMarks = next.marks;
+    renderManualGoDown();
+  });
+
   function renderLog() {
     var visible = liveEvents();
     el.logToggleText.textContent =
@@ -5156,6 +5399,7 @@
               (noteLinkOf(e) ? '<a class="l-link" href="' + escapeHtml(noteLinkOf(e)) +
                 '" target="_blank" rel="noopener">📷 Photo</a>' : '') +
               (warning ? '<div class="l-warn">⚠ ' + escapeHtml(warning) + '</div>' : '') +
+              (settleDetailText(e) ? '<div class="l-detail">' + escapeHtml(settleDetailText(e)) + '</div>' : '') +
               (e.type === "sleep_start" ? settleStripHtml(settleOf(e), e.id) : '') +
             '</div>' +
             '<button class="l-delete" data-id="' + escapeHtml(e.id) + '" aria-label="Delete entry">✕</button>';
@@ -5371,8 +5615,14 @@
   function syncManualSettleField() {
     var isSleep = el.manualType.value === "sleep_start";
     el.manualSettleField.hidden = !isSleep;
-    if (!isSleep) manualSettle = 0;
+    el.manualGoDown.hidden = !isSleep;
+    if (!isSleep) {
+      manualSettle = 0;
+      manualHow = null;
+      manualMarks = [];
+    }
     renderManualSettle();
+    renderManualGoDown();
   }
 
   function syncManualFields() {
@@ -5388,6 +5638,8 @@
   function resetManualForm() {
     editingId = null;
     manualSettle = 0;
+    manualHow = null;
+    manualMarks = [];
     el.manualFed.value = "";
     el.manualSource.value = defaultFedWith();
     el.manualSide.value = "";
@@ -5453,6 +5705,8 @@
     el.manualNoteText.value = noteTextOf(found);
     el.manualLink.value = noteLinkOf(found);
     manualSettle = settleOf(found) || 0;
+    manualHow = howOf(found);
+    manualMarks = marksOf(found);
     syncManualFields();
     setManualTime(new Date(found.time));
     el.manualSubmit.textContent = "Save";
@@ -5608,6 +5862,8 @@
       else delete target.link;
       if (type === "sleep_start" && manualSettle) target.settle = manualSettle;
       else delete target.settle;
+      setHow(target, type === "sleep_start" ? manualHow : null);
+      setMarks(target, type === "sleep_start" ? manualMarks : []);
       touch(target);
       savedId = editingId;
       if (!saveEvents(events)) return;
@@ -5622,6 +5878,14 @@
         type === "feed" ? fedMillilitres : 0, type === "sleep_start" ? manualSettle : 0,
         type === "feed" ? el.manualSide.value : "");
       if (!savedId) return;
+      if (type === "sleep_start" && (manualHow || manualMarks.length)) {
+        var added = events.filter(function (e) { return e.id === savedId; })[0];
+        if (added) {
+          setHow(added, manualHow);
+          setMarks(added, manualMarks);
+          saveEvents(events);
+        }
+      }
       setManualTime(null);
       // The form is the one place where the entry vanishes from view the
       // moment it is saved — the fields reset and nothing on screen says it
@@ -5783,6 +6047,13 @@
         chip.textContent = bottle ? value + " ml" : formatDuration(value * MS_MIN);
         el.feedChips.appendChild(chip);
       });
+    }
+
+    var isGoDown = event.type === "sleep_start";
+    el.goDownBlock.hidden = !isGoDown;
+    if (isGoDown) {
+      el.goDownChips.innerHTML = goDownChipsHtml(howOf(event), marksOf(event));
+      el.goDownSettle.innerHTML = settleStripHtml(settleOf(event), event.id);
     }
 
     var isNappy = nextUpKind === "diaper";
@@ -5994,6 +6265,42 @@
     renderNextUp();
     clearTimeout(nextUpTimer);
     nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+  });
+
+  // How she went down, from the card: saved at once, like the nappy above.
+  function nextUpSleepEvent() {
+    var event = events.filter(function (e) { return e.id === nextUpEventId; })[0];
+    return event && !isDeleted(event) && event.type === "sleep_start" ? event : null;
+  }
+
+  function afterNextUpEdit(event) {
+    touch(event);
+    if (!saveEvents(events)) return false;
+    renderAll();
+    renderNextUp();
+    clearTimeout(nextUpTimer);
+    nextUpTimer = setTimeout(hideNextUp, NEXTUP_TIMEOUT);
+    return true;
+  }
+
+  el.goDownChips.addEventListener("click", function (ev) {
+    var chip = ev.target.closest(".go-chip");
+    var event = nextUpSleepEvent();
+    if (!chip || !event) return;
+    var next = goDownAfterTap(chip, howOf(event), marksOf(event));
+    if (!next) return;
+    setHow(event, next.how);
+    setMarks(event, next.marks);
+    afterNextUpEdit(event);
+  });
+
+  bindSettleStrips(el.goDownSettle, function (strip, value) {
+    var event = nextUpSleepEvent();
+    if (!event) return;
+    if ((settleOf(event) || 0) === value) return;
+    if (value) event.settle = value;
+    else delete event.settle;
+    if (afterNextUpEdit(event)) showSettleTip(el.goDownSettle.querySelector(".settle"), value);
   });
 
   el.nextUpChips.addEventListener("click", function (ev) {
@@ -6293,6 +6600,15 @@
   el.btnSleep.addEventListener("click", function () {
     var sleeping = isSleepingNow();
     var id = quickLog(sleeping ? "sleep_end" : "sleep_start", el.btnSleep, el.sleepNote, "sleep");
+    // Put down to the app's own white noise: that much is already known, so
+    // the card opens with it ticked rather than asking for it.
+    if (id && !sleeping && noiseOn && !noiseIsStandby() && !musicTrackFor(noise.sound)) {
+      var down = events.filter(function (e) { return e.id === id; })[0];
+      if (down) {
+        setMarks(down, ["noise"]);
+        saveEvents(events);
+      }
+    }
     // Never starts a sound; it only lets go of a borrowed Standby.
     if (id) afterSleepLogged(!sleeping);
     // Waking up does not start a new gap, so there is nothing to plan there —
@@ -6372,7 +6688,7 @@
 
   function buildCsv() {
     var analysis = analyzeSleep();
-    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link", "settle", "side"]];
+    var rows = [["id", "type", "label", "time_local", "time_iso", "duration_min", "fed_ml", "next_interval_min", "fed_with", "nappy", "value", "label", "unit", "updated_iso", "note", "link", "settle", "side", "settle_how", "settle_marks"]];
     sortedByTimeDesc(liveEvents()).forEach(function (e) {
       var duration = analysis.durationById[e.id];
       rows.push([
@@ -6393,7 +6709,9 @@
         noteTextOf(e),
         noteLinkOf(e),
         settleOf(e) || "",
-        sideOf(e) || ""
+        sideOf(e) || "",
+        howOf(e) || "",
+        marksOf(e).join(" ")
       ]);
     });
     return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
@@ -6428,6 +6746,7 @@
           " | " + eventTypeIcon(e.type) + " " + eventTypeLabel(e.type) +
           (nappyOf(e) ? " (" + NAPPY_TYPES[e.nappy].label.toLowerCase() + ")" : "") +
           (feedDetailText(e) ? " (" + feedDetailText(e) + ")" : "") +
+          (settleDetailText(e) ? " (" + settleDetailText(e) + ")" : "") +
           (measureValueOf(e) !== null ? " — " + measureLine(e) : "") +
           (noteText ? " — " + noteText : "") +
           (noteLink ? " ([photo](" + noteLink + "))" : "") +
@@ -6580,7 +6899,11 @@
           FEED_SOURCE_IDS.indexOf(fedWithOf(e)),
           fedMlOf(e) || 0,
           settleOf(e) || 0,
-          FEED_SIDE_IDS.indexOf(sideOf(e) || "")
+          FEED_SIDE_IDS.indexOf(sideOf(e) || ""),
+          SETTLE_HOW.map(function (h) { return h.id; }).indexOf(howOf(e) || ""),
+          marksOf(e).reduce(function (bits, id) {
+            return bits | (1 << SETTLE_MARKS.map(function (m) { return m.id; }).indexOf(id));
+          }, 0)
         ];
       })
     };
@@ -6620,6 +6943,12 @@
       if (cleanSettle(row[13]) && type === "sleep_start") entry.settle = cleanSettle(row[13]);
       // And the breast, after that.
       if (row[14] > 0 && FEED_SIDE_IDS[row[14]] && type === "feed") entry.side = FEED_SIDE_IDS[row[14]];
+      // How she went down, and what was around it, after that again.
+      if (type === "sleep_start" && row[15] >= 0 && SETTLE_HOW[row[15]]) entry.how = SETTLE_HOW[row[15]].id;
+      if (type === "sleep_start" && row[16] > 0) {
+        setMarks(entry, SETTLE_MARKS.filter(function (m, i) { return row[16] & (1 << i); })
+          .map(function (m) { return m.id; }));
+      }
       out.events.push(entry);
     });
     return out;
@@ -6903,6 +7232,10 @@
     }
     if (raw.type === "sleep_start" && !raw.deleted && cleanSettle(raw.settle)) {
       entry.settle = cleanSettle(raw.settle);
+    }
+    if (raw.type === "sleep_start" && !raw.deleted) {
+      setHow(entry, raw.how);
+      setMarks(entry, raw.marks);
     }
     // Skipped for a tombstone, which by design carries no reading at all:
     // deleting a weight strips its value the same way deleting a note strips
@@ -15423,6 +15756,7 @@
     }
     var longestSleep = aiLongestSleep(analysis, since);
     if (longestSleep) out.push("Longest single sleep: " + formatDuration(longestSleep));
+    aiGoingDownLines(since).forEach(function (line) { out.push(line); });
 
     // Only worth a line when the log actually distinguishes them: a purely
     // breastfed baby has already said so on the "Fed:" line above.
@@ -15511,6 +15845,37 @@
     }
 
     return out.join("\n");
+  }
+
+  // How she was put down, counted over the days shown: only sleeps where
+  // somebody said, and said as such, so a model does not read "rocked 2" as
+  // two of every sleep.
+  function aiGoingDownLines(since) {
+    var out = [];
+    var noted = 0;
+    var how = {};
+    var marks = {};
+    liveEvents().forEach(function (e) {
+      if (e.type !== "sleep_start" || +new Date(e.time) < since) return;
+      var h = howOf(e);
+      var m = marksOf(e);
+      if (!h && !m.length) return;
+      noted++;
+      if (h) how[h] = (how[h] || 0) + 1;
+      m.forEach(function (id) { marks[id] = (marks[id] || 0) + 1; });
+    });
+    var goals = routineGoals();
+    if (goals.length) {
+      out.push("Our goals, most important first: " + goals.map(function (g, i) {
+        return (i + 1) + ". " + g;
+      }).join("; "));
+    }
+    if (!noted) return out;
+    var parts = [];
+    SETTLE_HOW.forEach(function (h) { if (how[h.id]) parts.push(h.label.toLowerCase() + " " + how[h.id]); });
+    SETTLE_MARKS.forEach(function (m) { if (marks[m.id]) parts.push(m.label.toLowerCase() + " " + marks[m.id]); });
+    out.push("How she went down, on the " + noted + " sleeps where it was noted: " + parts.join(", "));
+    return out;
   }
 
   // The question goes last so it is the freshest thing the model reads, and
@@ -15858,9 +16223,13 @@
       en: "A fell-asleep with no woke-up (or the other way round) can't be measured and is left out of sleep totals. A panel above the history lists them — tap one to fix or delete it.",
       ru: "«Уснул» без «проснулся» (или наоборот) нельзя измерить, и он не входит в итоги сна. Над историей есть панель с такими записями — нажмите, чтобы исправить или удалить." },
     { id: "settle", title: { en: "How hard it was to settle", ru: "Как тяжело укладывался" }, go: { main: "logToggle" },
-      words: "*settle *settling *rocking hard *укачив *укладыв долго засыпал",
-      en: "Under every fell-asleep in the history is a strip of five segments: tap one to say how long settling took, from on their own to two hours of rocking.",
-      ru: "Под каждым «уснул» в истории есть полоска из пяти делений: отметьте, сколько заняло укладывание — от «сам» до двух часов укачивания." },
+      words: "*settle *settling *rocking hard dummy cried crying self *укачив *укладыв долго засыпал пустышк плакал сама самостоятельн",
+      en: "After Sleep, the card asks how she went down — Self, Rocked, Breast, Bottle or Held, then any of Dummy, White noise, Quiet time and Cried — and how long it took, on a strip of five segments. All optional; the history shows it under the sleep, and the edit form changes it later.",
+      ru: "После «Sleep» карточка спрашивает, как уснула — Self, Rocked, Breast, Bottle или Held, потом Dummy, White noise, Quiet time, Cried — и сколько заняло, на полоске из пяти делений. Всё по желанию; в истории это видно под сном, исправить можно в форме редактирования." },
+    { id: "goals", title: { en: "Goals", ru: "Цели" }, go: { click: "routineOpen" },
+      words: "*goal *goals target aim priority *цел приоритет задач",
+      en: "Goals sit at the top of ⏰ Daily routine, behind ⋯: what you are working towards, first one first. ↑ ↓ change the order; they sync with the routine and the AI summary lists them.",
+      ru: "Цели — вверху ⏰ Daily routine, в меню ⋯: к чему вы стремитесь, первая — главная. ↑ ↓ меняют порядок; цели синхронизируются вместе с режимом и попадают в сводку для ИИ." },
     { id: "help", title: { en: "The full guide", ru: "Полная инструкция" }, go: { click: "infoOpen" },
       words: "*help guide manual instructions explain помощь инструкц справк руководств объясни",
       en: "Info, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",

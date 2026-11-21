@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=136">
+<link rel="stylesheet" href="style.css?v=137">
 </head>
 <body>
 
@@ -242,6 +242,12 @@
           <div class="nextup-sublabel" id="feedSublabel">How long did it take?</div>
           <div class="nextup-chips feed-chips" id="feedChips"></div>
         </div>
+        <div class="nextup-block" id="goDownBlock" hidden>
+          <div class="nextup-sublabel">How did she go down?</div>
+          <div id="goDownChips"></div>
+          <div class="nextup-sublabel">How long did it take?</div>
+          <div class="go-settle" id="goDownSettle"></div>
+        </div>
         <div class="nextup-block" id="nappyBlock" hidden>
           <div class="nextup-sublabel">What was in it?</div>
           <div class="nextup-chips" id="nappyChips"></div>
@@ -351,6 +357,7 @@
             <input type="datetime-local" id="manualDateTime" class="manual-input" step="300">
           </label>
           <div class="manual-field manual-settle" id="manualSettleField" hidden></div>
+          <div class="manual-field manual-go" id="manualGoDown" hidden></div>
           <div id="manualError" class="manual-error" hidden></div>
           <div class="manual-buttons">
             <button class="manual-submit" id="manualSubmit">Add entry</button>
@@ -539,6 +546,7 @@
           <article class="info-card">
             <h3>How hard it was to settle</h3>
             <p>Under every "fell asleep" in the history sits a faint strip of five segments. Tap one, or run a finger along them, to say how long it took to get the baby down: <strong>1</strong> asleep on their own or within 5 minutes, <strong>2</strong> about 15, <strong>3</strong> about 30, <strong>4</strong> about an hour, <strong>5</strong> about two hours of rocking. The time it stands for shows only while you choose. Tap the chosen segment again to clear it. It is never asked for, so logging a sleep takes no longer, and you can rate any sleep later, including old ones; the edit form has the same strip. Each day's line in the history then shows the average for the evening — sleeps begun between 18:00 and 22:00 — and how many were rated, as "settling 3.2 (n=2)".</p>
+            <p><strong>How she went down.</strong> The card that opens after <strong>Sleep</strong> asks it in three short rows, each a single tap and none required: how she got off — <strong>Self</strong>, <strong>Rocked</strong>, <strong>Breast</strong>, <strong>Bottle</strong> or <strong>Held</strong> — then any of <strong>Dummy</strong>, <strong>White noise</strong>, <strong>Quiet time</strong> (calm, quiet time together before she went down) and <strong>Cried</strong>, then the same five-segment strip for how long it took. Put down to the app's own white noise, that one is ticked already. The history shows the answers under the sleep, and the edit form has the same rows for any sleep afterwards. Over a fortnight they say what helps her settle on her own and what gets in the way.</p>
           </article>
 
           <article class="info-card">
@@ -868,6 +876,18 @@
           <button type="button" class="data-btn" id="remindStart" hidden>💬 Turn on Standby now</button>
           <p class="settings-hint">A phone stops running an app once the screen is off — unless it is playing something. Turn on <strong>Standby</strong> with the button above, shown while it is off, when you want the nudge: it keeps the clock going and costs nothing you can hear. Logging never turns it on by itself, so nothing plays unless you asked; putting her down turns it off again.</p>
         </div>
+      </section>
+
+      <section>
+        <h2 class="section-title"><span class="section-icon">🎯</span> Goals</h2>
+        <ol class="goal-list" id="goalList"></ol>
+        <p class="data-hint" id="goalEmpty">What you are working towards — say, getting her to settle on her own. Add one or a few; the first is the one that matters most.</p>
+        <div class="goal-add" id="goalAddRow">
+          <input id="goalText" class="manual-input" type="text" maxlength="80" placeholder="e.g. Self-settling" autocomplete="off" aria-label="A new goal">
+          <button type="button" class="goal-add-btn" id="goalAdd">➕ Add</button>
+        </div>
+        <div class="nextup-chips goal-suggest" id="goalSuggest"></div>
+        <p class="data-hint">Move a goal up or down to change which comes first. They travel with the routine to the other phone and into the backup, and the summary for an AI lists them in this order.</p>
       </section>
 
       <section>
@@ -1633,6 +1653,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=136"></script>
+<script src="app.js?v=137"></script>
 </body>
 </html>
