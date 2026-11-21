@@ -57,19 +57,20 @@ const TZ = process.env.TZ || 'UTC';
   await page.clock.runFor(1000);
   await page.click('#goDownChips .go-chip[data-how="self"]'); await page.waitForTimeout(150);
   sleep = await lastSleep();
-  ok('a tap saves the way at once', sleep.how === 'self' && sleep.updatedAt > before, sleep);
+  ok('a tap saves the way at once', JSON.stringify(sleep.how) === '["self"]' && sleep.updatedAt > before, sleep);
   await page.click('#goDownChips .go-chip[data-how="self"]'); await page.waitForTimeout(150);
   ok('a second tap clears it', !('how' in (await lastSleep())));
-  await page.click('#goDownChips .go-chip[data-how="self"]'); await page.waitForTimeout(100);
+  await page.click('#goDownChips .go-chip[data-how="breast"]'); await page.waitForTimeout(100);
   await page.click('#goDownChips .go-chip[data-how="rocked"]'); await page.waitForTimeout(150);
-  ok('only one way at a time', (await lastSleep()).how === 'rocked');
+  ok('more than one way, kept in the list\'s own order', JSON.stringify((await lastSleep()).how) === '["rocked","breast"]',
+    await lastSleep());
 
   await page.click('#goDownChips .go-chip[data-mark="cried"]'); await page.waitForTimeout(100);
   await page.click('#goDownChips .go-chip[data-mark="dummy"]'); await page.waitForTimeout(150);
   sleep = await lastSleep();
   ok('marks add up, kept in the list\'s own order', JSON.stringify(sleep.marks) === '["dummy","cried"]', sleep);
   c = await chips('#goDownChips');
-  ok('and the chips say so', c.filter(x => x.on).map(x => x.how || x.mark).join() === 'rocked,dummy,cried', c);
+  ok('and the chips say so', c.filter(x => x.on).map(x => x.how || x.mark).join() === 'rocked,breast,dummy,cried', c);
 
   await page.click('#goDownSettle .settle-seg[data-v="2"]'); await page.waitForTimeout(150);
   ok('the strip on the card rates how long it took', (await lastSleep()).settle === 2);
@@ -81,7 +82,7 @@ const TZ = process.env.TZ || 'UTC';
   await page.click('#logToggle'); await page.waitForTimeout(250);
   const line = await page.evaluate(id => Array.from(document.querySelectorAll('.log-item[data-id="' + id + '"] .l-detail'))
     .map(x => x.textContent).join('|'), id);
-  ok('the history says it under the sleep', line.indexOf('Rocked · Dummy · Cried') !== -1, line);
+  ok('the history says it under the sleep', line.indexOf('Rocked · Breast · Dummy · Cried') !== -1, line);
 
   // ---------- waking up ----------
   await page.clock.runFor(40 * 60000);
@@ -112,14 +113,16 @@ const TZ = process.env.TZ || 'UTC';
   await page.click('.log-item[data-id="' + id + '"] .l-type'); await page.waitForTimeout(300);
   c = await chips('#manualGoDown');
   ok('editing a sleep shows what was chosen', await page.isVisible('#manualGoDown') &&
-    c.filter(x => x.on).map(x => x.how || x.mark).join() === 'rocked,dummy,cried', c);
+    c.filter(x => x.on).map(x => x.how || x.mark).join() === 'rocked,breast,dummy,cried', c);
   await page.click('#manualGoDown .go-chip[data-how="breast"]');
+  await page.click('#manualGoDown .go-chip[data-how="held"]');
   await page.click('#manualGoDown .go-chip[data-mark="cried"]');
   await page.click('#manualGoDown .go-chip[data-mark="quiet"]');
-  ok('nothing is saved before Save', (await stored(id)).how === 'rocked');
+  ok('nothing is saved before Save', JSON.stringify((await stored(id)).how) === '["rocked","breast"]');
   await page.click('#manualSubmit'); await page.waitForTimeout(300);
   sleep = await stored(id);
-  ok('Save writes it', sleep.how === 'breast' && JSON.stringify(sleep.marks) === '["dummy","quiet"]', sleep);
+  ok('Save writes it', JSON.stringify(sleep.how) === '["rocked","held"]' &&
+    JSON.stringify(sleep.marks) === '["dummy","quiet"]', sleep);
   await page.click('.log-item[data-id="' + id + '"] .l-type'); await page.waitForTimeout(300);
   await page.selectOption('#manualType', 'sleep_end'); await page.waitForTimeout(100);
   ok('the rows hide for anything but a sleep', await page.isHidden('#manualGoDown'));
@@ -133,7 +136,7 @@ const TZ = process.env.TZ || 'UTC';
   await page.click('#manualGoDown .go-chip[data-mark="noise"]');
   await page.click('#manualSubmit'); await page.waitForTimeout(300);
   const added = (await all()).filter(e => e.type === 'sleep_start' && e.time.indexOf('2026-11-20') === 0)[0];
-  ok('a new sleep from the form keeps them', added && added.how === 'self' &&
+  ok('a new sleep from the form keeps them', added && JSON.stringify(added.how) === '["self"]' &&
     JSON.stringify(added.marks) === '["noise"]', added);
 
   // ---------- backup, CSV, and another phone ----------
@@ -143,12 +146,14 @@ const TZ = process.env.TZ || 'UTC';
   ]);
   const backup = JSON.parse(require('fs').readFileSync(await download.path(), 'utf8'));
   const inBackup = backup.events.filter(e => e.id === id)[0];
-  ok('the backup carries both', inBackup && inBackup.how === 'breast' && inBackup.marks.join() === 'dummy,quiet', inBackup);
+  ok('the backup carries both', inBackup && inBackup.how.join() === 'rocked,held' && inBackup.marks.join() === 'dummy,quiet', inBackup);
 
   const later = iso(at(21, 23));
   await page.evaluate(later => {
     const payload = { events: [
       { id: 'x1', type: 'sleep_start', time: '2026-11-19T19:00:00', updatedAt: later, how: 'magic', marks: ['cried', 'cried', 'x', 'dummy'] },
+      { id: 'x2', type: 'sleep_start', time: '2026-11-19T21:00:00', updatedAt: later, how: 'held' },
+      { id: 'x3', type: 'sleep_start', time: '2026-11-19T23:00:00', updatedAt: later, how: ['held', 'magic', 'self', 'self'] },
       { id: 'x1e', type: 'sleep_end', time: '2026-11-19T20:00:00', updatedAt: later, how: 'self', marks: ['dummy'] }
     ] };
     const file = new File([JSON.stringify(payload)], 'backup.json', { type: 'application/json' });
@@ -162,6 +167,10 @@ const TZ = process.env.TZ || 'UTC';
   const x1 = await stored('x1');
   ok('from elsewhere, an unknown way is dropped and marks are cleaned', x1 && !('how' in x1) &&
     JSON.stringify(x1.marks) === '["dummy","cried"]', x1);
+  ok('a single way as 137 wrote it reads as a list of one', JSON.stringify((await stored('x2')).how) === '["held"]',
+    await stored('x2'));
+  ok('a list is cleaned and put in order', JSON.stringify((await stored('x3')).how) === '["self","held"]',
+    await stored('x3'));
   const x1e = await stored('x1e');
   ok('a wake-up never carries them', x1e && !('how' in x1e) && !('marks' in x1e), x1e);
 
@@ -214,7 +223,7 @@ const TZ = process.env.TZ || 'UTC';
   await page.click('#aiOpen'); await page.waitForTimeout(400);
   const prompt = await page.evaluate(() => document.getElementById('aiPreview').value);
   ok('the AI summary lists the goals', prompt.indexOf('Our goals, most important first: 1. Self-settling') !== -1, prompt);
-  ok('and counts how she went down', /How she went down, on the \d+ sleeps where it was noted: .*self 1/.test(prompt) &&
+  ok('and counts how she went down', /How she went down, on the \d+ sleeps where it was noted: self 2, rocked 1, held 3, dummy 1/.test(prompt) &&
     prompt.indexOf('dummy 1') !== -1, prompt.split('\n').filter(l => /went down/.test(l)));
 
   ok('no page errors', errs.length === 0, errs);
