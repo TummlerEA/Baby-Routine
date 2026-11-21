@@ -3987,3 +3987,73 @@ body {
   padding: 0 14px;
   cursor: pointer;
 }
+
+/* How she went down: two rows of chips on the card after "Sleep" and in the
+   edit form. A touch narrower than the other chips so each row fits on one
+   line of a phone; still a full thumb tall. */
+.go-chips { display: grid; grid-template-columns: repeat(5, 1fr); }
+.go-chips + .go-chips { grid-template-columns: repeat(4, 1fr); margin-top: 6px; }
+.nextup-chip.go-chip {
+  font-size: 14px;
+  line-height: 1.15;
+  padding: 6px 4px;
+  white-space: normal;
+  border-radius: 14px;
+}
+.nextup-chip.go-chip.selected {
+  background: var(--accent-sleep);
+  border-color: var(--accent-sleep);
+  color: #14122b;
+}
+.nextup-chip.go-chip.go-cried.selected {
+  background: #ec6a5a;
+  border-color: #ec6a5a;
+  color: #2b0f0b;
+}
+.go-settle .settle { max-width: none; }
+.manual-go .go-chips { margin-top: 6px; }
+
+/* Goals, under the daily routine: numbered, the first marked out, each with
+   thumb-sized buttons to move it or take it away. */
+.goal-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.goal-item {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  gap: 6px;
+  padding: 4px 4px 4px 12px;
+}
+.goal-item.goal-first { border-color: var(--accent-sleep); }
+.goal-rank { color: var(--text-faint); font-weight: 700; min-width: 1.2em; }
+.goal-first .goal-rank { color: var(--accent-sleep); }
+.goal-text { flex: 1; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.goal-btn {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 18px;
+  height: 44px;
+  width: 44px;
+}
+.goal-btn:disabled { opacity: 0.3; cursor: default; }
+.goal-del { color: var(--text-faint); }
+.goal-add { display: flex; gap: 8px; margin-bottom: 8px; }
+.goal-add .manual-input { flex: 1; min-width: 0; }
+.goal-add-btn {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  min-height: 48px;
+  padding: 0 14px;
+}
+.goal-suggest { margin-bottom: 8px; }
