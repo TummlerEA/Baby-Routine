@@ -193,7 +193,7 @@ const TZ = process.env.TZ || 'UTC';
   await page.press('#goalText', 'Enter'); await page.waitForTimeout(150);
   await page.fill('#goalText', 'self-settling');
   await page.click('#goalAdd'); await page.waitForTimeout(150);
-  const goals = () => page.evaluate(() => (JSON.parse(localStorage.getItem('baby-tracker-routine')) || {}).goals || []);
+  const goals = () => page.evaluate(() => (JSON.parse(localStorage.getItem('baby-tracker-goals')) || {}).items || []);
   let g = await goals();
   ok('goals are added, tidied, and never twice', JSON.stringify(g) === '["Self-settling","Bedtime by 19:30"]', g);
   ok('a suggestion already taken is no longer offered', (await page.$$('#goalSuggest .goal-chip')).length === 3);

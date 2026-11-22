@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=138">
+<link rel="stylesheet" href="style.css?v=139">
 </head>
 <body>
 
@@ -887,7 +887,9 @@
           <button type="button" class="goal-add-btn" id="goalAdd">➕ Add</button>
         </div>
         <div class="nextup-chips goal-suggest" id="goalSuggest"></div>
-        <p class="data-hint">Move a goal up or down to change which comes first. They travel with the routine to the other phone and into the backup, and the summary for an AI lists them in this order.</p>
+        <p class="goal-owner" id="goalOwner">—</p>
+        <button type="button" class="data-btn" id="goalClaim">📌 Goals are set from this phone</button>
+        <p class="data-hint">Move a goal up or down to change which comes first. They go to the other phone and into the backup, and the summary for an AI lists them in this order. Set from one phone — the one with your name under ⚙️ Settings → <strong>This phone</strong> — they cannot be changed or overwritten from the other; changing the routine there never touches them.</p>
       </section>
 
       <section>
@@ -1653,6 +1655,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=138"></script>
+<script src="app.js?v=139"></script>
 </body>
 </html>
