@@ -4057,3 +4057,6 @@ body {
   padding: 0 14px;
 }
 .goal-suggest { margin-bottom: 8px; }
+.goal-owner { color: var(--text-dim); font-size: 14px; margin: 4px 0 8px; }
+.goal-owner.goal-owner-locked { color: var(--accent-sleep); font-weight: 600; }
+#goalClaim.armed { border-color: var(--accent-sleep); color: var(--accent-sleep); }

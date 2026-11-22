@@ -148,6 +148,7 @@
   // has slid needs. Off until somebody turns it on, so nothing about the app
   // changes for a household that never asked for a routine.
   var ROUTINE_KEY = "baby-tracker-routine";
+  var GOALS_KEY = "baby-tracker-goals";
   // The day the app suggests, at six ages.
   //
   // A sleep carries the time it is expected to end as well as the time it
@@ -294,10 +295,13 @@
   // A routine with more steps than this is not a routine any more, and the
   // screen that edits it stops being readable on a phone.
   var MAX_ROUTINE_SLOTS = 24;
-  // What the household is working towards, first one first. Kept with the
-  // routine because that is what they are steering, so they travel and are
-  // backed up with it.
+  // What the household is working towards, first one first. Their own record
+  // with their own timestamp, so changing the routine, the intervals or the
+  // night on one phone never carries a stale copy of them over the other's;
+  // and, once one phone has said so, set from that phone alone.
   var MAX_GOALS = 5;
+  var GOALS_NAME_MAX = 30;
+  var GOALS_EPOCH = "1970-01-01T00:00:00.000Z";
   var MAX_GOAL_TEXT = 80;
   var SUGGESTED_GOALS = ["Self-settling", "Longer night stretch", "Consistent bedtime", "Fewer night feeds"];
   // A gap this far past the planned wake window is worth colouring rather
@@ -469,7 +473,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "138";
+    var fallback = "139";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1325,10 +1329,9 @@
       slots = suggestedRoutine().slots.map(function (s) { return sanitiseRoutineSlot(s); });
     }
     slots.sort(function (a, b) { return clockMinutes(a.time) - clockMinutes(b.time); });
-    var clean = { on: !!(raw && raw.on), slots: slots };
-    var goals = sanitiseGoals(raw && raw.goals);
-    if (goals.length) clean.goals = goals;
-    return clean;
+    // Goals used to live in here (137, 138). They have a record of their own
+    // now, and a copy found in here is only ever read once, to move it.
+    return { on: !!(raw && raw.on), slots: slots };
   }
 
   // Plain lines, in priority order, never the same one twice.
@@ -1344,6 +1347,95 @@
     return out;
   }
 
+  // ---------- goals: the record ----------
+
+  // { items, owner, by, updatedAt }. `owner` is the name of the phone that
+  // sets them (Settings -> This phone), empty while either may; `by` is the
+  // name of whichever phone made this version of them.
+  function sanitiseGoalsRecord(raw) {
+    var rec = { items: [], owner: "", by: "", updatedAt: GOALS_EPOCH };
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return rec;
+    rec.items = sanitiseGoals(raw.items);
+    rec.owner = cleanText(raw.owner, GOALS_NAME_MAX);
+    rec.by = cleanText(raw.by, GOALS_NAME_MAX);
+    var at = new Date(String(raw.updatedAt || ""));
+    if (!isNaN(at.getTime())) rec.updatedAt = at.toISOString();
+    return rec;
+  }
+
+  function goalsRecordEmpty(rec) {
+    return !rec.items.length && !rec.owner && rec.updatedAt === GOALS_EPOCH;
+  }
+
+  // A phone updated from 138 still has its goals inside the routine. They
+  // come across stamped as old as can be, so any record a phone has made
+  // since — the one that sets them, above all — wins over them.
+  function loadGoals() {
+    var raw = null;
+    try { raw = JSON.parse(localStorage.getItem(GOALS_KEY) || "null"); } catch (e) { raw = null; }
+    if (raw) return sanitiseGoalsRecord(raw);
+    var old = null;
+    try { old = JSON.parse(localStorage.getItem(ROUTINE_KEY) || "null"); } catch (e) { old = null; }
+    return sanitiseGoalsRecord({ items: old && old.goals, updatedAt: GOALS_EPOCH });
+  }
+
+  function storeGoals(rec) {
+    try {
+      localStorage.setItem(GOALS_KEY, JSON.stringify(rec));
+      goalsState = rec;
+      return true;
+    } catch (e) {
+      showError("Couldn't save the goals");
+      return false;
+    }
+  }
+
+  function sameName(a, b) {
+    return !!a && !!b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  }
+
+  // A version is taken only if it is newer than ours and was made by the
+  // phone that sets them (or nobody sets them). Older copies — a phone that
+  // had not heard the latest yet — never win on time; and one that somehow
+  // changed them without being the owner does not win at all.
+  function goalsAcceptable(rec) {
+    return !rec.owner || sameName(rec.by, rec.owner);
+  }
+
+  // Ours are newer than what is up there, or up there has none and we do.
+  function goalsUnsent(remote) {
+    if (goalsRecordEmpty(goalsState)) return false;
+    var theirs = remote ? sanitiseGoalsRecord(remote) : null;
+    return !theirs || goalsRecordEmpty(theirs) || goalsState.updatedAt > theirs.updatedAt;
+  }
+
+  function mergeGoals(raw, outright) {
+    if (!raw) return false;
+    var rec = sanitiseGoalsRecord(raw);
+    if (goalsRecordEmpty(rec)) return false;
+    var take = outright
+      ? true
+      : rec.updatedAt > goalsState.updatedAt && goalsAcceptable(rec);
+    if (!take || JSON.stringify(rec) === JSON.stringify(goalsState)) return false;
+    return storeGoals(rec);
+  }
+
+  // Goals from a phone still on 138, found inside its routine: only ever
+  // filling a phone that has none of its own yet.
+  function adoptOldGoals(list) {
+    if (!goalsRecordEmpty(goalsState)) return false;
+    var items = sanitiseGoals(list);
+    if (!items.length) return false;
+    return storeGoals(sanitiseGoalsRecord({ items: items, updatedAt: GOALS_EPOCH }));
+  }
+
+  // What goes up with the routine for a phone still on 138, which reads the
+  // goals from there. Read only: nothing here ever takes goals back from it.
+  function routineForDoc() {
+    if (!goalsState.items.length) return routine;
+    return { on: routine.on, slots: routine.slots, goals: goalsState.items };
+  }
+
   function loadRoutine() {
     var raw = null;
     try { raw = JSON.parse(localStorage.getItem(ROUTINE_KEY) || "null"); } catch (e) { raw = null; }
@@ -1351,11 +1443,6 @@
   }
 
   function saveRoutine(next) {
-    // Every caller that changes the day passes only the switch and the
-    // slots; the goals ride along untouched unless they are what changed.
-    if (next && next.goals === undefined && routine && routine.goals) {
-      next = { on: next.on, slots: next.slots, goals: routine.goals };
-    }
     var clean = sanitiseRoutine(next);
     try {
       localStorage.setItem(ROUTINE_KEY, JSON.stringify(clean));
@@ -2064,6 +2151,7 @@
   var intervals = loadIntervals();
   var nightWindow = loadNightWindow();
   var routine = loadRoutine();
+  var goalsState = loadGoals();
 
   // ---------- dom ----------
 
@@ -2383,6 +2471,8 @@
     routineOpenBtn: document.getElementById("routineOpen"),
     routineBack: document.getElementById("routineBack"),
     routineEnabled: document.getElementById("routineEnabled"),
+    goalOwner: document.getElementById("goalOwner"),
+    goalClaim: document.getElementById("goalClaim"),
     goalList: document.getElementById("goalList"),
     goalEmpty: document.getElementById("goalEmpty"),
     goalAddRow: document.getElementById("goalAddRow"),
@@ -3676,40 +3766,93 @@
   // ---------- goals ----------
 
   function routineGoals() {
-    return routine.goals || [];
+    return goalsState.items;
+  }
+
+  // Either nobody sets them, or this phone carries the name of the one that
+  // does.
+  function canEditGoals() {
+    return !goalsState.owner || sameName(loadAuthor(), goalsState.owner);
+  }
+
+  var goalTakeArmed = null;
+
+  function disarmGoalTake() {
+    clearTimeout(goalTakeArmed);
+    goalTakeArmed = null;
+    el.goalClaim.classList.remove("armed");
   }
 
   function renderGoals() {
     var goals = routineGoals();
+    var mine = canEditGoals();
     el.goalList.innerHTML = goals.map(function (text, i) {
       return '<li class="goal-item' + (i === 0 ? ' goal-first' : '') + '">' +
         '<span class="goal-rank">' + (i + 1) + '</span>' +
         '<span class="goal-text">' + escapeHtml(text) + '</span>' +
-        '<button type="button" class="goal-btn" data-act="up" data-index="' + i + '"' +
-          (i === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
-        '<button type="button" class="goal-btn" data-act="down" data-index="' + i + '"' +
-          (i === goals.length - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
-        '<button type="button" class="goal-btn goal-del" data-act="del" data-index="' + i + '"' +
-          ' aria-label="Remove">✕</button>' +
+        (mine
+          ? '<button type="button" class="goal-btn" data-act="up" data-index="' + i + '"' +
+              (i === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
+            '<button type="button" class="goal-btn" data-act="down" data-index="' + i + '"' +
+              (i === goals.length - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
+            '<button type="button" class="goal-btn goal-del" data-act="del" data-index="' + i + '"' +
+              ' aria-label="Remove">✕</button>'
+          : '') +
         '</li>';
     }).join("");
     el.goalList.hidden = !goals.length;
     el.goalEmpty.hidden = goals.length > 0;
+    el.goalEmpty.textContent = mine
+      ? "What you are working towards — say, getting her to settle on her own. Add one or a few; the first is the one that matters most."
+      : "No goals set yet.";
     var full = goals.length >= MAX_GOALS;
-    el.goalAddRow.hidden = full;
+    el.goalAddRow.hidden = full || !mine;
     var lower = goals.map(function (g) { return g.toLowerCase(); });
-    var offer = full ? [] : SUGGESTED_GOALS.filter(function (g) { return lower.indexOf(g.toLowerCase()) === -1; });
+    var offer = (full || !mine) ? [] : SUGGESTED_GOALS.filter(function (g) { return lower.indexOf(g.toLowerCase()) === -1; });
     el.goalSuggest.innerHTML = offer.map(function (g) {
       return '<button type="button" class="nextup-chip goal-chip" data-goal="' + escapeHtml(g) + '">+ ' +
         escapeHtml(g) + '</button>';
     }).join("");
     el.goalSuggest.hidden = !offer.length;
+
+    // Who sets them, and the one button that changes that.
+    var owner = goalsState.owner;
+    el.goalOwner.classList.toggle("goal-owner-locked", !!owner && !mine);
+    if (!owner) {
+      el.goalOwner.textContent = "Either phone can change these.";
+      el.goalClaim.textContent = "📌 Goals are set from this phone";
+      el.goalClaim.setAttribute("data-act", "claim");
+    } else if (mine) {
+      el.goalOwner.textContent = "Set from this phone, as " + owner +
+        ". The other phone shows them but cannot change them.";
+      el.goalClaim.textContent = "Let either phone change them";
+      el.goalClaim.setAttribute("data-act", "release");
+    } else {
+      el.goalOwner.textContent = "🔒 Set by " + owner + " — change them on that phone.";
+      el.goalClaim.textContent = goalTakeArmed
+        ? "Tap again to set them from this phone instead"
+        : "Take over goals";
+      el.goalClaim.setAttribute("data-act", "take");
+    }
+  }
+
+  // Every change made here: stamped now, and signed with this phone's name.
+  function saveGoalsRecord(items, owner) {
+    var rec = sanitiseGoalsRecord({ items: items, owner: owner, by: loadAuthor(),
+      updatedAt: new Date().toISOString() });
+    if (!storeGoals(rec)) return false;
+    scheduleSync();
+    renderGoals();
+    return true;
   }
 
   function saveGoals(goals) {
-    if (!saveRoutine({ on: routine.on, slots: routine.slots, goals: goals })) return false;
-    renderGoals();
-    return true;
+    if (!canEditGoals()) {
+      showError("The goals are set from " + goalsState.owner + "'s phone");
+      renderGoals();
+      return false;
+    }
+    return saveGoalsRecord(goals, goalsState.owner);
   }
 
   function addGoal(text) {
@@ -3754,6 +3897,31 @@
     goals[i] = goals[j];
     goals[j] = held;
     saveGoals(goals);
+  });
+
+  el.goalClaim.addEventListener("click", function () {
+    var act = el.goalClaim.getAttribute("data-act");
+    var me = loadAuthor();
+    if (act === "release") {
+      disarmGoalTake();
+      if (saveGoalsRecord(routineGoals(), "")) showToast("Either phone can change the goals");
+      return;
+    }
+    // Owning them needs a name the other phone can show and check against.
+    if (!me) {
+      showError("Put your name under ⚙️ Settings → This phone first");
+      return;
+    }
+    // Taking them from another phone deserves a second thought; this app has
+    // no dialogs, so the button asks for the second tap itself.
+    if (act === "take" && !goalTakeArmed) {
+      el.goalClaim.classList.add("armed");
+      goalTakeArmed = setTimeout(function () { disarmGoalTake(); renderGoals(); }, 5000);
+      renderGoals();
+      return;
+    }
+    disarmGoalTake();
+    if (saveGoalsRecord(routineGoals(), me)) showToast("Goals are set from this phone now");
   });
 
   function updateRoutineSlot(index, field, value) {
@@ -6807,7 +6975,8 @@
       intervals: intervals,
       photoAlbum: loadPhotoAlbum(),
       night: nightWindow,
-      routine: routine,
+      routine: routineForDoc(),
+      goals: goalsState,
       rotaShifts: rotaShifts,
       plans: plans,
       shopping: shopping,
@@ -7185,6 +7354,10 @@
       intervals: parsed.intervals, photoAlbum: parsed.photoAlbum, night: parsed.night,
       routine: parsed.routine, takeIntervals: true, overwrite: false
     });
+    // The same rule as sync: newer, and made by the phone that sets them.
+    var restoredGoals = parsed.goals ? mergeGoals(parsed.goals, false)
+      : adoptOldGoals(parsed.routine && parsed.routine.goals);
+    if (restoredGoals && !el.screenRoutine.hidden) renderGoals();
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
       renderPlans();
@@ -8426,9 +8599,12 @@
         intervals: { feed: intervals.feed, diaper: intervals.diaper, sleep: intervals.sleep },
         photoAlbum: loadPhotoAlbum(),
         night: nightWindow,
-        routine: routine,
+        routine: routineForDoc(),
         updatedAt: metaStamp()
       },
+      // Left out while there are none, so a phone with nothing to say never
+      // puts an empty record up over one still on 138's way of keeping them.
+      goals: goalsRecordEmpty(goalsState) ? undefined : goalsState,
       events: live,
       plans: plans,
       shopping: shopping,
@@ -8621,6 +8797,11 @@
       if (pulledJournal) saveJournal(journal);
 
       var remoteMeta = remoteDoc.meta;
+      // Before the settings, and on their own clock: see mergeGoals.
+      var pulledGoals = remoteDoc.goals
+        ? mergeGoals(remoteDoc.goals, joining)
+        : adoptOldGoals(remoteMeta && remoteMeta.routine && remoteMeta.routine.goals);
+      if (pulledGoals && !el.screenRoutine.hidden) renderGoals();
       applyingRemote = true;
       try {
         if (remoteMeta) {
@@ -8699,6 +8880,7 @@
           remoteMissesOurPlans(remotePlans) || remoteMissesOurShopping(remoteShopping) ||
           remoteMissesOurRotaShifts(remoteRotaShifts) || remoteMissesOurMilk(remoteMilk) ||
           remoteMissesOurJournal(remoteJournal) ||
+          goalsUnsent(remoteDoc.goals) ||
           metaStamp() > ((remoteMeta && remoteMeta.updatedAt) || "");
         if (!mustPush) return { pulled: pulled + pulledVoice, pushed: 0 };
 
@@ -16247,8 +16429,8 @@
       ru: "После «Sleep» карточка спрашивает, как уснула — Self, Rocked, Breast, Bottle, Held (можно несколько), потом Dummy, White noise, Quiet time, Cried — и сколько заняло, на полоске из пяти делений. Всё по желанию; в истории это видно под сном, исправить можно в форме редактирования." },
     { id: "goals", title: { en: "Goals", ru: "Цели" }, go: { click: "routineOpen" },
       words: "*goal *goals target aim priority *цел приоритет задач",
-      en: "Goals sit at the top of ⏰ Daily routine, behind ⋯: what you are working towards, first one first. ↑ ↓ change the order; they sync with the routine and the AI summary lists them.",
-      ru: "Цели — вверху ⏰ Daily routine, в меню ⋯: к чему вы стремитесь, первая — главная. ↑ ↓ меняют порядок; цели синхронизируются вместе с режимом и попадают в сводку для ИИ." },
+      en: "Goals sit at the top of ⏰ Daily routine, behind ⋯: what you are working towards, first one first. ↑ ↓ change the order. 📌 Goals are set from this phone makes them change only there; the other phone shows them locked, and Take over goals moves them.",
+      ru: "Цели — вверху ⏰ Daily routine, в меню ⋯: к чему вы стремитесь, первая — главная. ↑ ↓ меняют порядок. «📌 Goals are set from this phone» — менять их можно только с этого телефона, на другом они закрыты; «Take over goals» передаёт их другому телефону." },
     { id: "help", title: { en: "The full guide", ru: "Полная инструкция" }, go: { click: "infoOpen" },
       words: "*help guide manual instructions explain помощь инструкц справк руководств объясни",
       en: "Info, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",
