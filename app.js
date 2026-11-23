@@ -473,7 +473,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "139";
+    var fallback = "140";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -4334,7 +4334,7 @@
   }
 
   function patternSvg(days) {
-    var WIDTH = 320, LEFT = 38, RIGHT = 4, TOP = 14, AXIS = 14;
+    var WIDTH = 320, LEFT = 38, RIGHT = 4, TOP = 6, AXIS = 16;
     var plotW = WIDTH - LEFT - RIGHT;
     var rowH = Math.max(3, Math.min(12, Math.floor(420 / days.length)));
     var gap = rowH >= 6 ? 1 : 0;
@@ -4344,11 +4344,6 @@
     var out = ['<svg class="ho-svg pattern-svg" id="patternSvg" viewBox="0 0 ' + WIDTH + ' ' + height +
       '" shape-rendering="crispEdges" role="img" aria-label="Sleep pattern, one row per day for ' +
       days.length + ' days">'];
-    [0, 6, 12, 18, 24].forEach(function (h) {
-      var x = r1(LEFT + plotW * h / 24);
-      out.push('<text class="ho-tick" x="' + x + '" y="10" text-anchor="' +
-        (h === 0 ? "start" : h === 24 ? "end" : "middle") + '">' + pad2(h) + ':00</text>');
-    });
     days.forEach(function (row, i) {
       var y = TOP + i * rowH;
       var span = row.to - row.from;
@@ -4373,10 +4368,18 @@
         out.push('<rect class="pt-picked" x="' + (LEFT - 0.5) + '" y="' + (y - 0.5) + '" width="' + (plotW + 1) + '" height="' + rowH + '"/>');
       }
     });
+    var bottom = TOP + days.length * rowH;
     [6, 12, 18].forEach(function (h) {
       var x = r1(LEFT + plotW * h / 24);
-      out.push('<line class="pt-grid" x1="' + x + '" y1="' + TOP + '" x2="' + x + '" y2="' + (TOP + days.length * rowH) + '"/>');
+      out.push('<line class="pt-grid" x1="' + x + '" y1="' + TOP + '" x2="' + x + '" y2="' + bottom + '"/>');
     });
+    // The hours along the bottom, every two — as many as fit at phone width.
+    for (var h = 0; h <= 24; h += 2) {
+      var hx = r1(LEFT + plotW * h / 24);
+      out.push('<line class="pt-tick" x1="' + hx + '" y1="' + bottom + '" x2="' + hx + '" y2="' + (bottom + 3) + '"/>');
+      out.push('<text class="ho-tick" x="' + hx + '" y="' + (bottom + 12) + '" text-anchor="' +
+        (h === 0 ? "start" : h === 24 ? "end" : "middle") + '">' + h + '</text>');
+    }
     out.push('</svg>');
     return { html: out.join(""), top: TOP, rowH: rowH, height: height };
   }

@@ -2237,6 +2237,7 @@ body {
 .pt-key.pt-cry, .pattern-svg .pt-cry { background: var(--danger); fill: var(--danger); }
 .pt-key.pt-none, .pattern-svg .pt-none { background: var(--bg-elevated-2); fill: var(--bg-elevated-2); }
 .pattern-svg .pt-grid { stroke: var(--bg); stroke-opacity: 0.45; stroke-width: 0.6; }
+.pattern-svg .pt-tick { stroke: var(--text-faint); stroke-width: 0.6; }
 .pattern-svg .pt-mark { stroke: var(--bg); stroke-width: 0.8; }
 .pattern-svg .pt-picked { fill: none; stroke: var(--text); stroke-width: 1; }
 .pattern-chart { cursor: pointer; }

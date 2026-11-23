@@ -60,6 +60,11 @@ const PLOT_W = 320 - 38 - 4;
   const none = await rects(page, 'none');
   ok('one row a day from the first sleep to today', none.length === 4, none.length);
   ok('the first row is her birth', /Birth/.test(await page.textContent('#patternSvg')));
+  const axis = await page.$$eval('#patternSvg text.ho-tick', ts => ts.filter(t => /^\d+$/.test(t.textContent))
+    .map(t => ({ t: t.textContent, y: +t.getAttribute('y') })));
+  const rowsEnd = Math.max(...none.map(r => r.y));
+  ok('the hours run along the bottom, every two, without zeros',
+    axis.map(a => a.t).join(' ') === '0 2 4 6 8 10 12 14 16 18 20 22 24' && axis.every(a => a.y > rowsEnd), axis);
 
   const cry = await rects(page, 'cry');
   ok('two hard settles drawn, the quick one not', cry.length === 2, cry);
