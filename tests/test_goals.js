@@ -89,7 +89,8 @@ async function sync(p) {
   await p.waitForTimeout(150);
 }
 const goals = p => p.evaluate(() => JSON.parse(localStorage.getItem('baby-tracker-goals') || 'null'));
-const items = async p => ((await goals(p)) || {}).items || [];
+const titles = list => (list || []).map(g => typeof g === 'string' ? g : g.title);
+const items = async p => titles(((await goals(p)) || {}).items);
 async function openRoutine(p) {
   await p.evaluate(() => document.getElementById('routineOpen').click());
   await p.waitForTimeout(250);
@@ -116,10 +117,10 @@ const shown = p => p.evaluate(() => ({
   await a.click('#goalClaim'); await a.waitForTimeout(150);
   let g = await goals(a);
   ok('📌 makes this phone the owner, signed with its name', g.owner === 'Женя' && g.by === 'Женя' &&
-    g.items.join() === 'Self-settling,Longer night stretch', g);
+    titles(g.items).join() === 'Self-settling,Longer night stretch', g);
   s = await shown(a);
   ok('and says so, with a way to let go', /Set from this phone, as Женя/.test(s.owner) && /either phone/.test(s.claim) &&
-    s.buttons === 6 && s.add, s);
+    s.buttons === 12 && s.add, s);
   await sync(a);
   const up = remote();
   ok('the goals go up as their own record', up && up.goals && up.goals.owner === 'Женя' &&
@@ -146,11 +147,11 @@ const shown = p => p.evaluate(() => ({
   await a.click('#goalSuggest .goal-chip[data-goal="Consistent bedtime"]'); await a.waitForTimeout(100);
   await sync(a);
   const his = (await items(a)).join();
-  ok('his new order and goal are up there', remote().goals.items.join() === his && his === 'Longer night stretch,Self-settling,Consistent bedtime', remote().goals);
+  ok('his new order and goal are up there', titles(remote().goals.items).join() === his && his === 'Longer night stretch,Self-settling,Consistent bedtime', remote().goals);
   await w.waitForTimeout(1100);
   await sync(w);
   ok('her routine change went up', remote().meta.routine.on === true, remote().meta.routine);
-  ok('and did not take his goals with it', remote().goals.items.join() === his, remote().goals);
+  ok('and did not take his goals with it', titles(remote().goals.items).join() === his, remote().goals);
   ok('her phone now has his', (await items(w)).join() === his, await goals(w));
   await sync(a);
   ok('and his phone kept them', (await items(a)).join() === his, await goals(a));
@@ -171,7 +172,7 @@ const shown = p => p.evaluate(() => ({
   await sync(w);
   ok('and an older one loses on time', (await items(w)).join() === his, await items(w));
   await sync(a);
-  ok('the owner\'s phone puts its own back up', remote().goals.items.join() === his, remote().goals);
+  ok('the owner\'s phone puts its own back up', titles(remote().goals.items).join() === his, remote().goals);
 
   // ---------- taking over ----------
   await w.evaluate(() => { document.getElementById('routineBack').click(); });
@@ -181,7 +182,7 @@ const shown = p => p.evaluate(() => ({
   ok('taking over asks for a second tap', /Tap again/.test(s.claim) && (await goals(w)).owner === 'Женя', s);
   await w.click('#goalClaim'); await w.waitForTimeout(150);
   g = await goals(w);
-  ok('and then her phone sets them', g.owner === 'Аня' && g.by === 'Аня' && g.items.join() === his, g);
+  ok('and then her phone sets them', g.owner === 'Аня' && g.by === 'Аня' && titles(g.items).join() === his, g);
   await sync(w);
   await sync(a);
   await a.evaluate(() => document.getElementById('routineBack').click());
