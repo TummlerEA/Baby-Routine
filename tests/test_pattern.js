@@ -84,14 +84,11 @@ const PLOT_W = 320 - 38 - 4;
   ok('and its totals add up to its 25 hours', /asleep 15h 30m/.test(line) && /awake 8h(?! ?\d)/.test(line) &&
     /hard settling 1h 30m/.test(line), line);
 
-  // Opened again in a second tab. Under load, a page opened straight away
-  // from a file can still see localStorage as it was a moment before the
-  // first tab wrote to it, so wait for the write to reach this tab and then
-  // start the app afresh — which is the part being checked: that it reads
-  // the choice back when it starts.
-  const again = await ctx.newPage();
-  again.on('pageerror', e => errs.push('ERR ' + e.message));
-  await again.goto(h.APP);
+  // Started afresh. A second tab opened from a file can, under load, see
+  // localStorage as it was before this one wrote to it — and sometimes not
+  // see the write at all — so the same tab is reloaded instead, which is the
+  // part being checked: that the app reads the choice back when it starts.
+  const again = page;
   await again.waitForFunction(() => localStorage.getItem('baby-tracker-pattern-open') === '1',
     null, { timeout: 10000 }).catch(() => null);
   await again.reload();
