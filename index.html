@@ -17,7 +17,7 @@
      app.js against a fresh index.html. Bump version.json to the same number
      in the same commit — that is what tells an already-installed copy an
      update exists. test_update.js fails if the two disagree. -->
-<link rel="stylesheet" href="style.css?v=140">
+<link rel="stylesheet" href="style.css?v=141">
 </head>
 <body>
 
@@ -256,6 +256,11 @@
           <div class="nextup-line" id="nextUpLine">Next at —</div>
           <div class="nextup-chips" id="nextUpChips"></div>
         </div>
+      </section>
+
+      <section class="tonight-plan" id="tonightPlan" hidden role="button" tabindex="0" aria-label="Tonight's plan — open the goals">
+        <div class="tp-head"><span class="tp-title">🌙 Tonight's plan</span><span class="tp-goal" id="tonightPlanGoal"></span></div>
+        <ol class="tp-list" id="tonightPlanList"></ol>
       </section>
 
       <section class="forecast">
@@ -889,7 +894,15 @@
         <div class="nextup-chips goal-suggest" id="goalSuggest"></div>
         <p class="goal-owner" id="goalOwner">—</p>
         <button type="button" class="data-btn" id="goalClaim">📌 Goals are set from this phone</button>
-        <p class="data-hint">Move a goal up or down to change which comes first. They go to the other phone and into the backup, and the summary for an AI lists them in this order. Set from one phone — the one with your name under ⚙️ Settings → <strong>This phone</strong> — they cannot be changed or overwritten from the other; changing the routine there never touches them.</p>
+        <div class="settings-panel goal-nudge">
+          <label class="settings-check">
+            <input type="checkbox" id="planNudgeOn">
+            <span class="settings-label">Nudge me at each step with a time</span>
+          </label>
+          <p class="rm-state" id="planNudgeState" hidden>—</p>
+        </div>
+        <p class="data-hint">Each goal is a card: what success looks like, when it started and when you will look at it again, and the steps of the plan. Steps with a time — <em>22:45 dream feed</em> — show on the main screen as <strong>Tonight's plan</strong>, and can nudge this phone at that minute; the nudge is off unless you turn it on, and stays on this phone. ↑ ↓ change which goal comes first; ⏸ pauses one and ✓ marks it done. If the synced repository holds a weekly <strong>goals-progress.json</strong>, its numbers show under the plan.</p>
+        <p class="data-hint">They go to the other phone and into the backup, and the summary for an AI lists them in this order, with the plan. Set from one phone — the one with your name under ⚙️ Settings → <strong>This phone</strong> — they cannot be changed or overwritten from the other; changing the routine there never touches them.</p>
       </section>
 
       <section>
@@ -1655,6 +1668,6 @@
   <button class="toast-action" id="toastAction" hidden>Undo</button>
 </div>
 
-<script src="app.js?v=140"></script>
+<script src="app.js?v=141"></script>
 </body>
 </html>

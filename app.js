@@ -303,6 +303,18 @@
   var GOALS_NAME_MAX = 30;
   var GOALS_EPOCH = "1970-01-01T00:00:00.000Z";
   var MAX_GOAL_TEXT = 80;
+  var MAX_GOAL_TARGET = 120;
+  var MAX_STEP_TEXT = 120;
+  var MAX_PLAN_STEPS = 12;
+  var GOAL_STATUSES = ["active", "paused", "done"];
+  // Steps are shown and nudged in plan days that begin at this hour, so
+  // 02:00 comes after 22:45 and not before 19:50.
+  var PLAN_DAY_START_MIN = 6 * 60;
+  // Written once a week by the diary chat into the synced repository; read
+  // here, never written.
+  var GOALS_PROGRESS_PATH = "goals-progress.json";
+  var GOALS_PROGRESS_KEY = "baby-tracker-goals-progress";
+  var PLAN_NUDGE_KEY = "baby-tracker-plan-nudge";
   var SUGGESTED_GOALS = ["Self-settling", "Longer night stretch", "Consistent bedtime", "Fewer night feeds"];
   // A gap this far past the planned wake window is worth colouring rather
   // than merely stating: past it a baby is not a little late for a nap, she
@@ -473,7 +485,7 @@
   // the browser actually loaded. Opened straight from disk there is no query,
   // which is what the fallback is for — a test keeps it level with the HTML.
   var APP_VERSION = (function () {
-    var fallback = "140";
+    var fallback = "141";
     var src = document.currentScript ? document.currentScript.src : "";
     var m = /[?&]v=([^&#]+)/.exec(src);
     return m ? decodeURIComponent(m[1]) : fallback;
@@ -1334,17 +1346,73 @@
     return { on: !!(raw && raw.on), slots: slots };
   }
 
-  // Plain lines, in priority order, never the same one twice.
+  // A goal is a card: what it is called, what success looks like, when it
+  // started and when it is looked at again, whether it is still being worked
+  // on, and the steps of the plan. Every field but the title is optional, and
+  // a goal written before 141 — a bare line of text — reads as a card with a
+  // title and nothing else. Ids are left empty here when missing, so reading
+  // the same thing twice always gives the same answer; the phone that next
+  // saves them hands them out.
+  function isDayKey(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) &&
+      !isNaN(new Date(String(value) + "T12:00:00").getTime());
+  }
+
+  function cleanId(value) {
+    return String(value == null ? "" : value).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+  }
+
+  function sanitisePlanStep(raw) {
+    if (typeof raw === "string") raw = { text: raw };
+    if (!raw || typeof raw !== "object") return null;
+    var text = cleanText(raw.text, MAX_STEP_TEXT);
+    if (!text) return null;
+    var step = { id: cleanId(raw.id), text: text };
+    if (isClockTime(raw.at)) step.at = raw.at;
+    return step;
+  }
+
+  function sanitiseGoal(raw) {
+    if (typeof raw === "string") raw = { title: raw };
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    var title = cleanText(raw.title, MAX_GOAL_TEXT);
+    if (!title) return null;
+    var goal = { id: cleanId(raw.id), title: title };
+    var target = cleanText(raw.target, MAX_GOAL_TARGET);
+    if (target) goal.target = target;
+    if (isDayKey(raw.start)) goal.start = raw.start;
+    if (isDayKey(raw.review)) goal.review = raw.review;
+    goal.status = GOAL_STATUSES.indexOf(raw.status) !== -1 ? raw.status : "active";
+    var plan = [];
+    if (Array.isArray(raw.plan)) {
+      raw.plan.forEach(function (item) {
+        var step = sanitisePlanStep(item);
+        if (step && plan.length < MAX_PLAN_STEPS) plan.push(step);
+      });
+    }
+    goal.plan = plan;
+    var at = new Date(String(raw.updatedAt || ""));
+    if (!isNaN(at.getTime())) goal.updatedAt = at.toISOString();
+    var by = cleanText(raw.by, GOALS_NAME_MAX);
+    if (by) goal.by = by;
+    return goal;
+  }
+
+  // Cards, in priority order, never two with the same title.
   function sanitiseGoals(raw) {
     var out = [];
     if (!Array.isArray(raw)) return out;
     raw.forEach(function (item) {
-      var text = cleanText(item, MAX_GOAL_TEXT);
-      if (!text || out.length >= MAX_GOALS) return;
-      var dup = out.some(function (g) { return g.toLowerCase() === text.toLowerCase(); });
-      if (!dup) out.push(text);
+      var goal = sanitiseGoal(item);
+      if (!goal || out.length >= MAX_GOALS) return;
+      var dup = out.some(function (g) { return g.title.toLowerCase() === goal.title.toLowerCase(); });
+      if (!dup) out.push(goal);
     });
     return out;
+  }
+
+  function goalTitles(items) {
+    return items.map(function (g) { return g.title; });
   }
 
   // ---------- goals: the record ----------
@@ -1409,9 +1477,27 @@
     return !theirs || goalsRecordEmpty(theirs) || goalsState.updatedAt > theirs.updatedAt;
   }
 
+  // A phone still on 140 or before writes its goals back as bare lines. A
+  // line whose title this phone already has a card for keeps that card's
+  // plan and dates, so the plan is not lost to a phone that cannot show it.
+  function keepCardsFor(rec, raw) {
+    var lines = raw && Array.isArray(raw.items) ? raw.items : [];
+    rec.items = rec.items.map(function (goal) {
+      var bare = lines.some(function (item) {
+        return typeof item === "string" && cleanText(item, MAX_GOAL_TEXT).toLowerCase() === goal.title.toLowerCase();
+      });
+      if (!bare) return goal;
+      var mine = goalsState.items.filter(function (g) {
+        return g.title.toLowerCase() === goal.title.toLowerCase();
+      })[0];
+      return mine || goal;
+    });
+    return rec;
+  }
+
   function mergeGoals(raw, outright) {
     if (!raw) return false;
-    var rec = sanitiseGoalsRecord(raw);
+    var rec = keepCardsFor(sanitiseGoalsRecord(raw), raw);
     if (goalsRecordEmpty(rec)) return false;
     var take = outright
       ? true
@@ -1433,7 +1519,7 @@
   // goals from there. Read only: nothing here ever takes goals back from it.
   function routineForDoc() {
     if (!goalsState.items.length) return routine;
-    return { on: routine.on, slots: routine.slots, goals: goalsState.items };
+    return { on: routine.on, slots: routine.slots, goals: goalTitles(goalsState.items) };
   }
 
   function loadRoutine() {
@@ -2479,6 +2565,11 @@
     goalText: document.getElementById("goalText"),
     goalAdd: document.getElementById("goalAdd"),
     goalSuggest: document.getElementById("goalSuggest"),
+    planNudgeOn: document.getElementById("planNudgeOn"),
+    planNudgeState: document.getElementById("planNudgeState"),
+    tonightPlan: document.getElementById("tonightPlan"),
+    tonightPlanGoal: document.getElementById("tonightPlanGoal"),
+    tonightPlanList: document.getElementById("tonightPlanList"),
     routineProgress: document.getElementById("routineProgress"),
     routineSlots: document.getElementById("routineSlots"),
     routineAddSleep: document.getElementById("routineAddSleep"),
@@ -3783,22 +3874,161 @@
     el.goalClaim.classList.remove("armed");
   }
 
+  // Which cards are open and what is being edited. Screen state only: never
+  // stored, and a goal that moves keeps its state because it is keyed by
+  // title, not place.
+  var goalOpen = {};
+  var goalEditing = null;   // title of the card whose details are being edited
+  var stepEditing = null;   // { goal: title, index: n }
+
+  function goalKey(goal) {
+    return goal.title.toLowerCase();
+  }
+
+  function goalIsOpen(goal) {
+    var k = goalKey(goal);
+    return goalOpen[k] === undefined ? goal.status === "active" : goalOpen[k];
+  }
+
+  function dayKeyDate(key) {
+    var p = String(key).split("-");
+    return new Date(+p[0], +p[1] - 1, +p[2]);
+  }
+
+  function shortDayMonth(key) {
+    var d = dayKeyDate(key);
+    return d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3);
+  }
+
+  // Whole days from one day to another, counted on the calendar rather than
+  // in hours, so a clock change never makes a fortnight thirteen days long.
+  function daysBetween(fromKey, toKey) {
+    var a = dayKeyDate(fromKey), b = dayKeyDate(toKey);
+    return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
+      Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / MS_DAY);
+  }
+
+  // The day a plan step belongs to: it begins at six in the morning, so the
+  // feed at two belongs to the evening before it.
+  function planDayKey(now) {
+    var d = new Date(now);
+    if (d.getHours() * 60 + d.getMinutes() < PLAN_DAY_START_MIN) d.setDate(d.getDate() - 1);
+    return dayKeyOf(d);
+  }
+
+  function goalDatesLine(goal, today) {
+    var parts = [];
+    if (goal.start) parts.push("From " + shortDayMonth(goal.start));
+    if (goal.review) {
+      var line = "review " + shortDayMonth(goal.review);
+      if (goal.status === "active") {
+        var left = daysBetween(today, goal.review);
+        if (left > 1) line += " — " + left + " days to go";
+        else if (left === 1) line += " — tomorrow";
+        else if (left === 0) line += " — today";
+        else line += " — due";
+      }
+      parts.push(parts.length ? line : line.charAt(0).toUpperCase() + line.slice(1));
+    }
+    return parts.join(" · ");
+  }
+
+  var GOAL_STATUS_LABEL = { active: "Active", paused: "Paused", done: "Done" };
+
+  function stepTimeHtml(step) {
+    return step.at
+      ? '<span class="plan-time">' + step.at + '</span>'
+      : '<span class="plan-time plan-untimed">—</span>';
+  }
+
+  function renderGoalCard(goal, i, count, mine, today) {
+    var title = escapeHtml(goal.title);
+    var open = goalIsOpen(goal);
+    var html = '<li class="goal-item goal-' + goal.status + (i === 0 ? ' goal-first' : '') + '" data-index="' + i + '">';
+    html += '<div class="goal-top"><span class="goal-rank">' + (i + 1) + '</span>' +
+      '<span class="goal-text">' + title + '</span>' +
+      '<span class="goal-status">' + GOAL_STATUS_LABEL[goal.status] + '</span></div>';
+
+    if (mine && goalEditing === goalKey(goal)) {
+      html += '<div class="goal-edit">' +
+        '<label class="goal-field"><span>Goal</span><input class="manual-input" data-field="title" maxlength="' + MAX_GOAL_TEXT + '" value="' + title + '"></label>' +
+        '<label class="goal-field"><span>What success looks like</span><input class="manual-input" data-field="target" maxlength="' + MAX_GOAL_TARGET + '" value="' + escapeHtml(goal.target || "") + '" placeholder="e.g. One stretch of 4 hours"></label>' +
+        '<div class="goal-field-row">' +
+          '<label class="goal-field"><span>From</span><input class="manual-input" type="date" data-field="start" value="' + (goal.start || "") + '"></label>' +
+          '<label class="goal-field"><span>Review</span><input class="manual-input" type="date" data-field="review" value="' + (goal.review || "") + '"></label>' +
+        '</div>' +
+        '<div class="goal-acts"><button type="button" class="goal-btn goal-wide" data-act="edit-cancel">Cancel</button>' +
+        '<button type="button" class="goal-btn goal-wide goal-save" data-act="edit-save">Save</button></div>' +
+        '</div>';
+      return html + '</li>';
+    }
+
+    if (goal.target) html += '<div class="goal-target">' + escapeHtml(goal.target) + '</div>';
+    var dates = goalDatesLine(goal, today);
+    if (dates) html += '<div class="goal-dates">' + escapeHtml(dates) + '</div>';
+
+    var steps = goal.plan;
+    if (steps.length || mine) {
+      if (!open) {
+        html += '<button type="button" class="goal-toggle" data-act="open">▸ Plan · ' +
+          steps.length + (steps.length === 1 ? ' step' : ' steps') + '</button>';
+      } else {
+        html += '<div class="goal-sub"><button type="button" class="goal-sub-btn" data-act="close">▾ Plan · ' +
+          steps.length + (steps.length === 1 ? ' step' : ' steps') + '</button>' +
+          (mine && steps.length ? '<span>tap a step to change it</span>' : '') + '</div>';
+        if (steps.length) {
+          html += '<ol class="plan-list">' + steps.map(function (step, j) {
+            var editing = mine && stepEditing && stepEditing.goal === goalKey(goal) && stepEditing.index === j;
+            if (editing) {
+              return '<li class="plan-step plan-editing" data-step="' + j + '">' +
+                '<input class="plan-edit-text" maxlength="' + MAX_STEP_TEXT + '" value="' + escapeHtml(step.text) + '" aria-label="The step">' +
+                '<div class="plan-edit-row">' +
+                  '<input type="time" class="plan-edit-at" value="' + (step.at || "") + '" aria-label="At what time (optional)">' +
+                  '<button type="button" class="plan-btn" data-act="step-up" data-step="' + j + '"' + (j === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
+                  '<button type="button" class="plan-btn" data-act="step-down" data-step="' + j + '"' + (j === steps.length - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
+                  '<button type="button" class="plan-btn" data-act="step-del" data-step="' + j + '" aria-label="Remove this step">✕</button>' +
+                  '<button type="button" class="plan-btn plan-done" data-act="step-save" data-step="' + j + '">Done</button>' +
+                '</div></li>';
+            }
+            return '<li class="plan-step" data-step="' + j + '">' +
+              (mine ? '<button type="button" class="plan-row" data-act="step-edit" data-step="' + j + '">' : '<div class="plan-row">') +
+              stepTimeHtml(step) + '<span class="plan-text">' + escapeHtml(step.text) + '</span>' +
+              (mine ? '</button>' : '</div>') + '</li>';
+          }).join("") + '</ol>';
+        }
+        if (mine && steps.length < MAX_PLAN_STEPS) {
+          html += '<div class="plan-add">' +
+            '<input class="manual-input plan-add-text" maxlength="' + MAX_STEP_TEXT + '" placeholder="Add a step" aria-label="A new step">' +
+            '<input type="time" class="plan-add-at" aria-label="At what time (optional)">' +
+            '<button type="button" class="goal-add-btn" data-act="step-add" aria-label="Add the step">➕</button>' +
+            '</div>';
+        }
+        html += goalProgressHtml(goal);
+      }
+    }
+
+    if (mine) {
+      html += '<div class="goal-acts">' +
+        '<button type="button" class="goal-btn" data-act="up" data-index="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
+        '<button type="button" class="goal-btn" data-act="down" data-index="' + i + '"' + (i === count - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
+        (goal.status === "active"
+          ? '<button type="button" class="goal-btn" data-act="pause" data-index="' + i + '" aria-label="Pause">⏸</button>' +
+            '<button type="button" class="goal-btn" data-act="done" data-index="' + i + '" aria-label="Mark done">✓</button>'
+          : '<button type="button" class="goal-btn goal-wide" data-act="resume" data-index="' + i + '">' +
+            (goal.status === "done" ? "↺ Reopen" : "▶ Resume") + '</button>') +
+        '<button type="button" class="goal-btn" data-act="edit" data-index="' + i + '" aria-label="Edit">✎</button>' +
+        '<button type="button" class="goal-btn goal-del" data-act="del" data-index="' + i + '" aria-label="Remove">✕</button>' +
+        '</div>';
+    }
+    return html + '</li>';
+  }
+
   function renderGoals() {
     var goals = routineGoals();
     var mine = canEditGoals();
-    el.goalList.innerHTML = goals.map(function (text, i) {
-      return '<li class="goal-item' + (i === 0 ? ' goal-first' : '') + '">' +
-        '<span class="goal-rank">' + (i + 1) + '</span>' +
-        '<span class="goal-text">' + escapeHtml(text) + '</span>' +
-        (mine
-          ? '<button type="button" class="goal-btn" data-act="up" data-index="' + i + '"' +
-              (i === 0 ? ' disabled' : '') + ' aria-label="Move up">↑</button>' +
-            '<button type="button" class="goal-btn" data-act="down" data-index="' + i + '"' +
-              (i === goals.length - 1 ? ' disabled' : '') + ' aria-label="Move down">↓</button>' +
-            '<button type="button" class="goal-btn goal-del" data-act="del" data-index="' + i + '"' +
-              ' aria-label="Remove">✕</button>'
-          : '') +
-        '</li>';
+    var today = dayKeyOf(new Date());
+    el.goalList.innerHTML = goals.map(function (goal, i) {
+      return renderGoalCard(goal, i, goals.length, mine, today);
     }).join("");
     el.goalList.hidden = !goals.length;
     el.goalEmpty.hidden = goals.length > 0;
@@ -3807,13 +4037,14 @@
       : "No goals set yet.";
     var full = goals.length >= MAX_GOALS;
     el.goalAddRow.hidden = full || !mine;
-    var lower = goals.map(function (g) { return g.toLowerCase(); });
+    var lower = goals.map(function (g) { return g.title.toLowerCase(); });
     var offer = (full || !mine) ? [] : SUGGESTED_GOALS.filter(function (g) { return lower.indexOf(g.toLowerCase()) === -1; });
     el.goalSuggest.innerHTML = offer.map(function (g) {
       return '<button type="button" class="nextup-chip goal-chip" data-goal="' + escapeHtml(g) + '">+ ' +
         escapeHtml(g) + '</button>';
     }).join("");
     el.goalSuggest.hidden = !offer.length;
+    renderPlanNudge();
 
     // Who sets them, and the one button that changes that.
     var owner = goalsState.owner;
@@ -3837,12 +4068,35 @@
   }
 
   // Every change made here: stamped now, and signed with this phone's name.
+  // Each card that changed carries its own stamp and name as well, and every
+  // card and step that has none yet is given an id, which is what the weekly
+  // progress file is keyed by.
   function saveGoalsRecord(items, owner) {
-    var rec = sanitiseGoalsRecord({ items: items, owner: owner, by: loadAuthor(),
-      updatedAt: new Date().toISOString() });
+    var now = new Date().toISOString();
+    var me = loadAuthor();
+    var before = {};
+    goalsState.items.forEach(function (g) { if (g.id) before[g.id] = g; });
+    var stamped = items.map(function (raw) {
+      var goal = sanitiseGoal(raw);
+      if (!goal) return null;
+      if (!goal.id) goal.id = uuid();
+      goal.plan.forEach(function (step) { if (!step.id) step.id = uuid(); });
+      var was = before[goal.id];
+      var bare = function (g) {
+        return JSON.stringify({ title: g.title, target: g.target, start: g.start, review: g.review,
+          status: g.status, plan: g.plan });
+      };
+      if (!was || bare(was) !== bare(goal) || !goal.updatedAt) {
+        goal.updatedAt = now;
+        if (me) goal.by = me; else delete goal.by;
+      }
+      return goal;
+    }).filter(Boolean);
+    var rec = sanitiseGoalsRecord({ items: stamped, owner: owner, by: me, updatedAt: now });
     if (!storeGoals(rec)) return false;
     scheduleSync();
     renderGoals();
+    renderTonightPlan();
     return true;
   }
 
@@ -3855,16 +4109,20 @@
     return saveGoalsRecord(goals, goalsState.owner);
   }
 
+  function copyGoals() {
+    return JSON.parse(JSON.stringify(routineGoals()));
+  }
+
   function addGoal(text) {
     var clean = cleanText(text, MAX_GOAL_TEXT);
     if (!clean) return false;
-    var goals = routineGoals();
-    if (goals.some(function (g) { return g.toLowerCase() === clean.toLowerCase(); })) {
+    var goals = copyGoals();
+    if (goals.some(function (g) { return g.title.toLowerCase() === clean.toLowerCase(); })) {
       showToast("That goal is already there");
       return false;
     }
     if (goals.length >= MAX_GOALS) return false;
-    return saveGoals(goals.concat([clean]));
+    return saveGoals(goals.concat([{ title: clean, status: "active", start: dayKeyOf(new Date()), plan: [] }]));
   }
 
   el.goalAdd.addEventListener("click", function () {
@@ -3879,24 +4137,459 @@
     var chip = ev.target.closest(".goal-chip");
     if (chip) addGoal(chip.getAttribute("data-goal"));
   });
-  el.goalList.addEventListener("click", function (ev) {
-    var btn = ev.target.closest(".goal-btn");
-    if (!btn || btn.disabled) return;
-    var i = parseInt(btn.getAttribute("data-index"), 10);
-    var goals = routineGoals().slice();
-    if (!goals[i]) return;
-    var act = btn.getAttribute("data-act");
-    if (act === "del") {
-      var gone = goals.splice(i, 1)[0];
-      if (saveGoals(goals)) showToast("Removed: " + gone);
+
+  function addPlanStep(card, goals, i) {
+    var text = cleanText(card.querySelector(".plan-add-text").value, MAX_STEP_TEXT);
+    if (!text) {
+      showToast("Write the step first");
       return;
     }
-    var j = act === "up" ? i - 1 : i + 1;
-    if (!goals[j]) return;
-    var held = goals[i];
-    goals[i] = goals[j];
-    goals[j] = held;
+    if (goals[i].plan.length >= MAX_PLAN_STEPS) return;
+    var at = card.querySelector(".plan-add-at").value;
+    var step = { text: text };
+    if (isClockTime(at)) step.at = at;
+    goals[i].plan.push(step);
     saveGoals(goals);
+  }
+
+  el.goalList.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter") return;
+    var card = ev.target.closest(".goal-item");
+    if (!card) return;
+    if (ev.target.classList.contains("plan-add-text")) {
+      ev.preventDefault();
+      addPlanStep(card, copyGoals(), parseInt(card.getAttribute("data-index"), 10));
+    } else if (ev.target.classList.contains("plan-edit-text")) {
+      ev.preventDefault();
+      var done = card.querySelector('[data-act="step-save"]');
+      if (done) done.click();
+    }
+  });
+
+  el.goalList.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-act]");
+    if (!btn || btn.disabled) return;
+    var card = btn.closest(".goal-item");
+    if (!card) return;
+    var i = parseInt(card.getAttribute("data-index"), 10);
+    var goals = copyGoals();
+    var goal = goals[i];
+    if (!goal) return;
+    var key = goalKey(goal);
+    var act = btn.getAttribute("data-act");
+    var j = parseInt(btn.getAttribute("data-step"), 10);
+
+    // Opening and closing changes nothing stored, so either phone may.
+    if (act === "open" || act === "close") {
+      goalOpen[key] = act === "open";
+      if (act === "close" && stepEditing && stepEditing.goal === key) stepEditing = null;
+      renderGoals();
+      return;
+    }
+    if (act === "step-edit") {
+      stepEditing = { goal: key, index: j };
+      renderGoals();
+      var input = el.goalList.querySelector(".plan-editing .plan-edit-text");
+      if (input) input.focus();
+      return;
+    }
+    if (act === "edit") {
+      goalEditing = key;
+      stepEditing = null;
+      renderGoals();
+      return;
+    }
+    if (act === "edit-cancel") {
+      goalEditing = null;
+      renderGoals();
+      return;
+    }
+
+    if (act === "edit-save") {
+      var field = function (name) {
+        var f = card.querySelector('[data-field="' + name + '"]');
+        return f ? f.value : "";
+      };
+      var title = cleanText(field("title"), MAX_GOAL_TEXT);
+      if (!title) {
+        showToast("A goal needs a name");
+        return;
+      }
+      if (goals.some(function (g, k) { return k !== i && g.title.toLowerCase() === title.toLowerCase(); })) {
+        showToast("That goal is already there");
+        return;
+      }
+      var start = field("start"), review = field("review");
+      if (isDayKey(start) && isDayKey(review) && review < start) {
+        showToast("The review comes after the start");
+        return;
+      }
+      goal.title = title;
+      goal.target = cleanText(field("target"), MAX_GOAL_TARGET);
+      if (isDayKey(start)) goal.start = start; else delete goal.start;
+      if (isDayKey(review)) goal.review = review; else delete goal.review;
+      if (!goal.target) delete goal.target;
+      if (goalOpen[key] !== undefined && title.toLowerCase() !== key) {
+        goalOpen[title.toLowerCase()] = goalOpen[key];
+      }
+      goalEditing = null;
+      saveGoals(goals);
+      return;
+    }
+
+    if (act === "step-add") {
+      addPlanStep(card, goals, i);
+      return;
+    }
+    if (act === "step-save") {
+      var li = btn.closest(".plan-step");
+      var text = cleanText(li.querySelector(".plan-edit-text").value, MAX_STEP_TEXT);
+      var at = li.querySelector(".plan-edit-at").value;
+      if (!goal.plan[j]) return;
+      stepEditing = null;
+      if (!text) {
+        goal.plan.splice(j, 1);
+      } else {
+        goal.plan[j].text = text;
+        if (isClockTime(at)) goal.plan[j].at = at; else delete goal.plan[j].at;
+      }
+      saveGoals(goals);
+      return;
+    }
+    if (act === "step-del") {
+      if (!goal.plan[j]) return;
+      goal.plan.splice(j, 1);
+      stepEditing = null;
+      saveGoals(goals);
+      return;
+    }
+    if (act === "step-up" || act === "step-down") {
+      var to = act === "step-up" ? j - 1 : j + 1;
+      if (!goal.plan[j] || !goal.plan[to]) return;
+      // Whatever has been typed into the step so far moves with it.
+      var row = btn.closest(".plan-step");
+      var typed = cleanText(row.querySelector(".plan-edit-text").value, MAX_STEP_TEXT);
+      var typedAt = row.querySelector(".plan-edit-at").value;
+      if (typed) goal.plan[j].text = typed;
+      if (isClockTime(typedAt)) goal.plan[j].at = typedAt; else delete goal.plan[j].at;
+      var keep = goal.plan[j];
+      goal.plan[j] = goal.plan[to];
+      goal.plan[to] = keep;
+      stepEditing = { goal: key, index: to };
+      saveGoals(goals);
+      return;
+    }
+
+    if (act === "pause" || act === "done" || act === "resume") {
+      goal.status = act === "resume" ? "active" : act === "pause" ? "paused" : "done";
+      delete goalOpen[key];
+      if (saveGoals(goals) && act !== "resume") {
+        showToast(act === "done" ? "Done: " + goal.title : "Paused: " + goal.title);
+      }
+      return;
+    }
+    if (act === "del") {
+      var gone = goals.splice(i, 1)[0];
+      if (saveGoals(goals)) showToast("Removed: " + gone.title);
+      return;
+    }
+    if (act === "up" || act === "down") {
+      var k = act === "up" ? i - 1 : i + 1;
+      if (!goals[k]) return;
+      var held = goals[i];
+      goals[i] = goals[k];
+      goals[k] = held;
+      saveGoals(goals);
+    }
+  });
+
+  // ---------- goals: weekly progress, read from the synced repository ----------
+
+  // The diary chat writes goals-progress.json once a week: for each goal, a
+  // week before the plan began, the latest week, and a line on how it is
+  // going. This phone only ever reads it, and keeps its own copy so the
+  // block is there with no signal. The copy is this phone's alone: never
+  // synced, exported or shared.
+  var PROGRESS_ROWS = [
+    { key: "first_stretch_min", label: "First stretch", minutes: true },
+    { key: "longest_min", label: "Longest stretch", minutes: true },
+    { key: "nights_4h", label: "Nights with 4 h+" },
+    { key: "night_feeds", label: "Night feeds" }
+  ];
+
+  function sanitiseProgressWeek(raw) {
+    var week = { period: "", values: {} };
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return week;
+    week.period = cleanText(raw.period, 30);
+    Object.keys(raw).slice(0, 12).forEach(function (k) {
+      if (k === "period" || !/^[a-z0-9_]{1,40}$/.test(k)) return;
+      var v = raw[k];
+      if (typeof v === "number" && isFinite(v)) week.values[k] = v;
+      else if (typeof v === "string" && cleanText(v, 20)) week.values[k] = cleanText(v, 20);
+    });
+    return week;
+  }
+
+  function sanitiseProgress(raw) {
+    var out = { updatedAt: "", goals: {} };
+    if (!raw || typeof raw !== "object" || !raw.goals || typeof raw.goals !== "object") return out;
+    var at = new Date(String(raw.updatedAt || ""));
+    if (!isNaN(at.getTime())) out.updatedAt = at.toISOString();
+    Object.keys(raw.goals).slice(0, 20).forEach(function (id) {
+      var g = raw.goals[id];
+      if (!g || typeof g !== "object") return;
+      out.goals[String(id).slice(0, 80)] = {
+        baseline: sanitiseProgressWeek(g.baseline),
+        latest: sanitiseProgressWeek(g.latest),
+        note: cleanText(g.note, 200)
+      };
+    });
+    return out;
+  }
+
+  function loadGoalsProgress() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(GOALS_PROGRESS_KEY) || "null");
+      if (raw && typeof raw === "object") return { sha: String(raw.sha || ""), data: sanitiseProgress(raw.data) };
+    } catch (e) { /* read again on the next sync */ }
+    return null;
+  }
+
+  var goalsProgress = loadGoalsProgress();
+
+  function storeGoalsProgress(value) {
+    goalsProgress = value;
+    try {
+      if (value) localStorage.setItem(GOALS_PROGRESS_KEY, JSON.stringify(value));
+      else localStorage.removeItem(GOALS_PROGRESS_KEY);
+    } catch (e) { /* shown from memory until the next sync */ }
+  }
+
+  // Keyed by the goal's id; a file written before the goal had one may use
+  // its title instead.
+  function progressFor(goal) {
+    if (!goalsProgress || !goalsProgress.data) return null;
+    var all = goalsProgress.data.goals;
+    if (goal.id && all[goal.id]) return all[goal.id];
+    var t = goal.title.toLowerCase();
+    var key = Object.keys(all).filter(function (k) { return k.toLowerCase() === t; })[0];
+    return key ? all[key] : null;
+  }
+
+  function progressValue(row, v) {
+    if (v === undefined || v === null || v === "") return "—";
+    if (row && row.minutes && typeof v === "number") {
+      var m = Math.round(v);
+      return Math.floor(m / 60) + " h " + pad2(m % 60);
+    }
+    if (typeof v === "string" && /^\d+\/\d+$/.test(v)) return v.replace("/", " of ");
+    return String(v);
+  }
+
+  function goalProgressHtml(goal) {
+    var p = progressFor(goal);
+    if (!p) return "";
+    var keys = PROGRESS_ROWS.map(function (r) { return r.key; });
+    var extra = Object.keys(p.baseline.values).concat(Object.keys(p.latest.values)).filter(function (k, n, all) {
+      return keys.indexOf(k) === -1 && all.indexOf(k) === n;
+    });
+    var rows = PROGRESS_ROWS.filter(function (r) {
+      return r.key in p.baseline.values || r.key in p.latest.values;
+    }).concat(extra.map(function (k) {
+      var label = k.replace(/_/g, " ");
+      return { key: k, label: label.charAt(0).toUpperCase() + label.slice(1) };
+    }));
+    var updated = goalsProgress.data.updatedAt
+      ? "updated " + shortDayMonth(dayKeyOf(new Date(goalsProgress.data.updatedAt))) : "";
+    var html = '<div class="goal-sub goal-progress-head"><span>Progress</span><span>' + escapeHtml(updated) + '</span></div>' +
+      '<div class="goal-progress">';
+    if (rows.length) {
+      html += '<table><tr><th></th><th>' + escapeHtml(p.baseline.period || "Before") + '</th><th>' +
+        escapeHtml(p.latest.period || "Latest") + '</th></tr>' +
+        rows.map(function (r) {
+          var a = progressValue(r, p.baseline.values[r.key]);
+          var b = progressValue(r, p.latest.values[r.key]);
+          return '<tr><td>' + escapeHtml(r.label) + '</td><td' + (a === "—" ? ' class="pg-wait"' : '') + '>' + escapeHtml(a) +
+            '</td><td' + (b === "—" ? ' class="pg-wait"' : '') + '>' + escapeHtml(b) + '</td></tr>';
+        }).join("") + '</table>';
+    }
+    if (p.note) html += '<p class="goal-progress-note">' + escapeHtml(p.note) + '</p>';
+    return html + '</div>';
+  }
+
+  // Once per sync, from the listing of the repository's top folder that the
+  // sync already asks for: nothing is fetched unless the file changed, and a
+  // file that has gone takes the block with it.
+  function syncGoalsProgress(config, listing) {
+    if (!listing) return Promise.resolve();
+    var sha = listing.progressSha || null;
+    if (!sha) {
+      if (goalsProgress) {
+        storeGoalsProgress(null);
+        if (!el.screenRoutine.hidden) renderGoals();
+      }
+      return Promise.resolve();
+    }
+    if (goalsProgress && goalsProgress.sha === sha) return Promise.resolve();
+    return getRemoteFile(config, GOALS_PROGRESS_PATH).then(function (got) {
+      if (!got) return;
+      var parsed = null;
+      try { parsed = JSON.parse(got.text); } catch (e) { return; }
+      storeGoalsProgress({ sha: got.sha || sha, data: sanitiseProgress(parsed) });
+      if (!el.screenRoutine.hidden) renderGoals();
+    });
+  }
+
+  // ---------- goals: tonight's plan ----------
+
+  // Every timed step of every goal still being worked on, as moments of the
+  // plan day now under way: from six in the morning to six the next.
+  function planStepsToday(now) {
+    var day = dayKeyDate(planDayKey(now));
+    var out = [];
+    routineGoals().forEach(function (goal) {
+      if (goal.status !== "active") return;
+      if (goal.start && planDayKey(now) < goal.start) return;
+      goal.plan.forEach(function (step) {
+        if (!step.at) return;
+        var mins = clockMinutes(step.at);
+        var at = new Date(day.getFullYear(), day.getMonth(), day.getDate() +
+          (mins < PLAN_DAY_START_MIN ? 1 : 0), Math.floor(mins / 60), mins % 60);
+        out.push({ goal: goal, step: step, at: at, order: (mins - PLAN_DAY_START_MIN + 1440) % 1440 });
+      });
+    });
+    out.sort(function (a, b) { return a.order - b.order; });
+    return out;
+  }
+
+  function renderTonightPlan() {
+    var now = new Date();
+    var rows = planStepsToday(now);
+    el.tonightPlan.hidden = !rows.length;
+    if (!rows.length) return;
+    var goals = [];
+    rows.forEach(function (r) { if (goals.indexOf(r.goal) === -1) goals.push(r.goal); });
+    var sub = "";
+    if (goals.length === 1) {
+      var g = goals[0];
+      sub = g.title;
+      var today = planDayKey(now);
+      if (g.start && g.review && g.review > g.start) {
+        var total = daysBetween(g.start, g.review);
+        var n = daysBetween(g.start, today) + 1;
+        sub += n <= total ? " · day " + n + " of " + total : " · review due";
+      } else if (g.start) {
+        sub += " · day " + (daysBetween(g.start, today) + 1);
+      }
+    } else {
+      sub = goals.length + " goals";
+    }
+    el.tonightPlanGoal.textContent = sub;
+    var next = rows.filter(function (r) { return r.at > now; })[0];
+    el.tonightPlanList.innerHTML = rows.map(function (r) {
+      var cls = r === next ? "tp-next" : r.at <= now ? "tp-past" : "";
+      var tag = goals.length > 1 ? '<span class="tp-tag">' + escapeHtml(r.goal.title) + '</span>' : "";
+      var inLine = r === next && r.at - now <= 3 * 60 * MS_MIN
+        ? '<span class="tp-in">in ' + escapeHtml(formatDuration(r.at - now)) + '</span>' : "";
+      return '<li class="' + cls + '"><span class="tp-time">' + r.step.at + '</span>' +
+        '<span class="tp-text">' + escapeHtml(r.step.text) + tag + '</span>' + inLine + '</li>';
+    }).join("");
+  }
+
+  el.tonightPlan.addEventListener("click", function () {
+    openRoutine();
+  });
+  el.tonightPlan.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      openRoutine();
+    }
+  });
+
+  // ---------- goals: a nudge at each timed step ----------
+
+  // Per phone, like the nap nudge, and off until somebody asks for it.
+  // `done` is the latest step time already nudged for, so a step is never
+  // announced twice and turning it on never announces the ones gone by.
+  function loadPlanNudge() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(PLAN_NUDGE_KEY) || "null");
+      if (raw && typeof raw === "object") {
+        return { on: raw.on === true, done: typeof raw.done === "number" ? raw.done : 0 };
+      }
+    } catch (e) { /* off */ }
+    return { on: false, done: 0 };
+  }
+
+  var planNudge = loadPlanNudge();
+
+  function savePlanNudge() {
+    try {
+      localStorage.setItem(PLAN_NUDGE_KEY, JSON.stringify(planNudge));
+    } catch (e) {
+      showError("Couldn't save that setting");
+    }
+  }
+
+  function renderPlanNudge() {
+    el.planNudgeOn.checked = planNudge.on;
+    var line = "";
+    if (planNudge.on) {
+      if (!remindCanNotify()) {
+        line = isStandalone() ? "This browser cannot show notifications."
+          : "Add the app to your Home Screen — a tab in Safari cannot show notifications.";
+      } else if (!remindAllowed()) {
+        line = "Notifications are not allowed yet. Turn them on for this app in iOS Settings.";
+      } else if (!routineGoals().some(function (g) {
+        return g.status === "active" && g.plan.some(function (st) { return st.at; });
+      })) {
+        line = "No step has a time yet — give one a time and it will nudge you then.";
+      } else if (!noiseOn) {
+        line = "With the screen off this needs Standby on, the same as the nap nudge above.";
+      } else {
+        line = "Ready.";
+      }
+    }
+    el.planNudgeState.hidden = !line;
+    el.planNudgeState.textContent = line;
+  }
+
+  function checkPlanNudge() {
+    if (!planNudge.on || !remindAllowed()) return;
+    var now = new Date();
+    var due = planStepsToday(now).filter(function (r) {
+      return +r.at <= +now && +r.at > planNudge.done;
+    });
+    if (!due.length) return;
+    var last = due[due.length - 1];
+    planNudge.done = +last.at;
+    savePlanNudge();
+    if (+now - +last.at > REMIND_STALE_MS) return;
+    try {
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification("🎯 " + last.step.at + " — " + last.goal.title, {
+          body: last.step.text,
+          tag: "plan-step",
+          renotify: true,
+          icon: NOTIFY_ICON,
+          badge: NOTIFY_ICON
+        });
+      }).catch(function () { /* the card on the main screen still says it */ });
+    } catch (e) { /* the card on the main screen still says it */ }
+  }
+
+  el.planNudgeOn.addEventListener("change", function () {
+    planNudge.on = el.planNudgeOn.checked;
+    planNudge.done = Date.now();
+    savePlanNudge();
+    if (planNudge.on && !remindAllowed()) {
+      askToNotify(function () {
+        planNudge.on = false;
+        savePlanNudge();
+        renderPlanNudge();
+      });
+    }
+    renderPlanNudge();
   });
 
   el.goalClaim.addEventListener("click", function () {
@@ -7360,7 +8053,10 @@
     // The same rule as sync: newer, and made by the phone that sets them.
     var restoredGoals = parsed.goals ? mergeGoals(parsed.goals, false)
       : adoptOldGoals(parsed.routine && parsed.routine.goals);
-    if (restoredGoals && !el.screenRoutine.hidden) renderGoals();
+    if (restoredGoals) {
+      if (!el.screenRoutine.hidden) renderGoals();
+      renderTonightPlan();
+    }
     if (Array.isArray(parsed.plans) && mergePlans(parsed.plans)) {
       savePlans(plans);
       renderPlans();
@@ -8074,12 +8770,13 @@
   // whether any month of the archive has been written since we last looked.
   function remoteListing(config) {
     return listRemoteDir(config, "").then(function (entries) {
-      var found = { logSha: null, archiveSha: null, journalSha: null };
+      var found = { logSha: null, archiveSha: null, journalSha: null, progressSha: null };
       entries.forEach(function (entry) {
         if (!entry) return;
         if (entry.name === SYNC_PATH) found.logSha = entry.sha || null;
         if (entry.name === ARCHIVE_DIR && entry.type === "dir") found.archiveSha = entry.sha || null;
         if (entry.name === DNOTES_ROOT && entry.type === "dir") found.journalSha = entry.sha || null;
+        if (entry.name === GOALS_PROGRESS_PATH && entry.type === "file") found.progressSha = entry.sha || null;
       });
       return found;
     });
@@ -8804,7 +9501,10 @@
       var pulledGoals = remoteDoc.goals
         ? mergeGoals(remoteDoc.goals, joining)
         : adoptOldGoals(remoteMeta && remoteMeta.routine && remoteMeta.routine.goals);
-      if (pulledGoals && !el.screenRoutine.hidden) renderGoals();
+      if (pulledGoals) {
+        if (!el.screenRoutine.hidden) renderGoals();
+        renderTonightPlan();
+      }
       applyingRemote = true;
       try {
         if (remoteMeta) {
@@ -8908,8 +9608,10 @@
       // files, their own failures: a note that did not go up waits for the
       // next sync and never fails this one.
       if (run !== syncRun || result.locked || !syncConfig) return result;
-      return syncDiaryNotes(syncConfig, lastListing).then(function () { return result; },
-        function () { return result; });
+      var config = syncConfig;
+      return syncDiaryNotes(config, lastListing).then(function () {}, function () {}).then(function () {
+        return syncGoalsProgress(config, lastListing);
+      }).then(function () { return result; }, function () { return result; });
     }).then(function (result) {
       if (run !== syncRun) return false;
       syncInFlight = false;
@@ -16071,8 +16773,18 @@
     var goals = routineGoals();
     if (goals.length) {
       out.push("Our goals, most important first: " + goals.map(function (g, i) {
-        return (i + 1) + ". " + g;
+        var bits = [];
+        if (g.status !== "active") bits.push(g.status);
+        if (g.target) bits.push("aiming for: " + g.target);
+        if (g.start) bits.push("since " + g.start + (g.review ? ", review " + g.review : ""));
+        return (i + 1) + ". " + g.title + (bits.length ? " (" + bits.join("; ") + ")" : "");
       }).join("; "));
+      goals.forEach(function (g) {
+        if (g.status !== "active" || !g.plan.length) return;
+        out.push("Plan for " + g.title + ": " + g.plan.map(function (st) {
+          return (st.at ? st.at + " " : "") + st.text;
+        }).join("; "));
+      });
     }
     if (!noted) return out;
     var parts = [];
@@ -16431,9 +17143,9 @@
       en: "After Sleep, the card asks how she went down — any of Self, Rocked, Breast, Bottle and Held, then any of Dummy, White noise, Quiet time and Cried — and how long it took, on a strip of five segments. All optional; the history shows it under the sleep, and the edit form changes it later.",
       ru: "После «Sleep» карточка спрашивает, как уснула — Self, Rocked, Breast, Bottle, Held (можно несколько), потом Dummy, White noise, Quiet time, Cried — и сколько заняло, на полоске из пяти делений. Всё по желанию; в истории это видно под сном, исправить можно в форме редактирования." },
     { id: "goals", title: { en: "Goals", ru: "Цели" }, go: { click: "routineOpen" },
-      words: "*goal *goals target aim priority *цел приоритет задач",
-      en: "Goals sit at the top of ⏰ Daily routine, behind ⋯: what you are working towards, first one first. ↑ ↓ change the order. 📌 Goals are set from this phone makes them change only there; the other phone shows them locked, and Take over goals moves them.",
-      ru: "Цели — вверху ⏰ Daily routine, в меню ⋯: к чему вы стремитесь, первая — главная. ↑ ↓ меняют порядок. «📌 Goals are set from this phone» — менять их можно только с этого телефона, на другом они закрыты; «Take over goals» передаёт их другому телефону." },
+      words: "*goal *goals target aim priority plan step tonight *цел приоритет задач план шаг",
+      en: "Goals sit in ⏰ Daily routine, behind ⋯: what you are working towards, first one first. Each is a card — what success looks like, from when, when to review it, and the steps of the plan; tap a step to change it or give it a time. Steps with a time show on the main screen as Tonight's plan, and \u201cNudge me at each step with a time\u201d makes this phone tell you at that minute. ↑ ↓ change the order, ⏸ pauses, ✓ marks done, ✎ edits. 📌 Goals are set from this phone makes them change only there; the other phone shows them locked, and Take over goals moves them.",
+      ru: "Цели — в ⏰ Daily routine, в меню ⋯: к чему вы стремитесь, первая — главная. Каждая цель — карточка: целевой результат, с какого дня, когда проверка, и шаги плана; нажмите на шаг, чтобы изменить его или задать время. Шаги со временем видны на главном экране в «Tonight's plan», а «Nudge me at each step with a time» присылает уведомление в эту минуту. ↑ ↓ меняют порядок, ⏸ — пауза, ✓ — готово, ✎ — правка. «📌 Goals are set from this phone» — менять их можно только с этого телефона, на другом они закрыты; «Take over goals» передаёт их другому телефону." },
     { id: "help", title: { en: "The full guide", ru: "Полная инструкция" }, go: { click: "infoOpen" },
       words: "*help guide manual instructions explain помощь инструкц справк руководств объясни",
       en: "Info, behind ⋯ in the top bar, explains every part of the app, with a section for new parents.",
@@ -17754,6 +18466,7 @@
     renderCryBanner();
     renderRoutineNow();
     renderRoutineStrip();
+    renderTonightPlan();
     recordGuesses(new Date());
     // Only while it is being looked at: it reads the whole log, and nobody is
     // served by rebuilding it behind a screen nobody is on.
@@ -17771,6 +18484,7 @@
     renderNoise();
     checkRemind();
     renderRemind();
+    checkPlanNudge();
     renderCry();
     if (withLog) renderLog();
   }
